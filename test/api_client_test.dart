@@ -79,16 +79,16 @@ void main() {
   test('http transport sends json body and decodes json response', () async {
     final transport = HttpApiTransport(
       client: MockClient((request) async {
-        expect(request.method, 'PUT');
+        expect(request.method, 'POST');
         expect(
           request.url.toString(),
-          'https://dist.example.test/v1/test-distribution/users/me/build-sort-order',
+          'https://dist.example.test/v1/test-distribution/devices/registration-link',
         );
         expect(request.headers['Content-Type'], 'application/json');
 
         final requestBody = jsonDecode(request.body);
         expect(requestBody, {
-          'buildIds': ['aurora'],
+          'deviceName': 'iPhone 15 Pro',
         });
 
         return http.Response(
@@ -109,10 +109,10 @@ void main() {
       transport: transport,
     );
 
-    final response = await client.put(
-      '/v1/test-distribution/users/me/build-sort-order',
+    final response = await client.post(
+      '/v1/test-distribution/devices/registration-link',
       body: {
-        'buildIds': ['aurora'],
+        'deviceName': 'iPhone 15 Pro',
       },
     );
 

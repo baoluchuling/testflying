@@ -86,6 +86,20 @@ flutter run -d ios
 flutter run -d macos
 ```
 
+Web 远端联调示例：
+
+```bash
+fvm flutter run -d chrome \
+  --dart-define=TESTFLYING_SERVICE=remote \
+  --dart-define=TESTFLYING_API_ENV=development \
+  --dart-define=TESTFLYING_API_BASE_URL=http://127.0.0.1:8000 \
+  --dart-define=TESTFLYING_ACCESS_TOKEN=dev-token \
+  --dart-define=TESTFLYING_DEVICE_ID=device-001 \
+  --dart-define=TESTFLYING_CLIENT_PLATFORM=ios
+```
+
+浏览器访问真实后端时，后端需要允许 Web 站点来源的 CORS。Web 上点击安装会先尝试打开服务端返回的 `installUrl`；如果浏览器拦截 iOS `itms-services://`，客户端会降级打开 `manifestUrl` 或 `downloadUrl`。
+
 远端接口模式默认关闭。如需接真实后端，用 `dart-define` 显式开启：
 
 ```bash

@@ -3,6 +3,7 @@ import 'package:testflying/services/install_launcher.dart';
 import 'package:testflying/services/mock_testflight_service.dart';
 import 'package:testflying/services/remote_testflight_service.dart';
 import 'package:testflying/services/testflight_service.dart';
+import 'package:testflying/services/workspace_preferences_store.dart';
 
 enum TestFlightServiceMode {
   mock,
@@ -71,11 +72,14 @@ class TestFlightServiceConfig {
 TestFlightService buildTestFlightService({
   TestFlightServiceConfig? config,
   ApiTransport? transport,
+  WorkspacePreferencesStore preferencesStore =
+      const WorkspacePreferencesStore(),
   InstallLauncher installLauncher = const UrlInstallLauncher(),
 }) {
   final resolvedConfig = config ?? TestFlightServiceConfig.fromEnvironment();
   return switch (resolvedConfig.mode) {
     TestFlightServiceMode.mock => MockTestFlightService(
+        preferencesStore: preferencesStore,
         installLauncher: installLauncher,
       ),
     TestFlightServiceMode.remote => RemoteTestFlightService(
@@ -89,6 +93,7 @@ TestFlightService buildTestFlightService({
           ),
           transport: transport ?? HttpApiTransport(),
         ),
+        preferencesStore: preferencesStore,
         installLauncher: installLauncher,
       ),
   };

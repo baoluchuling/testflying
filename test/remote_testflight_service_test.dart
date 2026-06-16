@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:testflying/models/internal_build.dart';
 import 'package:testflying/services/api_client.dart';
 import 'package:testflying/services/install_launcher.dart';
@@ -31,6 +32,10 @@ class _RecordingInstallLauncher implements InstallLauncher {
 }
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
   test('remote service loads workspace through dto mapper', () async {
     final transport = _FakeTransport([
       ApiResponse(statusCode: 200, body: _workspaceJson()),
@@ -57,12 +62,11 @@ void main() {
     );
   });
 
-  test('remote service launches install entry then creates install task',
+  test('remote service launches install entry then stores local install state',
       () async {
     final launcher = _RecordingInstallLauncher();
     final transport = _FakeTransport([
       ApiResponse(statusCode: 200, body: _workspaceJson()),
-      const ApiResponse(statusCode: 200, body: {}),
     ]);
     final service = RemoteTestFlightService(
       apiClient: _apiClient(transport),
@@ -72,27 +76,17 @@ void main() {
     final aurora = workspace.builds.first;
 
     final updated = await service.toggleInstallState(workspace, aurora);
-    final request = transport.requests.last;
 
     expect(launcher.launchedBuildIds, ['aurora']);
     expect(launcher.launchedUrls.single, startsWith('itms-services://'));
-    expect(request.method, 'POST');
-    expect(
-      request.path,
-      '/v1/test-distribution/builds/aurora/install-tasks',
-    );
-    expect(request.body, {
-      'action': 'start',
-      'buildId': 'aurora',
-      'deviceId': 'current-iphone',
-      'platform': 'ios',
-    });
+    expect(transport.requests, hasLength(1));
+    expect(transport.requests.single.path, '/v1/test-distribution/workspace');
     expect(updated.builds.first.status, BuildStatus.installing);
     expect(
         updated.installTasks.any((task) => task.buildId == 'aurora'), isTrue);
   });
 
-  test('remote service pauses installing build without launching install entry',
+  test('remote service pauses installing build locally without server write',
       () async {
     final launcher = _RecordingInstallLauncher();
     final transport = _FakeTransport([
@@ -111,7 +105,6 @@ void main() {
           ],
         ),
       ),
-      const ApiResponse(statusCode: 200, body: {}),
     ]);
     final service = RemoteTestFlightService(
       apiClient: _apiClient(transport),
@@ -121,25 +114,17 @@ void main() {
     final aurora = workspace.builds.first;
 
     final updated = await service.toggleInstallState(workspace, aurora);
-    final request = transport.requests.last;
 
     expect(launcher.launchedBuildIds, isEmpty);
-    expect(request.method, 'PATCH');
-    expect(request.path, '/v1/test-distribution/install-tasks/aurora');
-    expect(request.body, {
-      'action': 'pause',
-      'buildId': 'aurora',
-      'deviceId': 'current-iphone',
-    });
+    expect(transport.requests, hasLength(1));
+    expect(transport.requests.single.path, '/v1/test-distribution/workspace');
     expect(updated.builds.first.isPaused, isTrue);
     expect(updated.installTasks.single.isPaused, isTrue);
   });
 
-  test('remote service sends user sort order and applies fallback state',
-      () async {
+  test('remote service reorders builds locally without server write', () async {
     final transport = _FakeTransport([
       ApiResponse(statusCode: 200, body: _workspaceJson()),
-      const ApiResponse(statusCode: 200, body: {}),
     ]);
     final service = RemoteTestFlightService(
       apiClient: _apiClient(transport),
@@ -153,17 +138,39 @@ void main() {
       0,
       2,
     );
-    final request = transport.requests.last;
 
-    expect(request.method, 'PUT');
-    expect(
-      request.path,
-      '/v1/test-distribution/users/me/build-sort-order',
-    );
-    expect(request.body, {
-      'buildIds': ['ops', 'aurora'],
-    });
+    expect(transport.requests, hasLength(1));
+    expect(transport.requests.single.path, '/v1/test-distribution/workspace');
     expect(updated.builds.map((build) => build.id), ['ops', 'aurora']);
+  });
+
+  test('remote service reapplies local state after workspace refresh',
+      () async {
+    final transport = _FakeTransport([
+      ApiResponse(statusCode: 200, body: _workspaceJson()),
+      ApiResponse(statusCode: 200, body: _workspaceJson()),
+    ]);
+    final service = RemoteTestFlightService(
+      apiClient: _apiClient(transport),
+      installLauncher: _RecordingInstallLauncher(),
+    );
+    final workspace = await service.loadWorkspace();
+    final installed = await service.toggleInstallState(
+      workspace,
+      workspace.builds.first,
+    );
+    await service.reorderVisibleBuilds(installed, installed.builds, 0, 2);
+
+    final refreshed = await service.loadWorkspace();
+
+    expect(refreshed.builds.map((build) => build.id), ['ops', 'aurora']);
+    expect(refreshed.builds.last.status, BuildStatus.installing);
+    expect(refreshed.installTasks.single.buildId, 'aurora');
+    expect(transport.requests, hasLength(2));
+    expect(
+      transport.requests.map((request) => request.path).toSet(),
+      {'/v1/test-distribution/workspace'},
+    );
   });
 }
 

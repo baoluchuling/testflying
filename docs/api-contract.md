@@ -8,7 +8,7 @@
 - 新应用和新构建由包上传流水线创建：CI 或后台上传 IPA 后，后端生成应用、构建、通知和安装权限。
 - 客户端刷新 workspace 后自动看到新应用；必要时通过通知提示新构建。
 - 后端返回的数据结构应能直接映射到 `TestFlightWorkspace`。
-- 排序、筛选、安装状态变更必须是幂等或可重复请求的。
+- 排序、筛选、安装状态、暂停状态、下载进度和通知已读都由客户端本地维护。
 
 ## 认证和上下文
 
@@ -82,14 +82,7 @@ Widget 不直接读取 HTTP DTO，也不直接依赖 JSON 字段名。
 
 ## 应用和构建
 
-```http
-GET /v1/test-distribution/apps
-GET /v1/test-distribution/apps/{appId}
-GET /v1/test-distribution/apps/{appId}/builds
-GET /v1/test-distribution/builds/{buildId}
-```
-
-构建响应需要包含客户端安装入口：
+当前客户端只通过 workspace 聚合快照读取应用和构建。构建响应需要包含客户端安装入口：
 
 ```json
 {
@@ -117,7 +110,6 @@ GET /v1/test-distribution/builds/{buildId}
 
 ```http
 POST /v1/test-distribution/uploads
-POST /v1/test-distribution/upload-webhooks/ci
 ```
 
 上传完成后后端负责：
@@ -128,59 +120,15 @@ POST /v1/test-distribution/upload-webhooks/ci
 4. 生成 `AppNotification`。
 5. 根据权限和设备池计算可安装范围。
 
-## 安装任务
+## 安装和手动排序
 
-客户端点击安装、暂停、继续时操作安装任务，不直接修改 build。
+客户端点击安装时只打开 `build.installInfo.installUrl`，不创建服务端安装任务。
 
-```http
-POST /v1/test-distribution/builds/{buildId}/install-tasks
-PATCH /v1/test-distribution/install-tasks/{taskId}
-GET /v1/test-distribution/install-tasks/{taskId}
-```
-
-`PATCH` 请求示例：
-
-```json
-{
-  "action": "pause"
-}
-```
-
-`action` 可选值：
-
-- `start`
-- `pause`
-- `resume`
-- `cancel`
-
-后端返回更新后的 workspace 或最小任务快照。当前客户端更适合接收 workspace 快照，因为首页多个区域依赖同一状态。
-
-当前 mock 阶段会把安装任务和构建安装状态写入本地偏好。接入真实接口后，后端任务状态应覆盖本地状态；本地只保留离线或请求失败时的最近一次展示快照。
-
-客户端安装动作由 `InstallLauncher` 打开外部安装入口，再创建或更新安装任务。iOS 入口是 `itms-services`，Android 入口是 APK 或下载页 URL；两者都不在 Widget 内直接拼接。
-
-## 手动排序
-
-排序是用户维度的偏好，不改变构建创建时间。
-
-```http
-PUT /v1/test-distribution/users/me/build-sort-order
-```
-
-请求：
-
-```json
-{
-  "buildIds": ["dataflow", "aurora", "insight"]
-}
-```
-
-规则：
-
-- `buildIds` 只表达当前用户的展示顺序。
-- 新构建未出现在排序列表时，默认按添加时间插入列表顶部或后端约定位置。
-- 筛选状态下的排序只重排当前可见集合，其他构建保持原相对顺序。
-- 当前 mock 阶段用本地 `WorkspacePreferencesStore` 保存 `buildIds`，接入后端后由该接口成为权威来源。
+- iOS：`InstallLauncher` 打开 `itms-services://?action=download-manifest&url=<manifest.plist>`。
+- Android：`InstallLauncher` 打开 APK 下载地址或下载页 URL。
+- 安装中、暂停、继续、下载进度和安装任务列表都写入 `WorkspacePreferencesStore`。
+- 手动排序只写入 `WorkspacePreferencesStore`，不向服务端提交。
+- 刷新 workspace 时，客户端先读取服务端分发事实，再把本地安装状态和排序覆盖回 `TestFlightWorkspace`。
 
 ## 设备
 
@@ -205,8 +153,6 @@ GET /v1/test-distribution/developer-accounts/renewals
 
 ```http
 GET /v1/test-distribution/notifications
-PATCH /v1/test-distribution/notifications/{notificationId}
-POST /v1/test-distribution/notifications/mark-all-read
 ```
 
 通知类型必须和客户端 `NoticeType` 对齐：
@@ -216,6 +162,8 @@ POST /v1/test-distribution/notifications/mark-all-read
 - `device`
 
 客户端本地保留 `all` 作为筛选项，不要求后端返回。
+
+通知已读状态由客户端本地保存。服务端不提供单条已读或全部已读接口。
 
 ## 错误约定
 
@@ -236,7 +184,6 @@ POST /v1/test-distribution/notifications/mark-all-read
 - `build_not_found`
 - `build_not_installable`
 - `developer_account_expired`
-- `sort_order_conflict`
 - `rate_limited`
 
 ## 下一步实现边界

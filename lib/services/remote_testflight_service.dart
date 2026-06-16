@@ -4,21 +4,28 @@ import 'package:testflying/services/api_client.dart';
 import 'package:testflying/services/install_launcher.dart';
 import 'package:testflying/services/remote_workspace_dto.dart';
 import 'package:testflying/services/testflight_service.dart';
+import 'package:testflying/services/workspace_preferences_store.dart';
 
 class RemoteTestFlightService implements TestFlightService {
-  const RemoteTestFlightService({
+  RemoteTestFlightService({
     required ApiClient apiClient,
+    WorkspacePreferencesStore preferencesStore =
+        const WorkspacePreferencesStore(),
     InstallLauncher installLauncher = const UrlInstallLauncher(),
   })  : _apiClient = apiClient,
+        _preferencesStore = preferencesStore,
         _installLauncher = installLauncher;
 
   final ApiClient _apiClient;
+  final WorkspacePreferencesStore _preferencesStore;
   final InstallLauncher _installLauncher;
 
   @override
   Future<TestFlightWorkspace> loadWorkspace() async {
     final response = await _apiClient.get('/v1/test-distribution/workspace');
-    return RemoteWorkspaceDto.fromJson(response).toDomain();
+    final workspace = RemoteWorkspaceDto.fromJson(response).toDomain();
+    final preferences = await _preferencesStore.load();
+    return preferences.applyTo(workspace);
   }
 
   @override
@@ -26,36 +33,16 @@ class RemoteTestFlightService implements TestFlightService {
     TestFlightWorkspace workspace,
     InternalBuild selectedBuild,
   ) async {
-    if (selectedBuild.status == BuildStatus.installing) {
-      final action = selectedBuild.isPaused ? 'resume' : 'pause';
-      final fallback = _applyInstallState(workspace, selectedBuild);
-      final response = await _apiClient.patch(
-        '/v1/test-distribution/install-tasks/${selectedBuild.id}',
-        body: {
-          'action': action,
-          'buildId': selectedBuild.id,
-          'deviceId': workspace.currentDevice.id,
-        },
-      );
-      return _workspaceOrFallback(response, fallback);
+    if (selectedBuild.status != BuildStatus.installing) {
+      final launchResult = await _installLauncher.launch(selectedBuild);
+      if (!launchResult.success) {
+        throw InstallLaunchException(launchResult.message);
+      }
     }
 
-    final launchResult = await _installLauncher.launch(selectedBuild);
-    if (!launchResult.success) {
-      throw InstallLaunchException(launchResult.message);
-    }
-
-    final fallback = _applyInstallState(workspace, selectedBuild);
-    final response = await _apiClient.post(
-      '/v1/test-distribution/builds/${selectedBuild.id}/install-tasks',
-      body: {
-        'action': 'start',
-        'buildId': selectedBuild.id,
-        'deviceId': workspace.currentDevice.id,
-        'platform': selectedBuild.installInfo.platform.name,
-      },
-    );
-    return _workspaceOrFallback(response, fallback);
+    final updatedWorkspace = _applyInstallState(workspace, selectedBuild);
+    await _preferencesStore.save(updatedWorkspace);
+    return updatedWorkspace;
   }
 
   @override
@@ -65,29 +52,14 @@ class RemoteTestFlightService implements TestFlightService {
     int oldIndex,
     int newIndex,
   ) async {
-    final fallback = _applyVisibleBuildReorder(
+    final updatedWorkspace = _applyVisibleBuildReorder(
       workspace,
       visibleBuilds,
       oldIndex,
       newIndex,
     );
-    final response = await _apiClient.put(
-      '/v1/test-distribution/users/me/build-sort-order',
-      body: {
-        'buildIds': fallback.sortOrder.buildIds,
-      },
-    );
-    return _workspaceOrFallback(response, fallback);
-  }
-
-  TestFlightWorkspace _workspaceOrFallback(
-    Map<String, Object?> response,
-    TestFlightWorkspace fallback,
-  ) {
-    if (response.containsKey('workspace') || response.containsKey('builds')) {
-      return RemoteWorkspaceDto.fromJson(response).toDomain();
-    }
-    return fallback;
+    await _preferencesStore.save(updatedWorkspace);
+    return updatedWorkspace;
   }
 
   TestFlightWorkspace _applyInstallState(

@@ -19,7 +19,7 @@ class MockTestFlightService implements TestFlightService {
   @override
   Future<TestFlightWorkspace> loadWorkspace() async {
     final preferences = await _preferencesStore.load();
-    return _applyPreferences(seedWorkspace(), preferences);
+    return preferences.applyTo(seedWorkspace());
   }
 
   static TestFlightWorkspace seedWorkspace() {
@@ -133,69 +133,6 @@ class MockTestFlightService implements TestFlightService {
     );
     await _preferencesStore.save(updatedWorkspace);
     return updatedWorkspace;
-  }
-
-  TestFlightWorkspace _applyPreferences(
-    TestFlightWorkspace workspace,
-    WorkspacePreferencesSnapshot preferences,
-  ) {
-    final buildStates = preferences.buildStates;
-    final buildsById = {
-      for (final build in workspace.builds)
-        build.id: _applyBuildState(build, buildStates[build.id]),
-    };
-    final seenBuildIds = <String>{};
-    final orderedIds = [
-      for (final id in preferences.sortOrder)
-        if (buildsById.containsKey(id) && seenBuildIds.add(id)) id,
-      for (final build in workspace.builds)
-        if (seenBuildIds.add(build.id)) build.id,
-    ];
-    final builds = [
-      for (final id in orderedIds) buildsById[id]!,
-    ];
-    final validBuildIds = builds.map((build) => build.id).toSet();
-    final validDeviceIds = workspace.devices.map((device) => device.id).toSet();
-    final installTasks = preferences.installTasks.isEmpty
-        ? workspace.installTasks
-        : [
-            for (final task in preferences.installTasks)
-              if (validBuildIds.contains(task.buildId) &&
-                  validDeviceIds.contains(task.deviceId))
-                InstallTask(
-                  buildId: task.buildId,
-                  deviceId: task.deviceId,
-                  progress: task.progress,
-                  isPaused: task.isPaused,
-                ),
-          ];
-
-    if (preferences.sortOrder.isEmpty &&
-        preferences.buildStates.isEmpty &&
-        preferences.installTasks.isEmpty) {
-      return workspace;
-    }
-
-    return workspace.copyWith(
-      builds: builds,
-      installTasks: installTasks,
-      sortOrder:
-          AppSortOrder(buildIds: builds.map((build) => build.id).toList()),
-    );
-  }
-
-  InternalBuild _applyBuildState(
-    InternalBuild build,
-    PersistedBuildState? state,
-  ) {
-    if (state == null) {
-      return build;
-    }
-    return build.copyWith(
-      status: state.status,
-      progress: state.progress,
-      isPaused: state.isPaused,
-    );
   }
 
   static const _seedApps = [
