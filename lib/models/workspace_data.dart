@@ -201,7 +201,8 @@ class TestFlightWorkspace {
   TestDevice get currentDevice =>
       devices.firstWhere((device) => device.isCurrent);
 
-  DeveloperAccount get renewalAccount => developerAccounts.first;
+  DeveloperAccount? get renewalAccount =>
+      developerAccounts.isEmpty ? null : developerAccounts.first;
 
   TestFlightWorkspace copyWith({
     List<InternalApp>? apps,

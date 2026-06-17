@@ -54,12 +54,31 @@ void main() {
     expect(workspace.builds.last.installInfo.platform, InstallPlatform.android);
     expect(workspace.currentDevice.name, 'iPhone 15 Pro');
     expect(
-        workspace.renewalAccount.renewalTitle, 'Aurora Mobile 所属开发者账号 5 天后到期');
+        workspace.renewalAccount!.renewalTitle, 'Aurora Mobile 所属开发者账号 5 天后到期');
     expect(transport.requests.single.method, 'GET');
     expect(
       transport.requests.single.path,
       '/v1/test-distribution/workspace',
     );
+  });
+
+  test('remote service tolerates workspace without developer accounts',
+      () async {
+    final transport = _FakeTransport([
+      ApiResponse(
+        statusCode: 200,
+        body: _workspaceJson(developerAccounts: []),
+      ),
+    ]);
+    final service = RemoteTestFlightService(
+      apiClient: _apiClient(transport),
+      installLauncher: _RecordingInstallLauncher(),
+    );
+
+    final workspace = await service.loadWorkspace();
+
+    expect(workspace.developerAccounts, isEmpty);
+    expect(workspace.renewalAccount, isNull);
   });
 
   test('remote service launches install entry then stores local install state',
@@ -190,6 +209,7 @@ Map<String, Object?> _workspaceJson({
   String auroraStatus = 'available',
   double? auroraProgress,
   List<Map<String, Object?>> installTasks = const [],
+  List<Map<String, Object?>>? developerAccounts,
 }) {
   return {
     'apps': [
@@ -273,15 +293,16 @@ Map<String, Object?> _workspaceJson({
         'isCurrent': true,
       },
     ],
-    'developerAccounts': [
-      {
-        'id': 'apple-team-a',
-        'appName': 'Aurora Mobile',
-        'teamName': 'Apple Developer Team A',
-        'remainingDays': 5,
-        'renewalActionLabel': '去续费',
-      },
-    ],
+    'developerAccounts': developerAccounts ??
+        [
+          {
+            'id': 'apple-team-a',
+            'appName': 'Aurora Mobile',
+            'teamName': 'Apple Developer Team A',
+            'remainingDays': 5,
+            'renewalActionLabel': '去续费',
+          },
+        ],
     'notifications': [
       {
         'type': 'build',

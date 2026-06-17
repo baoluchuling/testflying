@@ -303,7 +303,7 @@ class DevicesPage extends StatelessWidget {
 
   final TestDevice currentDevice;
   final List<TestDevice> devices;
-  final DeveloperAccount developerAccount;
+  final DeveloperAccount? developerAccount;
   final ValueChanged<String> onMessage;
 
   @override
@@ -369,9 +369,12 @@ class DevicesPage extends StatelessWidget {
               _ActionTile(
                 icon: Icons.verified_user_rounded,
                 title: '企业签名',
-                subtitle: developerAccount.certificateSubtitle,
-                action: '更新',
-                onPressed: () => onMessage('证书更新任务已创建'),
+                subtitle:
+                    developerAccount?.certificateSubtitle ?? '暂无开发者账号续费提醒',
+                action: developerAccount == null ? '检查' : '更新',
+                onPressed: () => onMessage(
+                  developerAccount == null ? '暂无需要续费的开发者账号' : '证书更新任务已创建',
+                ),
               ),
               const Divider(height: 18, color: _line),
               _ActionTile(

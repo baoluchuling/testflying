@@ -37,7 +37,7 @@ void main() {
     expect(workspace.builds.first.name, 'Aurora Mobile');
     expect(workspace.currentDevice.name, 'iPhone 15 Pro');
     expect(
-        workspace.renewalAccount.renewalTitle, 'Aurora Mobile 所属开发者账号 5 天后到期');
+        workspace.renewalAccount!.renewalTitle, 'Aurora Mobile 所属开发者账号 5 天后到期');
     expect(workspace.notifications, hasLength(5));
     expect(workspace.profile.name, '张三');
   });

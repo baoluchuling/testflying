@@ -295,7 +295,7 @@ class _HomePageState extends State<HomePage> {
         _DeviceShortcut(
           currentDevice: workspace.currentDevice,
           developerAccount: workspace.renewalAccount,
-          showRenewalReminder: true,
+          showRenewalReminder: workspace.renewalAccount != null,
           onOpen: () => setState(() => _navIndex = 1),
           onRenew: () => setState(() => _navIndex = 3),
         ),
@@ -499,7 +499,7 @@ class _DeviceShortcut extends StatelessWidget {
   });
 
   final TestDevice currentDevice;
-  final DeveloperAccount developerAccount;
+  final DeveloperAccount? developerAccount;
   final bool showRenewalReminder;
   final VoidCallback onOpen;
   final VoidCallback onRenew;
@@ -546,7 +546,7 @@ class _DeviceShortcut extends StatelessWidget {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            '${currentDevice.name} ${currentDevice.status} · 开发者账号续费待处理',
+                            '${currentDevice.name} ${currentDevice.status} · ${developerAccount == null ? '暂无账号续费提醒' : '开发者账号续费待处理'}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -576,10 +576,10 @@ class _DeviceShortcut extends StatelessWidget {
                 ),
               ),
             ),
-            if (showRenewalReminder) ...[
+            if (showRenewalReminder && developerAccount != null) ...[
               const SizedBox(height: 12),
               _DeviceRenewalNotice(
-                developerAccount: developerAccount,
+                developerAccount: developerAccount!,
                 onRenew: onRenew,
               ),
             ],
