@@ -1,0 +1,16 @@
+.DS_Store
+.git/
+.pytest_cache/
+.ruff_cache/
+.venv/
+node_modules/
+admin-web/node_modules/
+src/testflying_api/static/admin-app/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+data/
+dist/
+docs/
+tests/

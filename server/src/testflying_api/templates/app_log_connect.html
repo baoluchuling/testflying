@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>连接 App 日志</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --text: #111827;
+      --muted: #667085;
+      --border: #d9e0e8;
+      --primary: #176b87;
+      --primary-dark: #0f5068;
+      --soft: #e9f4f7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main {
+      width: min(100%, 520px);
+      margin: 0 auto;
+      padding: 22px 18px 28px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 18px 42px rgba(16, 24, 40, 0.08);
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.22;
+      letter-spacing: 0;
+    }
+
+    .summary {
+      margin: 10px 0 20px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .target {
+      display: grid;
+      gap: 10px;
+      margin: 18px 0 22px;
+      padding: 14px;
+      background: var(--soft);
+      border: 1px solid #c9e4eb;
+      border-radius: 14px;
+    }
+
+    .target-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      font-size: 14px;
+    }
+
+    .target-row span:first-child {
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .target-row strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      text-align: right;
+      font-weight: 700;
+    }
+
+    .actions {
+      display: grid;
+      gap: 10px;
+    }
+
+    .primary-button,
+    .secondary-button {
+      width: 100%;
+      min-height: 50px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      font-size: 16px;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .primary-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--primary);
+      color: #ffffff;
+    }
+
+    .primary-button:active {
+      background: var(--primary-dark);
+    }
+
+    .secondary-button {
+      background: #ffffff;
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .hint {
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    code {
+      display: block;
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 10px;
+      background: #111827;
+      color: #f9fafb;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <p class="eyebrow">TestFlying App 日志</p>
+      <h1>连接到这台电脑</h1>
+      <p class="summary">点击按钮打开 {{ connect.app_name }}，App 会读取连接参数并主动建立日志 WebSocket 连接。</p>
+
+      <div class="target">
+        <div class="target-row">
+          <span>电脑</span>
+          <strong>{{ connect.name }}</strong>
+        </div>
+        <div class="target-row">
+          <span>地址</span>
+          <strong>{{ connect.host }}:{{ connect.port }}</strong>
+        </div>
+      </div>
+
+      <div class="actions">
+        <a class="primary-button" href="{{ connect.scheme_url }}" data-open-app>
+          打开 {{ connect.app_name }} 并连接
+        </a>
+        <button class="secondary-button" type="button" data-copy-scheme>复制连接参数</button>
+      </div>
+
+      <p class="hint">
+        如果没有自动跳转，请确认手机已安装 {{ connect.app_name }}。
+        <code data-scheme>{{ connect.scheme_url }}</code>
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const scheme = document.querySelector('[data-scheme]')?.textContent || '';
+    document.querySelector('[data-open-app]')?.addEventListener('click', (event) => {
+      event.preventDefault();
+      window.location.href = scheme;
+    });
+    document.querySelector('[data-copy-scheme]')?.addEventListener('click', async (event) => {
+      const button = event.currentTarget;
+      try {
+        await navigator.clipboard.writeText(scheme);
+        button.textContent = '已复制';
+      } catch (error) {
+        button.textContent = '复制失败，请长按下方参数';
+      }
+    });
+  </script>
+</body>
+</html>
