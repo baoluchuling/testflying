@@ -2399,6 +2399,11 @@ def _mock_store_releases(app: App) -> dict[str, object]:
 
 
 def _mock_store_reviews(app: App) -> dict[str, object]:
+    def _iso(moment: datetime) -> str:
+        return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    recent = datetime.now(UTC) - timedelta(days=1)
+    older = datetime.now(UTC) - timedelta(days=2)
     return {
         "reviews": [
             {
@@ -2412,8 +2417,8 @@ def _mock_store_reviews(app: App) -> dict[str, object]:
                 "locale": "en-US",
                 "territory": "US",
                 "appVersion": "1.0.0",
-                "createdAt": "2026-06-24T10:00:00Z",
-                "updatedAt": "2026-06-24T10:00:00Z",
+                "createdAt": _iso(recent),
+                "updatedAt": _iso(recent),
             },
             {
                 "id": f"review-{app.id}-2",
@@ -2426,8 +2431,8 @@ def _mock_store_reviews(app: App) -> dict[str, object]:
                 "locale": "zh-Hans",
                 "territory": "CN",
                 "appVersion": "1.0.0",
-                "createdAt": "2026-06-23T10:00:00Z",
-                "updatedAt": "2026-06-23T10:00:00Z",
+                "createdAt": _iso(older),
+                "updatedAt": _iso(older),
             },
         ],
         "nextPageToken": "",

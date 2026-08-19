@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
@@ -796,12 +797,13 @@ def test_store_management_lists_store_reviews_and_filters_in_center(
     db_session: Session,
 ) -> None:
     seed_demo_catalog(db_session)
+    review_date = (datetime.now(UTC) - timedelta(days=1)).date().isoformat()
 
     response = client.get(
         (
             "/v1/store-management/developer-accounts/account-apple-enterprise"
-            "/apps/app-aurora-ios/store-reviews"
-            "?date=2026-06-24&timezone=UTC&rating=5&locale=en-US&pageSize=20"
+            f"/apps/app-aurora-ios/store-reviews"
+            f"?date={review_date}&timezone=UTC&rating=5&locale=en-US&pageSize=20"
         ),
         headers={"Authorization": "Bearer dev-token"},
     )
