@@ -1,10 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { bootstrapAdmin, type BootstrapResponse } from './apiClient';
 import {
   buildViewFromPath,
   navKeyFromPath,
   routeKeyFromPath,
-  routeTitles,
   settingsViewFromPath,
   type AdminRouteKey
 } from './routes';
@@ -106,10 +105,6 @@ export function AdminApp() {
   }, []);
 
   const navItems = bootstrap?.navItems ?? fallbackNav;
-  const title = useMemo(
-    () => routeTitles[activeRoute === 'not-found' ? 'not-found' : activeNavRoute],
-    [activeNavRoute, activeRoute]
-  );
   const appDetailMatch = location.pathname.match(/^\/admin\/apps\/([^/]+)$/);
   const appDetailId = appDetailMatch ? decodeURIComponent(appDetailMatch[1]) : null;
 
@@ -163,14 +158,6 @@ export function AdminApp() {
       </header>
 
       <main className="admin-main">
-        <section className="page-title-row">
-          <div>
-            <p className="eyebrow">{title.eyebrow}</p>
-            <h1>{title.title}</h1>
-            <p>{title.summary}</p>
-          </div>
-        </section>
-
         {error ? (
           <section className="notice error">
             <strong>新后台初始化失败</strong>

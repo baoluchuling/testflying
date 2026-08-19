@@ -75,7 +75,7 @@ describe('AdminApp', () => {
       '/admin/store-reviews'
     );
     expect(location.pathname).toBe('/admin/store-reviews');
-    expect(screen.getByRole('heading', { level: 1, name: '商店评论' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '商店评论' })).toBeTruthy();
   });
 
   it('lets an in-flight one-time operation block push and pop navigation', async () => {
@@ -120,7 +120,6 @@ describe('AdminApp', () => {
 
     expect(location.pathname).toBe('/admin/builds/runners');
     expect(await screen.findByText('Mac mini 1')).toBeTruthy();
-    expect(screen.getByRole('heading', { level: 1, name: '构建' })).toBeTruthy();
   });
 
   it('moves LLM configuration under settings', async () => {
@@ -132,7 +131,7 @@ describe('AdminApp', () => {
     await user.click(screen.getByRole('button', { name: 'LLM 配置' }));
 
     expect(location.pathname).toBe('/admin/settings/llm');
-    expect(screen.getByRole('heading', { level: 1, name: '设置' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '系统设置' })).toBeTruthy();
   });
 
   it('renders removed top-level routes as not found', async () => {

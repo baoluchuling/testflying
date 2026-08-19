@@ -67,43 +67,52 @@ export function SettingsPage({ view }: { view?: SettingsView }) {
   }
 
   return (
-    <div className="section-workspace settings-workspace" data-settings-workspace>
-      <nav className="secondary-nav" aria-label="设置导航">
-        {views.map((item) => (
-          <button
-            key={item.key}
-            className={activeView === item.key ? 'secondary-nav-item active' : 'secondary-nav-item'}
-            type="button"
-            onClick={() => navigate(item)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </nav>
-      {error ? <div className="notice error compact">{error}</div> : null}
-      {message ? <div className="notice success compact">{message}</div> : null}
-      {!state && activeView !== 'llm' && !error ? (
-        <section className="panel empty-state">正在加载设置...</section>
-      ) : null}
-      {state && activeView === 'general' ? (
-        <GeneralSettingsPage
-          state={state.general}
-          onSave={(payload: GeneralSettingsPayload) =>
-            runAction(() => saveGeneralSettings(payload))
-          }
-        />
-      ) : null}
-      {state && activeView === 'notifications' ? (
-        <NotificationSettingsPage
-          state={state.notifications}
-          onSave={(payload: NotificationSettingsPayload) =>
-            runAction(() => saveNotificationSettings(payload))
-          }
-          onCheck={() => runAction(checkNotificationSettings)}
-        />
-      ) : null}
-      {activeView === 'llm' ? <LlmConfigPage /> : null}
-      {state && activeView === 'runtime' ? <RuntimeSettingsPage items={state.runtime} /> : null}
+    <div className="compact-page compact-settings-page settings-workspace" data-settings-workspace>
+      <div className="compact-context">
+        <div className="compact-title">
+          <strong>Configuration</strong>
+          <h2>系统设置</h2>
+          <span>通用 · 通知渠道 · LLM 模型 · 运行环境</span>
+        </div>
+      </div>
+      <div className="compact-body">
+        <nav className="secondary-nav" aria-label="设置导航">
+          {views.map((item) => (
+            <button
+              key={item.key}
+              className={activeView === item.key ? 'secondary-nav-item active' : 'secondary-nav-item'}
+              type="button"
+              onClick={() => navigate(item)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+        {error ? <div className="notice error compact">{error}</div> : null}
+        {message ? <div className="notice success compact">{message}</div> : null}
+        {!state && activeView !== 'llm' && !error ? (
+          <section className="panel empty-state">正在加载设置...</section>
+        ) : null}
+        {state && activeView === 'general' ? (
+          <GeneralSettingsPage
+            state={state.general}
+            onSave={(payload: GeneralSettingsPayload) =>
+              runAction(() => saveGeneralSettings(payload))
+            }
+          />
+        ) : null}
+        {state && activeView === 'notifications' ? (
+          <NotificationSettingsPage
+            state={state.notifications}
+            onSave={(payload: NotificationSettingsPayload) =>
+              runAction(() => saveNotificationSettings(payload))
+            }
+            onCheck={() => runAction(checkNotificationSettings)}
+          />
+        ) : null}
+        {activeView === 'llm' ? <LlmConfigPage /> : null}
+        {state && activeView === 'runtime' ? <RuntimeSettingsPage items={state.runtime} /> : null}
+      </div>
     </div>
   );
 }

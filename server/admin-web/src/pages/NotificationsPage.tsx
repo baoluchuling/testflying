@@ -39,15 +39,18 @@ export function NotificationsPage() {
   }
 
   return (
-    <div className="notifications-page" data-notifications-page>
-      <section className="panel">
-        <div className="panel-head">
-          <div>
-            <strong>通知</strong>
-            <p className="muted">{state?.total ?? 0} 条记录</p>
-          </div>
+    <div className="compact-page compact-notifications-page notifications-page" data-notifications-page>
+      <div className="compact-context">
+        <div className="compact-title">
+          <strong>Notification Feed</strong>
+          <h2>通知</h2>
+          <span>
+            {state?.total ?? 0} 条记录 · 当前 {state?.activeType === 'all' ? '全部类型' : state?.typeCounts.find((item) => item.type === state.activeType)?.label ?? '全部类型'}
+          </span>
+        </div>
+        <div className="compact-actions">
           <button
-            className="button subtle"
+            className="button"
             type="button"
             onClick={() =>
               history.pushState(
@@ -60,30 +63,40 @@ export function NotificationsPage() {
             管理通知渠道
           </button>
         </div>
-        <div className="filter-tabs notification-filter-tabs" aria-label="通知类型筛选">
-          {(state?.typeCounts ?? [{ type: 'all', label: '全部', count: 0 }]).map((item) => (
-            <button
-              key={item.type}
-              type="button"
-              className={state?.activeType === item.type ? 'filter-tab active' : 'filter-tab'}
-              onClick={() => void selectType(item.type)}
-            >
-              {item.label}
-              <span>{item.count}</span>
-            </button>
-          ))}
-        </div>
-        {error ? <div className="notice error">{error}</div> : null}
-        <div className="notification-list">
-          {(state?.notifications ?? []).map((notification) => (
-            <NotificationRow key={notification.id} notification={notification} />
-          ))}
-        </div>
-        {!state && !error ? <div className="empty-state">正在加载通知...</div> : null}
-        {state && state.notifications.length === 0 ? (
-          <div className="empty-state">当前筛选下没有通知。</div>
-        ) : null}
-      </section>
+      </div>
+
+      <div className="compact-body">
+        <section className="compact-column">
+          <div className="compact-column-head">
+            <strong>通知列表</strong>
+            <div className="filter-tabs notification-filter-tabs" aria-label="通知类型筛选">
+              {(state?.typeCounts ?? [{ type: 'all', label: '全部', count: 0 }]).map((item) => (
+                <button
+                  key={item.type}
+                  type="button"
+                  className={state?.activeType === item.type ? 'filter-tab active' : 'filter-tab'}
+                  onClick={() => void selectType(item.type)}
+                >
+                  {item.label}
+                  <span>{item.count}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+          {error ? <div className="notice error compact">{error}</div> : null}
+          <div className="compact-scroll">
+            <div className="notification-list">
+              {(state?.notifications ?? []).map((notification) => (
+                <NotificationRow key={notification.id} notification={notification} />
+              ))}
+            </div>
+            {!state && !error ? <div className="empty-state">正在加载通知...</div> : null}
+            {state && state.notifications.length === 0 ? (
+              <div className="empty-state">当前筛选下没有通知。</div>
+            ) : null}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

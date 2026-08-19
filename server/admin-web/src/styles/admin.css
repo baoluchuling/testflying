@@ -148,30 +148,6 @@ select {
   padding: 28px 32px 36px;
 }
 
-.page-title-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 18px;
-}
-
-.page-title-row h1 {
-  margin: 0 0 8px;
-  color: var(--text);
-  font-size: 34px;
-  line-height: 1.1;
-  letter-spacing: 0;
-  font-weight: 700;
-}
-
-.page-title-row p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .section-workspace {
   display: grid;
   gap: 18px;
@@ -596,11 +572,7 @@ select {
   }
 }
 
-.admin-shell[data-route="app-logs"] .page-title-row {
-  display: none;
-}
-
-.eyebrow {
+.admin-shell[data-route="app-logs"] .eyebrow {
   margin-bottom: 6px;
   color: var(--muted);
   font-size: 12px;
@@ -1275,11 +1247,7 @@ select {
   gap: 10px;
 }
 
-.admin-shell[data-route="uploads"] .page-title-row {
-  display: none;
-}
-
-.upload-page {
+.admin-shell[data-route="uploads"] .upload-page {
   align-items: stretch;
 }
 
@@ -3249,12 +3217,7 @@ select {
   font-weight: 650;
 }
 
-.admin-shell[data-route="apps"] .page-title-row,
-.admin-shell[data-route="store-reviews"] .page-title-row {
-  display: none;
-}
-
-.meta {
+.admin-shell[data-route="store-reviews"] .meta {
   display: inline-flex;
   align-items: center;
   flex-wrap: wrap;
@@ -3391,6 +3354,19 @@ select {
 .compact-body {
   min-height: 0;
   padding: 14px 24px 16px;
+}
+
+.compact-dashboard-page .compact-body,
+.compact-settings-page .compact-body {
+  overflow-y: auto;
+}
+
+.compact-settings-page.settings-workspace {
+  max-width: none;
+}
+
+.compact-settings-page .settings-workspace-content {
+  max-width: 1180px;
 }
 
 .compact-grid,
