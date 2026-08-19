@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/baoluchuling/testflying-server/connector/internal/connector"
+	"github.com/baoluchuling/testflying/server/connector/internal/connector"
 )
 
 func main() {
