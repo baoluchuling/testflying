@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 
 from testflying_api.admin.security import require_admin
 from testflying_api.app_logs import LEVELS, build_app_log_connect_context
@@ -97,6 +97,8 @@ def admin_artifact(
 
 @router.get("/{path:path}", response_class=HTMLResponse)
 def admin_app_fallback(request: Request, _: AdminDep, path: str = "") -> HTMLResponse:
+    if path == "api-docs":
+        return RedirectResponse("/admin/settings/api-docs", status_code=307)
     return HTMLResponse(_admin_app_index())
 
 

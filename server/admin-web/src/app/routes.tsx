@@ -4,7 +4,6 @@ export type AdminRouteKey =
   | 'apps'
   | 'accounts'
   | 'store-reviews'
-  | 'api-docs'
   | 'builds'
   | 'devices'
   | 'app-logs'
@@ -13,7 +12,7 @@ export type AdminRouteKey =
   | 'not-found';
 
 export type BuildView = 'apps' | 'history' | 'runners';
-export type SettingsView = 'general' | 'notifications' | 'llm' | 'runtime';
+export type SettingsView = 'general' | 'notifications' | 'llm' | 'runtime' | 'api-docs';
 
 const routeKeys = new Set<AdminRouteKey>([
   'dashboard',
@@ -21,7 +20,6 @@ const routeKeys = new Set<AdminRouteKey>([
   'apps',
   'accounts',
   'store-reviews',
-  'api-docs',
   'builds',
   'devices',
   'app-logs',
@@ -41,7 +39,7 @@ export function routeKeyFromPath(pathname: string): AdminRouteKey {
   }
   if (first === 'settings') {
     return parts.length === 1 ||
-      (parts.length === 2 && ['general', 'notifications', 'llm', 'runtime'].includes(parts[1]))
+      (parts.length === 2 && ['general', 'notifications', 'llm', 'runtime', 'api-docs'].includes(parts[1]))
       ? 'settings'
       : 'not-found';
   }
@@ -63,6 +61,8 @@ export function buildViewFromPath(pathname: string): BuildView {
 
 export function settingsViewFromPath(pathname: string): SettingsView {
   const view = pathname.match(/^\/admin\/settings\/([^/?#]+)/)?.[1];
-  if (view === 'notifications' || view === 'llm' || view === 'runtime') return view;
+  if (view === 'notifications' || view === 'llm' || view === 'runtime' || view === 'api-docs') {
+    return view;
+  }
   return 'general';
 }

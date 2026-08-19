@@ -38,13 +38,20 @@ def test_admin_spa_fallback_serves_nested_routes(client: TestClient) -> None:
     for path in (
         "/admin/apps",
         "/admin/store-reviews",
-        "/admin/api-docs",
+        "/admin/settings/api-docs",
         "/admin/accounts/account-apple-enterprise/apps/app-insight-ios/store",
         "/admin/accounts/account-apple-enterprise/apps/app-insight-ios/marketing-pages/page-1",
     ):
         response = client.get(path, headers=_admin_headers())
 
         _assert_admin_spa_shell(response)
+
+
+def test_admin_legacy_api_docs_path_redirects_to_settings(client: TestClient) -> None:
+    response = client.get("/admin/api-docs", headers=_admin_headers(), follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "/admin/settings/api-docs"
 
 
 def test_admin_bootstrap_uses_canonical_admin_paths(client: TestClient) -> None:

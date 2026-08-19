@@ -253,7 +253,6 @@ def admin_bootstrap(_: AdminDep) -> AdminBootstrapResponse:
             AdminNavItem(key="uploads", label="上传", path="/admin/uploads"),
             AdminNavItem(key="apps", label="商店管理", path="/admin/apps"),
             AdminNavItem(key="store-reviews", label="商店评论", path="/admin/store-reviews"),
-            AdminNavItem(key="api-docs", label="接口文档", path="/admin/api-docs"),
             AdminNavItem(key="builds", label="构建", path="/admin/builds/apps"),
             AdminNavItem(key="devices", label="设备", path="/admin/devices"),
             AdminNavItem(key="app-logs", label="App 日志", path="/admin/app-logs"),

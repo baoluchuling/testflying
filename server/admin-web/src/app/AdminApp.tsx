@@ -16,7 +16,6 @@ import { BuildWorkspacePage } from '../pages/BuildWorkspacePage';
 import { AppDetailPage } from '../pages/AppDetailPage';
 import { DevicesPage } from '../pages/DevicesPage';
 import { NotificationsPage } from '../pages/NotificationsPage';
-import { ApiDocsPage } from '../pages/ApiDocsPage';
 import { DeveloperAccountsPage } from '../pages/DeveloperAccountsPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { SettingsPage } from '../pages/SettingsPage';
@@ -26,7 +25,6 @@ const fallbackNav = [
   { key: 'uploads', label: '上传', path: '/admin/uploads' },
   { key: 'apps', label: '商店管理', path: '/admin/apps' },
   { key: 'store-reviews', label: '商店评论', path: '/admin/store-reviews' },
-  { key: 'api-docs', label: '接口文档', path: '/admin/api-docs' },
   { key: 'builds', label: '构建', path: '/admin/builds/apps' },
   { key: 'devices', label: '设备', path: '/admin/devices' },
   { key: 'app-logs', label: 'App 日志', path: '/admin/app-logs' },
@@ -171,7 +169,6 @@ export function AdminApp() {
         {activeRoute === 'apps' && !appDetailId ? <StoreAppsPage /> : null}
         {activeRoute === 'accounts' ? <DeveloperAccountsPage /> : null}
         {activeRoute === 'store-reviews' ? <StoreReviewsPage /> : null}
-        {activeRoute === 'api-docs' ? <ApiDocsPage /> : null}
         {activeRoute === 'builds' ? <BuildWorkspacePage view={buildViewFromPath(activePath)} /> : null}
         {activeRoute === 'devices' ? <DevicesPage /> : null}
         {activeRoute === 'app-logs' ? <AppLogsPage /> : null}
