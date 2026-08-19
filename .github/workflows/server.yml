@@ -1,13 +1,23 @@
-name: CI
+name: Server CI
 
 on:
   pull_request:
+    paths:
+      - "server/**"
+      - ".github/workflows/server.yml"
   push:
     branches:
       - main
+    paths:
+      - "server/**"
+      - ".github/workflows/server.yml"
 
 permissions:
   contents: write
+
+defaults:
+  run:
+    working-directory: server
 
 jobs:
   backend:
@@ -27,14 +37,14 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.20.x"
-          cache-dependency-path: connector/go.mod
+          cache-dependency-path: server/connector/go.mod
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: admin-web/package-lock.json
+          cache-dependency-path: server/admin-web/package-lock.json
 
       - name: Install dependencies
         run: |
@@ -86,14 +96,14 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: "1.20.x"
-          cache-dependency-path: connector/go.mod
+          cache-dependency-path: server/connector/go.mod
 
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: admin-web/package-lock.json
+          cache-dependency-path: server/admin-web/package-lock.json
 
       - name: Build Admin App
         run: |
@@ -146,9 +156,9 @@ jobs:
         with:
           name: testflying-build-${{ github.sha }}
           path: |
-            dist/wheels/*.whl
-            dist/images/*.tar.gz
-            dist/connectors/*
+            server/dist/wheels/*.whl
+            server/dist/images/*.tar.gz
+            server/dist/connectors/*
           if-no-files-found: error
 
       - name: Publish GitHub release assets
