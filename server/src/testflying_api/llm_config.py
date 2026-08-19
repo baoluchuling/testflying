@@ -52,19 +52,19 @@ LLM_PROTOCOLS = (
 
 LLM_PRESETS = (
     {
-        "key": "xiaomi_mimo_openai",
-        "label": "小米 MiMo（OpenAI 兼容）",
+        "key": "minimax_openai",
+        "label": "MiniMax（OpenAI 兼容）",
         "protocol": "openai_compatible",
-        "baseUrl": "https://token-plan-cn.xiaomimimo.com/v1",
-        "model": "mimo-v2.5-pro",
-        "authHeader": "api-key",
+        "baseUrl": "https://api.minimax.chat/v1",
+        "model": "MiniMax-M2",
+        "authHeader": "authorization_bearer",
     },
     {
-        "key": "xiaomi_mimo_claude",
-        "label": "小米 MiMo（Claude 兼容）",
+        "key": "minimax_claude",
+        "label": "MiniMax（Claude 兼容）",
         "protocol": "claude_compatible",
-        "baseUrl": "https://api.xiaomimimo.com/anthropic",
-        "model": "mimo-v2.5-pro",
+        "baseUrl": "https://api.minimax.chat/anthropic",
+        "model": "MiniMax-M2",
         "authHeader": "x-api-key",
     },
     {

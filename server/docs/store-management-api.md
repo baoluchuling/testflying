@@ -908,7 +908,7 @@ curl -X POST "$BASE_URL/v1/llm/feedback-classifications" \
   "model": {
     "provider": "configured",
     "protocol": "openai_compatible",
-    "model": "mimo-v2.5-pro"
+    "model": "MiniMax-M2"
   }
 }
 ```

@@ -34,10 +34,10 @@ def test_admin_api_llm_config_creates_profile_and_binds_feature(
         "/admin/api/llm-config/profiles",
         headers=_admin_headers(),
         json={
-            "name": "小米 MiMo",
+            "name": "MiniMax",
             "protocol": "openai_compatible",
-            "baseUrl": "https://token-plan-cn.xiaomimimo.com/v1",
-            "model": "mimo-v2.5-pro",
+            "baseUrl": "https://api.minimax.chat/v1",
+            "model": "MiniMax-M2",
             "apiKey": "secret-123456",
             "authHeader": "api-key",
         },

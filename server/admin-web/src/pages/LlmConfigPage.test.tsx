@@ -23,11 +23,11 @@ const baseState: LlmConfigState = {
   ],
   presets: [
     {
-      key: 'xiaomi_mimo_openai',
-      label: '小米 MiMo（OpenAI 兼容）',
+      key: 'minimax_openai',
+      label: 'MiniMax（OpenAI 兼容）',
       protocol: 'openai_compatible',
-      baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
-      model: 'mimo-v2.5-pro',
+      baseUrl: 'https://api.minimax.chat/v1',
+      model: 'MiniMax-M2',
       authHeader: 'api-key'
     }
   ],
@@ -55,11 +55,11 @@ describe('LlmConfigPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('saves Xiaomi MiMo as an OpenAI-compatible profile preset', async () => {
+  it('saves MiniMax as an OpenAI-compatible profile preset', async () => {
     const user = userEvent.setup();
 
     render(<LlmConfigPage />);
-    await user.click(await screen.findByRole('button', { name: '小米 MiMo（OpenAI 兼容）' }));
+    await user.click(await screen.findByRole('button', { name: 'MiniMax（OpenAI 兼容）' }));
     await user.type(screen.getByLabelText('API Key'), 'secret-key');
     await user.click(screen.getByRole('button', { name: '保存模型' }));
 
@@ -68,10 +68,10 @@ describe('LlmConfigPage', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
-          name: '小米 MiMo（OpenAI 兼容）',
+          name: 'MiniMax（OpenAI 兼容）',
           protocol: 'openai_compatible',
-          baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
-          model: 'mimo-v2.5-pro',
+          baseUrl: 'https://api.minimax.chat/v1',
+          model: 'MiniMax-M2',
           apiKey: 'secret-key',
           authHeader: 'api-key'
         })
@@ -88,12 +88,12 @@ function mockFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Respon
   }
   if (url === '/admin/api/llm-config/profiles' && init?.method === 'POST') {
     const profile: LlmProfileItem = {
-      id: 'llm-mimo',
-      name: '小米 MiMo（OpenAI 兼容）',
+      id: 'llm-minimax',
+      name: 'MiniMax（OpenAI 兼容）',
       protocol: 'openai_compatible',
       protocolLabel: 'OpenAI 兼容',
-      baseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
-      model: 'mimo-v2.5-pro',
+      baseUrl: 'https://api.minimax.chat/v1',
+      model: 'MiniMax-M2',
       authHeader: 'api-key',
       authHeaderLabel: 'api-key',
       apiKeySet: true,

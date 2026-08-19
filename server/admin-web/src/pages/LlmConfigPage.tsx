@@ -170,7 +170,7 @@ export function LlmConfigPage() {
               </button>
             ))}
             {state && state.profiles.length === 0 ? (
-              <div className="empty-state">还没有模型。可以先点小米 MiMo 预设。</div>
+              <div className="empty-state">还没有模型。可以先点 MiniMax 预设。</div>
             ) : null}
           </aside>
 
@@ -181,7 +181,7 @@ export function LlmConfigPage() {
                 <input
                   value={form.name}
                   onChange={(event) => patchForm({ name: event.target.value })}
-                  placeholder="例如：小米 MiMo"
+                  placeholder="例如：MiniMax"
                 />
               </label>
               <label>
@@ -220,7 +220,7 @@ export function LlmConfigPage() {
                 <input
                   value={form.model}
                   onChange={(event) => patchForm({ model: event.target.value })}
-                  placeholder="mimo-v2.5-pro"
+                  placeholder="MiniMax-M2"
                 />
               </label>
               <label>

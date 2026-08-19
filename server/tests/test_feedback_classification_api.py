@@ -22,15 +22,15 @@ def _bind_feedback_classifier(
     client: TestClient,
     *,
     protocol: str = "openai_compatible",
-    base_url: str = "https://token-plan-cn.xiaomimimo.com/v1",
-    model: str = "mimo-v2.5-pro",
+    base_url: str = "https://api.minimax.chat/v1",
+    model: str = "MiniMax-M2",
     auth_header: str = "api-key",
 ) -> str:
     create_response = client.post(
         "/admin/api/llm-config/profiles",
         headers=_admin_headers(),
         json={
-            "name": "小米 MiMo",
+            "name": "MiniMax",
             "protocol": protocol,
             "baseUrl": base_url,
             "model": model,
@@ -143,7 +143,7 @@ def test_feedback_classification_calls_openai_compatible_llm(
 
     assert response.status_code == 200
     assert captured["timeout"] == 45
-    assert captured["url"] == "https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
+    assert captured["url"] == "https://api.minimax.chat/v1/chat/completions"
     captured_headers = {key.lower(): value for key, value in captured["headers"].items()}
     assert captured_headers["api-key"] == "secret-123456"
     assert "所有输出必须使用简体中文" in captured["payload"]["messages"][0]["content"]
@@ -157,7 +157,7 @@ def test_feedback_classification_calls_openai_compatible_llm(
     assert payload["severity"] == "high"
     assert payload["priority"] == "p1"
     assert payload["routing"]["team"] == "client"
-    assert payload["model"]["model"] == "mimo-v2.5-pro"
+    assert payload["model"]["model"] == "MiniMax-M2"
 
 
 def test_feedback_classification_sends_images_to_openai_compatible_llm(
