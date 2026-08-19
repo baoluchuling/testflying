@@ -34,6 +34,28 @@ export function LlmConfigPage() {
     [selectedProfileId, state?.profiles]
   );
 
+  const providerKey = useMemo(() => {
+    const matched = (state?.presets ?? []).find(
+      (preset) =>
+        preset.baseUrl === form.baseUrl &&
+        preset.model === form.model &&
+        preset.protocol === form.protocol
+    );
+    return matched?.key ?? 'custom';
+  }, [form.baseUrl, form.model, form.protocol, state?.presets]);
+
+  function applyProvider(presetKey: string) {
+    const preset = state?.presets.find((item) => item.key === presetKey);
+    if (!preset) return;
+    patchForm({
+      ...(form.name ? {} : { name: preset.label }),
+      protocol: preset.protocol,
+      baseUrl: preset.baseUrl,
+      model: preset.model,
+      authHeader: preset.authHeader
+    });
+  }
+
   useEffect(() => {
     void refresh();
   }, []);
@@ -140,18 +162,6 @@ export function LlmConfigPage() {
 
         <div className="llm-config-grid">
           <aside className="llm-profile-list" aria-label="模型列表">
-            <div className="llm-preset-row">
-              {(state?.presets ?? []).map((preset) => (
-                <button
-                  key={preset.key}
-                  className="button subtle"
-                  type="button"
-                  onClick={() => newProfile(preset)}
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
             {loading ? <div className="empty-state">正在加载 LLM 配置...</div> : null}
             {state?.profiles.map((profile) => (
               <button
@@ -170,12 +180,26 @@ export function LlmConfigPage() {
               </button>
             ))}
             {state && state.profiles.length === 0 ? (
-              <div className="empty-state">还没有模型。可以先点 MiniMax 预设。</div>
+              <div className="empty-state">还没有模型。点新建模型后选择厂商即可自动填充。</div>
             ) : null}
           </aside>
 
           <div className="llm-profile-editor">
             <div className="form-grid two">
+              <label>
+                <span>厂商</span>
+                <select
+                  value={providerKey}
+                  onChange={(event) => applyProvider(event.target.value)}
+                >
+                  {(state?.presets ?? []).map((preset) => (
+                    <option key={preset.key} value={preset.key}>
+                      {preset.label}
+                    </option>
+                  ))}
+                  <option value="custom">自定义</option>
+                </select>
+              </label>
               <label>
                 <span>模型名称</span>
                 <input

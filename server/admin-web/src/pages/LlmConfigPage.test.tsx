@@ -23,12 +23,12 @@ const baseState: LlmConfigState = {
   ],
   presets: [
     {
-      key: 'minimax_openai',
-      label: 'MiniMax（OpenAI 兼容）',
+      key: 'minimax',
+      label: 'MiniMax',
       protocol: 'openai_compatible',
       baseUrl: 'https://api.minimax.chat/v1',
       model: 'MiniMax-M2',
-      authHeader: 'api-key'
+      authHeader: 'authorization_bearer'
     }
   ],
   profiles: [],
@@ -55,11 +55,12 @@ describe('LlmConfigPage', () => {
     vi.restoreAllMocks();
   });
 
-  it('saves MiniMax as an OpenAI-compatible profile preset', async () => {
+  it('fills provider fields from the vendor select and saves the profile', async () => {
     const user = userEvent.setup();
 
     render(<LlmConfigPage />);
-    await user.click(await screen.findByRole('button', { name: 'MiniMax（OpenAI 兼容）' }));
+    await user.click(await screen.findByRole('button', { name: '新建模型' }));
+    await user.selectOptions(screen.getByLabelText('厂商'), 'minimax');
     await user.type(screen.getByLabelText('API Key'), 'secret-key');
     await user.click(screen.getByRole('button', { name: '保存模型' }));
 
@@ -68,12 +69,12 @@ describe('LlmConfigPage', () => {
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
-          name: 'MiniMax（OpenAI 兼容）',
+          name: 'MiniMax',
           protocol: 'openai_compatible',
           baseUrl: 'https://api.minimax.chat/v1',
           model: 'MiniMax-M2',
           apiKey: 'secret-key',
-          authHeader: 'api-key'
+          authHeader: 'authorization_bearer'
         })
       })
     );

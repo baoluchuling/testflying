@@ -52,32 +52,24 @@ LLM_PROTOCOLS = (
 
 LLM_PRESETS = (
     {
-        "key": "minimax_openai",
-        "label": "MiniMax（OpenAI 兼容）",
+        "key": "minimax",
+        "label": "MiniMax",
         "protocol": "openai_compatible",
         "baseUrl": "https://api.minimax.chat/v1",
         "model": "MiniMax-M2",
         "authHeader": "authorization_bearer",
     },
     {
-        "key": "minimax_claude",
-        "label": "MiniMax（Claude 兼容）",
-        "protocol": "claude_compatible",
-        "baseUrl": "https://api.minimax.chat/anthropic",
-        "model": "MiniMax-M2",
-        "authHeader": "x-api-key",
-    },
-    {
-        "key": "openai_compatible",
-        "label": "OpenAI 兼容默认",
+        "key": "openai",
+        "label": "OpenAI",
         "protocol": "openai_compatible",
         "baseUrl": "https://api.openai.com/v1",
         "model": "gpt-4o-mini",
         "authHeader": "authorization_bearer",
     },
     {
-        "key": "claude_compatible",
-        "label": "Claude 兼容默认",
+        "key": "claude",
+        "label": "Claude",
         "protocol": "claude_compatible",
         "baseUrl": "https://api.anthropic.com",
         "model": "claude-3-5-haiku-latest",
