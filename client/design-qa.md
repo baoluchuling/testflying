@@ -6,12 +6,12 @@ final result: passed
 
 - 目标方向：内部 iOS 内测分发工具首页。
 - 参考稿：`/Users/admin/.codex/generated_images/019ec932-7686-7420-af58-27ef95b6c399/ig_029879ecda96a9d8016a2f7eac9d08819aa36d0f407407c018.png`
-- iOS 首屏截图：`/Users/admin/ai_project/apps/testflying/design-qa-assets/ios-flutter-run.png`
+- iOS 首屏截图：`design-qa-assets/ios-flutter-run.png`
 - iOS 交互截图：
-  - QA 筛选：`/Users/admin/ai_project/apps/testflying/design-qa-assets/ios-after-qa-click.png`
-  - 暂停安装：`/Users/admin/ai_project/apps/testflying/design-qa-assets/ios-after-pause-real.png`
-  - 构建详情：`/Users/admin/ai_project/apps/testflying/design-qa-assets/ios-after-detail-click.png`
-  - 详情页动作：`/Users/admin/ai_project/apps/testflying/design-qa-assets/ios-after-detail-action.png`
+  - QA 筛选：`design-qa-assets/ios-after-qa-click.png`
+  - 暂停安装：`design-qa-assets/ios-after-pause-real.png`
+  - 构建详情：`design-qa-assets/ios-after-detail-click.png`
+  - 详情页动作：`design-qa-assets/ios-after-detail-action.png`
 
 ## 已检查项
 
@@ -29,7 +29,7 @@ final result: passed
 /Users/admin/fvm/versions/3.29.2/bin/cache/dart-sdk/bin/dart /Users/admin/fvm/versions/3.29.2/bin/cache/flutter_tools.snapshot analyze
 /Users/admin/fvm/versions/3.29.2/bin/cache/dart-sdk/bin/dart /Users/admin/fvm/versions/3.29.2/bin/cache/flutter_tools.snapshot build ios --simulator --debug
 /Users/admin/fvm/versions/3.29.2/bin/cache/dart-sdk/bin/dart /Users/admin/fvm/versions/3.29.2/bin/cache/flutter_tools.snapshot run -d 99DC80A3-9737-47E6-8C21-0F560E29A4BF
-xcrun simctl io 99DC80A3-9737-47E6-8C21-0F560E29A4BF screenshot /Users/admin/ai_project/apps/testflying/design-qa-assets/ios-flutter-run.png
+xcrun simctl io 99DC80A3-9737-47E6-8C21-0F560E29A4BF screenshot design-qa-assets/ios-flutter-run.png
 ```
 
 ## 备注

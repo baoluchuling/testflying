@@ -2,17 +2,19 @@
 
 `testflying-server` 是 `testflying` 内部测试包管理分发和商店同步的服务端项目。测试包管理分发仍然是主能力；商店同步是新增的账号级扩展能力。
 
-当前仓库下分两个项目：
+本目录是 monorepo 中的服务端部分，内部包含两个项目：
 
-- 根目录：中心化后台 `testflying-server`，负责测试包上传、分发目录、设备、开发者账号、商店同步草稿、构建任务、Runner 节点、预检查缓存和同步记录。
+- 服务端根：中心化后台 `testflying-server`，负责测试包上传、分发目录、设备、开发者账号、商店同步草稿、构建任务、Runner 节点、预检查缓存和同步记录。
 - `connector/`：账号级子项目 `testflying-connector`，每个开发者账号单独部署一份，负责持有该账号商店凭证并执行商店 API 调用。
+
+除特别说明外，本文档中的命令都以 `server/` 目录为工作目录，不要在 monorepo 根执行（`alembic`、`pytest`、`docker compose` 都依赖当前目录）。
 
 中心后台只保存 connector 地址和调用 token，不保存 Apple `.p8` 或 Google service account 凭据。服务端只维护分发事实，不保存安装状态、下载进度、用户排序、通知已读等客户端状态。
 
 ## 相关文档
 
-- [客户端集成边界](docs/client-integration.md)
-- [接口契约](docs/api-contract.md)
+- [客户端集成边界](../docs/client-integration.md)
+- [接口契约](../docs/api-contract.md)（monorepo 根目录，客户端与服务端共享）
 - [商店同步设计](docs/store-sync.md)
 - [对外商店管理接口](docs/store-management-api.md)
 - [构建交付与 Runner 节点](docs/build-delivery.md)
@@ -338,4 +340,4 @@ ruff check src tests
 - Apple `.p8`、Google service account 凭据等商店私钥。
 - 跨开发者账号批量商店同步。
 
-这些客户端状态不会落库，也没有对应写接口。详细契约见 `docs/api-contract.md` 和 `docs/client-integration.md`。
+这些客户端状态不会落库，也没有对应写接口。详细契约见 `../docs/api-contract.md` 和 `../docs/client-integration.md`。

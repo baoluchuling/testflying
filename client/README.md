@@ -21,7 +21,7 @@
 - `lib/services/mock_testflight_service.dart` 提供本地 mock 数据和安装/排序状态变更。
 - `lib/services/workspace_preferences_store.dart` 通过 `shared_preferences` 保存排序、安装状态和安装任务。
 - `docs/ui-baseline.md` 记录当前已通过的 UI 基线和交互验收点。
-- `docs/api-contract.md` 记录后续接真实后端时的资源、接口和错误约定。
+- 接口契约见 monorepo 根目录 `../docs/api-contract.md`，与 `../docs/client-integration.md` 一起构成客户端与服务端共享的边界文档。
 - `lib/pages/app_details.dart` 和 `lib/pages/build_details.dart` 已提供应用详情和构建详情入口。
 - `pubspec.yaml` 已引入 `go_router`，但项目还没有真正接入路由。
 - `test/widget_test.dart` 覆盖主要 UI 和交互，service 测试覆盖 mock 数据、本地状态、API client、remote DTO 和 remote service 请求。
@@ -29,7 +29,7 @@
 ## 目录结构
 
 ```text
-apps/testflying/
+client/（monorepo 内目录）
 ├── lib/
 │   ├── main.dart
 │   ├── models/
@@ -69,7 +69,7 @@ apps/testflying/
 
 ## 开发命令
 
-在 `apps/testflying` 目录下执行：
+在 monorepo 的 `client/` 目录下执行：
 
 ```bash
 flutter pub get
@@ -131,7 +131,7 @@ flutter run \
 4. 用户可变状态只通过 service 层写入 `WorkspacePreferencesStore`，Widget 不直接操作本地存储。
 5. 真实接口接入时通过 `TESTFLYING_SERVICE=remote` 切到 `RemoteTestFlightService`，不要在 Widget 里判断环境。
 6. 行为变更需要补充 widget test 或 service test。
-7. API 资源和状态变更以 `docs/api-contract.md` 为契约草案。
+7. API 资源和状态变更以 `../docs/api-contract.md` 为契约（monorepo 根目录共享文档）。
 
 ## Git 说明
 
