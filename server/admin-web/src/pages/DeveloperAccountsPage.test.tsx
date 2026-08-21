@@ -30,7 +30,7 @@ describe('DeveloperAccountsPage store workspace', () => {
 
     await screen.findByText(/lookrva · com\.example\.lookrva/);
     await screen.findAllByText(/当前商店最新版本（含未发布）：1\.0/);
-    await user.click(screen.getByRole('button', { name: '展开描述多语言' }));
+    await user.click(await screen.findByRole('button', { name: '展开描述多语言' }));
     const hantDescription = await screen.findByRole('textbox', { name: 'zh-Hant 描述' });
     await user.clear(hantDescription);
     await user.type(hantDescription, '繁體描述');
@@ -80,7 +80,7 @@ describe('DeveloperAccountsPage store workspace', () => {
     await screen.findByText(/lookrva · com\.example\.lookrva/);
     await screen.findAllByText(/当前商店最新版本（含未发布）：1\.0/);
     await user.click(await screen.findByRole('button', { name: '翻译描述到其他语言' }));
-    await user.click(screen.getByRole('button', { name: '展开描述多语言' }));
+    await user.click(await screen.findByRole('button', { name: '展开描述多语言' }));
 
     const hantDescription = (await screen.findByRole('textbox', {
       name: 'zh-Hant 描述'
