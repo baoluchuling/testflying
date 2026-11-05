@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
+import shlex
 import subprocess
 import sys
 import time
@@ -19,24 +19,27 @@ def main() -> None:
         raise RuntimeError("Use no argument for loopback tests, or production for the installed service")
     env = {**os.environ, "TMPDIR": str(tmp), "XDG_CACHE_HOME": str(tmp / "cache"),
            "NPM_CONFIG_CACHE": str(tmp / "npm-cache"), "PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD": "1"}
+    for key in ("SETUP_BASE_URL", "SETUP_ADMIN_TOKEN", "SETUP_CDP_ENDPOINT"):
+        env.pop(key, None)
     subprocess.run(["npm", "install", "--prefix", str(tmp / "browser"), "--ignore-scripts", "--no-audit",
-                    "--no-fund", "--package-lock=false", "playwright-core@1.56.1"], cwd=PROJECT, env=env,
+                    "--no-fund", "--package-lock=false", "--registry=https://registry.npmjs.org",
+                    "playwright-core@1.56.1"], cwd=PROJECT, env=env,
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if sys.argv[1:] == ["production"]:
         code = "import json; e=dict(l.strip().split('=',1)for l in open('/etc/testflying-store-api/service.env')if '='in l and not l.startswith('#')); print(json.dumps({'url':e['STORE_API_PUBLIC_URL'],'token':e['STORE_API_ADMIN_TOKEN']}))"
         result = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o",
                                  "StrictHostKeyChecking=yes", "-o", "LogLevel=ERROR", "testflying-prod",
-                                 "python3 -c " + __import__("shlex").quote(code)], stdout=subprocess.PIPE,
+                                 "python3 -c " + shlex.quote(code)], stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, check=True, timeout=45)
         private = json.loads(result.stdout)
         env["SETUP_BASE_URL"] = private["url"].replace("https://", "http://", 1)
         env["SETUP_ADMIN_TOKEN"] = private["token"]
     profile = tmp / "chrome-profile"
-    executable = os.environ.get("SETUP_CHROME_EXECUTABLE", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    executable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     chrome = subprocess.Popen([executable, "--headless=new", "--remote-debugging-port=0",
                                "--remote-debugging-address=127.0.0.1", "--user-data-dir=" + str(profile),
                                "--no-first-run", "--no-default-browser-check", "--disable-background-networking",
-                               "--disable-sync", "--disable-component-update", "--disable-breakpad",
+                               "--no-proxy-server", "--disable-sync", "--disable-component-update", "--disable-breakpad",
                                "--disable-crash-reporter", "--password-store=basic", "--use-mock-keychain"],
                               env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
