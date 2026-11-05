@@ -1,6 +1,6 @@
 # Independent Store API
 
-独立的 Rust 商店 API 与账号级 Connector。Testflying 和其他后台可以按 `platform + Bundle ID/包名` 调用，同一个账号的多个应用映射到一个 Connector。
+独立的 Rust 商店 API 与账号 Connector。Testflying 和其他后台可以按 `platform + Bundle ID/包名` 调用；同一节点可同时配置 Apple 和 Google 凭据，服务两边的多个应用。
 
 本目录可独立构建、部署，不依赖 Testflying Python 数据库。现有 `server/` 后台、页面、旧接口与 Go Connector 本次保持原样，尚未切换到此服务；新旧服务不要同时对同一个账号执行写操作。
 
@@ -11,6 +11,8 @@
 新 Connector 源码在 [`crates/store-connector`](crates/store-connector)，它只依赖本目录的共享协议和商店适配。旧 Go Connector 在 [`../server/connector`](../server/connector)，有自己的 Go 模块与镜像。迁移时可整体复制 `store-service/`；GitHub Actions 入口留在仓库根，运行目录仍是 `store-service/`。
 
 通用 Connector 安装包：[Store Connector v0.1.0](https://github.com/baoluchuling/testflying/releases/tag/store-connector-v0.1.0)，提供 Linux x64、macOS Apple Silicon arm64 和 Windows x64。包中只含配置模板，节点专属配置通过中心单独获取。已有 v2 节点升级时保留原 `connector.json`，替换程序即可。包内说明见 [packaging/connector/README.md](packaging/connector/README.md)。
+
+需要直接可用的专属包时，打开中心的 `/connector-setup/` [下载配置页](docs/connector-setup.md)：填写账号字段、选择凭据文件，即可在浏览器内合并程序、节点配置、两套凭据与启动脚本，文件路径自动设置。应用清单不进入包内，继续由中心维护映射。
 
 ```text
 Testflying / 其他管理后台
@@ -28,9 +30,9 @@ Testflying / 其他管理后台
 ## 边界
 
 - Store API 只保存 Connector 注册表、Token 签发 nonce 和应用映射。不保存文案、页面、截图、发布草稿或任务队列。
-- 一个 Connector 代表一个商店账号。商店私钥和 Google service account JSON 仅配置在该节点。
+- 一个 Connector 可同时配置一套 Apple 账号和一套 Google service account 凭据，处理两边的多个应用。应用清单只在中心维护，商店私钥仅放在节点；下载页在浏览器本地合并，不发送给中心。
 - 外部操作不需要中心账号 ID、内部应用 ID 或 Apple 数字 App ID；iOS 节点按 Bundle ID 查询真实 App ID。
-- API 端和 Connector 都按账号限制同一时刻一条执行请求，忙碌时返回 409。
+- API 端和 Connector 都按节点限制同一时刻一条执行请求，忙碌时返回 409；同节点的两平台共用该执行限制。
 - 断线、错误和超时不会自动重试或重放。用户重新触发是一次新请求。超时不能证明商店未修改，调用方应先查询商店状态。
 - 已经开始的节点操作会完成必要清理，即使调用方已断开；期间保持账号忙碌，结果丢弃。进程突然退出仍可能留下待到期的 Google edit 或 Apple 部分修改。
 - 单个 Store API 实例拥有所有 WSS 连接。当前部署使用单实例；不能把多副本随机负载均衡当成支持跨进程路由。

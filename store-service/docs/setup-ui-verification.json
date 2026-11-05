@@ -1,0 +1,38 @@
+{
+  "runId": "a68bce237d6642898af10c207f8c9d5e",
+  "stage": "browser-verified",
+  "browserVerified": true,
+  "vendor": {
+    "name": "jszip",
+    "version": "3.10.1",
+    "registryIntegrity": "sha512-xXDvecyTpGLrqFrvkrUSoxxfJI5AH7U8zxxtVclpsUtMCq4JQ290LY8AW5c7Ggnr/Y/oK+bQMbqK2qmtk3pN4g==",
+    "sha256": {
+      "jszip.min.js": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
+      "JSZIP-LICENSE.markdown": "566c953c6090b1218ca6217dd7359d45dde46581968586dc607d59a78af6a9c4"
+    },
+    "packageSha256": "5117f4a2a645aeb307bf3b829c575ad58135cc97e75291e594532ab5b5b21b23"
+  },
+  "packageTestsRunId": "17aaa5415a9340bdbfb9f43133d88704",
+  "packageTestsPassed": 6,
+  "production": false,
+  "checks": [
+    "invalid administrator token rejected",
+    "administrator login clears the token field",
+    "Apple Key ID recognized from the original filename",
+    "failed download retains the newly created node",
+    "real Windows executable preserved in a downloadable dual-platform private ZIP",
+    "both credential paths are automatic and no application list is included",
+    "repeat download reuses node identity and omits disabled-platform secrets",
+    "logout clears files and browser storage remains empty",
+    "mobile layout has no horizontal overflow",
+    "no credential file or account fields are uploaded and CSP passes"
+  ],
+  "windowsExecutableSha256": "dea82d7447df77756f34648557d4f33c1f697dcc2f2562747a8b4dcacccc43f7",
+  "credentialFilesUploaded": false,
+  "remainingTemporaryProcesses": [],
+  "cleanup": "See the supervisor cleanup report for this runId",
+  "verificationNodeIds": [
+    "ec81031b-d180-4b04-9952-49f7b126f63d"
+  ],
+  "verificationNodesDisabled": false
+}

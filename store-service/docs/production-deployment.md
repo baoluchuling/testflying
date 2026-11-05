@@ -39,6 +39,8 @@ HTTP 不需要 `--cacert`，也不需要关闭 HTTPS 校验；Token 和正文在
 
 ## 无后台页面的节点安装
 
+如需图形化填写账号信息并自动合并凭据，使用中心的 `/connector-setup/` [下载配置页](connector-setup.md)。以下为直接使用管理 API 的方式。
+
 从 root 可读的 `service.env` 在可信操作环境获取 `STORE_API_ADMIN_TOKEN`，设置为调用端 `ADMIN_TOKEN`。不要把配置或完整创建响应写入公共日志。
 
 ```sh

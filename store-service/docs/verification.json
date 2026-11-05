@@ -1,7 +1,16 @@
 {
-  "runId": "b127afe60b0542b19d79dafed0989ba7",
-  "finishedAt": "2026-11-04T07:43:59.092136+00:00",
+  "runId": "e672b188becb4ef5a629b7ef59166b3b",
+  "finishedAt": "2026-11-05T05:03:13.579547+00:00",
   "checks": [
+    {
+      "command": [
+        "node",
+        "--test",
+        "crates/store-api/tests/setup-package.test.mjs"
+      ],
+      "exitCode": 0,
+      "testSummaries": []
+    },
     {
       "command": [
         "cargo",
@@ -24,14 +33,15 @@
       "testSummaries": [
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
-        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.81s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.74s",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
         "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
-        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.55s",
+        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.67s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
@@ -77,18 +87,27 @@
       "testSummaries": []
     }
   ],
-  "testsPassed": 42,
+  "testsPassed": 45,
   "sourceHashes": {
     "Cargo.lock": "a5c0e41565b308a9f324c826b605d0299aa5c0cfcedeb829b0a9c6c39e6440a3",
     "Cargo.toml": "fd87675617bd5deda3fe4e5fb91d81b194a43536aed5a43234b68c7592778db9",
     "crates/store-api/Cargo.toml": "c5e8e8e73bcfe57f4db5fd1eb0443ec0915fa35f72d3b2866c1f6ab57434545e",
-    "crates/store-api/src/lib.rs": "041199ca23238a5fcea5a1a2570c8a9132cff77c0b6d3beb48025b8d06b313bc",
+    "crates/store-api/src/lib.rs": "78baedc081814eb3432c824fef234b01ca8cb590d93b3f6ded6002f9d799056a",
     "crates/store-api/src/main.rs": "bd018cec7e721cecb2aa339b6e5c08c9f558b63c0d194e844f3552bdbc6ba73e",
     "crates/store-api/src/registry.rs": "ca3acbdc1fb772a723e59862834c414d9beaa041a7a7b1e0150287433d73de2c",
+    "crates/store-api/src/setup/app.mjs": "95a0d31cb85a67423a2d1a9cf87a2fb33011e77f71306fc76ebd6aa51d791582",
+    "crates/store-api/src/setup/index.html": "eb0465b050aaf8482cde4b46adb00e3f9637d8370d6db6e2fff7ab10e3c46d69",
+    "crates/store-api/src/setup/packager.mjs": "410af5ce9b3d5bd778a0293649ee678adc8bce1abc08f8641d4392b89b1d3000",
+    "crates/store-api/src/setup/style.css": "de5cd43df9d4c11f578d3d06e434c935be6029a2a3176a49c2e0cfdb9233ce9a",
+    "crates/store-api/src/setup/vendor/JSZIP-LICENSE.markdown": "566c953c6090b1218ca6217dd7359d45dde46581968586dc607d59a78af6a9c4",
+    "crates/store-api/src/setup/vendor/jszip.min.js": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
+    "crates/store-api/src/setup.rs": "0e96e1c310e7f179f5db9ff0b3b3b5709ee6ba0f15ce5e4f50d69e6d23de314f",
     "crates/store-api/src/transport.rs": "5960bff6a7baba83bc595c9a87e1a24ca943f23dcb5d68b2bc42e8ca421cd56f",
     "crates/store-api/src/uploads.rs": "52674a84c7c1f0c924b1150fcda83847572d27942e1eac2fbe8c11026465f6c0",
     "crates/store-api/tests/service.rs": "68847172eb9a39767f25e48d788911085362d528b922b1eb7d89ebbd8a091be2",
-    "crates/store-api/tests/uploads.rs": "1f043257685b2dbb010690d95716b5836a125393a1bbbb55c420e115e78edaa2",
+    "crates/store-api/tests/setup-package.test.mjs": "5eb2f81b4cff9b9290ef664a8a221c7c1cefc030bf32fe4159b330123e2af7b5",
+    "crates/store-api/tests/setup.rs": "949504948092ec171f49ec0510bef1d8cd5ac48448f71519f02d48fb10448168",
+    "crates/store-api/tests/uploads.rs": "90aa44b162bac6ba0be672d8886ec0e348b01ee67b71c45f53b4aa218f765562",
     "crates/store-connector/Cargo.toml": "9a9614156f0c540f2f8259cfb5f5c6913aabae473d34bc42020e6790438c4c33",
     "crates/store-connector/src/lib.rs": "e9c7b5112294d36d75e383aceb6273c01f4a1555b56439bc51a8a4ce431b46b8",
     "crates/store-connector/src/main.rs": "c057270334ff482a9e3ad9d4338e43011a23b10b519587ee4968fd823307e18b",
@@ -106,7 +125,10 @@
     "crates/store-provider/src/reviews.rs": "f4dd91ff8620eea070cc8a97bfc5d0cab08bf56583d706009793ed5327393f3b",
     "crates/store-provider/src/validation.rs": "d3c19542c217a28f8890ec5383305ce7ee57a94d107380916dadb75fc73e62c2",
     "crates/store-provider/tests/live.rs": "7c0361f279b4edc50024baa466b9d597ec7ac9ba6202c6552fbbe4e309d9c46a",
-    "scripts/verify_store_refactor.py": "9e8e62233cdb2c0ed9db625ebf2025553ecd19917d6021f7b292b39f047b672f"
+    "deploy/testflying-prod-ca.crt": "d6a6874992dd6197da68c43037ab176cd3d7f7ce7be2966706293dc499443296",
+    "packaging/connector/start.cmd": "1ac89efbdee6998103c4aaba6a55bf3b59b212c498ee500cbc94371914b3b529",
+    "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
+    "scripts/verify_store_refactor.py": "c5b4385f6a14509aefd9faf1aaf60bff310ccb5245dd9df5a7d24e1990496c8e"
   },
   "notVerified": [
     "Live store accounts",

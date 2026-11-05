@@ -1,4 +1,5 @@
 pub mod registry;
+mod setup;
 pub mod transport;
 mod uploads;
 
@@ -178,6 +179,7 @@ pub fn router(state: Arc<ApiState>) -> Router {
         )
         .merge(management)
         .merge(public)
+        .merge(setup::routes())
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(state)
 }

@@ -23,7 +23,9 @@ APP_PATH = /v1/store-management/apps/{platform}/{bundleIdentifier}
 
 应用标识长度为 1–180 字节，允许字母、数字、点、下划线和短横线，不允许首尾点或连续两个点。同名 iOS/Android 应用分别定位。
 
-每个商店账号对应一个 Connector，多个应用可以绑定同一个 Connector。Store API 根据应用标识查映射，再选择 HTTP 或 WSS 执行；不需要调用方提供 `accountId`、内部 `appId` 或 Apple 数字 App ID。
+一个 Connector 可同时配置一套 Apple 和一套 Google 凭据，两边的多个应用都可以绑定到该节点。应用清单只在中心维护，不写入节点配置。Store API 根据应用标识查映射，再选择 HTTP 或 WSS 执行；不需要调用方提供 `accountId`、内部 `appId` 或 Apple 数字 App ID。
+
+生成包含凭据与相对路径的专属安装包可使用 `/connector-setup/` [下载配置页](connector-setup.md)。页面复用下述管理员 API；账号文件在浏览器本地合并，不上传中心。
 
 所有需认证的请求使用：
 

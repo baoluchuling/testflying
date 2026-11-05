@@ -18,7 +18,12 @@ PROJECT = Path(__file__).resolve().parents[1]
 def source_hashes() -> dict[str, str]:
     crates = PROJECT / "crates"
     files = sorted([PROJECT / "Cargo.toml", PROJECT / "Cargo.lock", Path(__file__).resolve(),
+                    PROJECT / "deploy/testflying-prod-ca.crt",
+                    PROJECT / "packaging/connector/start.cmd", PROJECT / "packaging/connector/start.sh",
                     *crates.rglob("Cargo.toml"), *crates.rglob("*.rs")])
+    files = sorted(set(files + list((crates / "store-api/src/setup").rglob("*"))
+                       + list(crates.rglob("*.mjs"))))
+    files = [path for path in files if path.is_file()]
     return {str(p.relative_to(PROJECT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
 
 
@@ -76,6 +81,7 @@ def main() -> int:
            "CARGO_HOME": str(temporary / "cargo-home"), "CARGO_INCREMENTAL": "0",
            "CARGO_BUILD_JOBS": "4", "TMPDIR": str(temporary), "RUST_BACKTRACE": "1"}
     commands = [
+        ["node", "--test", "crates/store-api/tests/setup-package.test.mjs"],
         ["cargo", "fmt", "--all", "--", "--check"],
         ["cargo", "test", "--locked", "--workspace"],
         ["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"],

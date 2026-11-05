@@ -233,6 +233,9 @@ async fn central_http_upload_larger_than_json_limit_is_scoped_consumed_and_not_r
         .client
         .put(copied["uploadUrl"].as_str().unwrap())
         .bearer_auth("invalid")
+        // The server may reject the ticket before draining this large body.
+        // Do not reuse that connection for the following independent JSON check.
+        .header("connection", "close")
         .body(bytes)
         .send()
         .await

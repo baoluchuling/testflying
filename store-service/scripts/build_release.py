@@ -17,9 +17,10 @@ from verify_store_refactor import PROJECT, managed_root, source_hashes
 
 def main() -> None:
     root = managed_root()
-    if sys.argv[1:] not in ([], ["windows"]) or platform.system() != "Darwin" or platform.machine() != "arm64":
+    if sys.argv[1:] not in ([], ["windows"], ["api"]) or platform.system() != "Darwin" or platform.machine() != "arm64":
         raise RuntimeError("This release workflow requires an Apple Silicon macOS host")
     windows = sys.argv[1:] == ["windows"]
+    api_only = sys.argv[1:] == ["api"]
     target_triple = "x86_64-pc-windows-gnu" if windows else "x86_64-unknown-linux-musl"
     tmp = root / "tmp"
     tmp.mkdir(exist_ok=True)
@@ -58,6 +59,9 @@ def main() -> None:
     if windows:
         commands.append(["cargo", "zigbuild", "--locked", "--release", "--target", target_triple,
                          "--package", "store-connector"])
+    elif api_only:
+        commands.append(["cargo", "zigbuild", "--locked", "--release", "--target", target_triple,
+                         "--package", "store-api"])
     else:
         commands.extend([
             ["cargo", "zigbuild", "--locked", "--release", "--target", target_triple,
@@ -87,6 +91,8 @@ def main() -> None:
     if windows:
         outputs = {"releases/windows-amd64/store-connector.exe":
                    tmp / "target/x86_64-pc-windows-gnu/release/store-connector.exe"}
+    elif api_only:
+        outputs = {"releases/linux-amd64/store-api": tmp / "target/x86_64-unknown-linux-musl/release/store-api"}
     hashes = {}
     for relative, binary in outputs.items():
         description = subprocess.check_output(["file", str(binary)], text=True).strip()
@@ -122,7 +128,7 @@ def main() -> None:
               "sourceCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT, text=True).strip(),
               "sourceHashes": baseline, "toolchain": "Rust 1.94.0 / cargo-zigbuild 0.20.1 / Zig 0.14.1",
               "outputs": hashes, "cleanup": "See the supervisor cleanup report for this runId"}
-    report_name = "windows-release-build.json" if windows else "deployment-build.json"
+    report_name = "windows-release-build.json" if windows else ("setup-api-build.json" if api_only else "deployment-build.json")
     (PROJECT / "docs" / report_name).write_text(json.dumps(report, indent=2) + "\n")
     print("Published formal release files", flush=True)
 
