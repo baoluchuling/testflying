@@ -1,5 +1,5 @@
 {
-  "runId": "ab6706b86f8a4cbc945e21fdb2b242df",
+  "runId": "a4bd000776b6406c85ce5dced226a327",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -24,6 +24,7 @@
     "both credential paths are automatic and no application list is included",
     "repeat download reuses node identity and omits disabled-platform secrets",
     "program-only upgrade preserves node identity without including local configuration",
+    "admin can issue, copy, retrieve, and revoke the scoped integration token in the setup page",
     "reload clears files and browser storage remains empty",
     "mobile layout has no horizontal overflow",
     "no credential file or account fields are uploaded and CSP passes"
@@ -33,7 +34,7 @@
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "f9fafd0c-2073-4fd7-a369-a7e1e4dc4a6c"
+    "237d0732-ba15-4641-bb2f-3bb7a4ad22a5"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0
