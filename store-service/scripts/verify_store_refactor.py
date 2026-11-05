@@ -18,8 +18,11 @@ PROJECT = Path(__file__).resolve().parents[1]
 def source_hashes() -> dict[str, str]:
     crates = PROJECT / "crates"
     files = sorted([PROJECT / "Cargo.toml", PROJECT / "Cargo.lock", Path(__file__).resolve(),
+                    PROJECT / "scripts/verify_connector_install.py",
                     PROJECT / "deploy/testflying-prod-ca.crt",
                     PROJECT / "packaging/connector/start.cmd", PROJECT / "packaging/connector/start.sh",
+                    PROJECT / "packaging/connector/install.cmd", PROJECT / "packaging/connector/install.ps1",
+                    PROJECT / "packaging/connector/install.sh",
                     *crates.rglob("Cargo.toml"), *crates.rglob("*.rs")])
     files = sorted(set(files + list((crates / "store-api/src/setup").rglob("*"))
                        + list(crates.rglob("*.mjs"))))
@@ -82,6 +85,7 @@ def main() -> int:
            "CARGO_BUILD_JOBS": "4", "TMPDIR": str(temporary), "RUST_BACKTRACE": "1"}
     commands = [
         ["node", "--test", "crates/store-api/tests/setup-package.test.mjs"],
+        [sys.executable, "-B", "scripts/verify_connector_install.py"],
         ["cargo", "fmt", "--all", "--", "--check"],
         ["cargo", "test", "--locked", "--workspace"],
         ["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"],

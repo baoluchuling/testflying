@@ -20,8 +20,8 @@ const config = { connectorId: "12345678-test-node", token: "node-test-token", se
   provider: { mode: "live" }, apps: ["must-not-be-copied"] };
 const assets = {
   caBytes: new Uint8Array(await readFile(new URL("../../../deploy/testflying-prod-ca.crt", import.meta.url))),
-  windowsLauncher: await readFile(new URL("../../../packaging/connector/start.cmd", import.meta.url), "utf8"),
-  unixLauncher: await readFile(new URL("../../../packaging/connector/start.sh", import.meta.url), "utf8"),
+  scripts: Object.fromEntries(await Promise.all(["start.cmd", "start.sh", "install.cmd", "install.ps1", "install.sh"].map(async (name) =>
+    [name, await readFile(new URL(`../../../packaging/connector/${name}`, import.meta.url), "utf8")]))),
 };
 const executable = new Uint8Array([77, 90, 1, 2, 3, 4, 5]);
 async function base(target = "windows-amd64", extra = {}, override = {}) {
@@ -48,6 +48,8 @@ test("one Windows node contains both accounts, safe relative paths and unchanged
   assert.equal(actual.bundleIdentifier, undefined);
   assert.match(await zip.file("start.cmd").async("string"), /cd \/d "%~dp0"/);
   assert.match(await zip.file("start.cmd").async("string"), /SSL_CERT_FILE/);
+  assert.match(await zip.file("install.cmd").async("string"), /install\.ps1/);
+  assert.match(await zip.file("install.ps1").async("string"), /New-ScheduledTaskTrigger -AtStartup/);
   assert.ok(!(await zip.file("start.cmd").async("string")).replace(/\r\n/g, "").includes("\n"));
   assert.ok(zip.file("testflying-prod-ca.crt"));
   assert.equal(zip.file("connector.json").unixPermissions & 0o777, 0o600);
@@ -73,7 +75,22 @@ test("Google-only Unix package uses the same identity and a working-directory-aw
     assert.equal(zip.file("credentials/apple-private-key.p8"), null);
     assert.match(await zip.file("start.sh").async("string"), /CDPATH=/);
     assert.equal(zip.file("start.sh").unixPermissions & 0o777, 0o700);
+    assert.equal(!!zip.file("install.sh"), target === "darwin-arm64");
   }
+});
+
+test("program-only upgrades leave configuration and shop credentials out of the ZIP", async () => {
+  for (const target of ["windows-amd64", "darwin-arm64"]) {
+    const result = await buildInstaller(await base(target), { target, upgrade: true }, assets, JSZip);
+    const zip = await JSZip.loadAsync(result.bytes, { checkCRC32: true });
+    const entry = target === "windows-amd64" ? "install.cmd" : "install.sh";
+    assert.ok(zip.file(entry));
+    assert.equal((await zip.file("node-id.txt").async("string")).trim(), config.connectorId);
+    assert.equal(zip.file("connector.json"), null);
+    assert(!Object.keys(zip.files).some((name) => name.startsWith("credentials/")));
+    assert.match(result.fileName, /-upgrade\.zip$/);
+  }
+  await assert.rejects(buildInstaller(await base("linux-amd64"), { target: "linux-amd64", upgrade: true }, assets, JSZip), /不支持/);
 });
 
 test("invalid or oversized credentials fail before any installation work", () => {
@@ -94,5 +111,6 @@ test("archive rejects injected files, unsafe paths and invalid center identity",
 test("missing launch assets or unsupported targets never produce a misleading package", async () => {
   await assert.rejects(buildInstaller(await base(), { target: "windows-arm64", account }, assets, JSZip), /不支持/);
   await assert.rejects(buildInstaller(await base(), { target: "windows-amd64", account }, { ...assets, caBytes: encode("invalid") }, JSZip), /CA/);
-  await assert.rejects(buildInstaller(await base(), { target: "windows-amd64", account }, { ...assets, windowsLauncher: "invalid" }, JSZip), /启动脚本/);
+  await assert.rejects(buildInstaller(await base(), { target: "windows-amd64", account },
+    { ...assets, scripts: { ...assets.scripts, "start.cmd": "invalid" } }, JSZip), /启动脚本/);
 });

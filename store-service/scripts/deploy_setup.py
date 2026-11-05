@@ -172,7 +172,8 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             time.sleep(0.5)
         check(healthy, "HTTP health after API-only rollout")
         check(request("/health", scheme="https")[0] == 200, "HTTPS health with certificate verification")
-        for suffix in ("", "app.mjs", "packager.mjs", "style.css", "jszip.min.js", "ca.crt", "start.cmd", "start.sh"):
+        for suffix in ("", "app.mjs", "packager.mjs", "style.css", "jszip.min.js", "ca.crt", "start.cmd", "start.sh",
+                       "install.cmd", "install.ps1", "install.sh"):
             check(request("/connector-setup/" + suffix)[0] == 200, "setup asset " + (suffix or "index"))
         check(request("/v1/connectors")[0] == 401, "administrator authentication still required")
         setup = "/connector-setup/api/connectors"

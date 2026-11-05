@@ -3,6 +3,12 @@ const ARCHIVE_LIMIT = 160 * 1024 * 1024;
 const TARGETS = new Set(["windows-amd64", "linux-amd64", "darwin-arm64"]);
 const encoder = new TextEncoder();
 
+export function installationFiles(target) {
+  if (target === "windows-amd64") return ["install.cmd", "install.ps1"];
+  if (target === "darwin-arm64") return ["install.sh"];
+  return [];
+}
+
 function text(bytes, label) {
   if (!(bytes instanceof Uint8Array) || !bytes.length || bytes.length > CREDENTIAL_LIMIT) {
     throw new Error(`${label}为空或超过 256 KiB`);
@@ -54,12 +60,14 @@ export function validateAccount(input) {
   return { provider, files };
 }
 
-export async function buildInstaller(installerBytes, { target, account }, assets, JSZip) {
+export async function buildInstaller(installerBytes, { target, account, upgrade = false }, assets, JSZip) {
   if (!TARGETS.has(target)) throw new Error("不支持的安装平台");
+  const installFiles = installationFiles(target);
+  if (upgrade && !installFiles.length) throw new Error("所选平台不支持仅升级程序");
   if (!(installerBytes instanceof Uint8Array) || !installerBytes.length || installerBytes.length > ARCHIVE_LIMIT) {
     throw new Error("安装包大小无效");
   }
-  const validated = validateAccount(account);
+  const validated = upgrade ? null : validateAccount(account);
   const binary = target === "windows-amd64" ? "store-connector.exe" : "store-connector";
   const launcher = target === "windows-amd64" ? "start.cmd" : "start.sh";
   const allowed = new Set([binary, launcher, "connector.json", "README.md", "testflying-prod-ca.crt"]);
@@ -87,27 +95,41 @@ export async function buildInstaller(installerBytes, { target, account }, assets
   for (const key of ["connectorId", "token", "serverUrl", "messageKey", "uploadKey"]) {
     if (typeof source[key] !== "string" || !source[key]) throw new Error("中心安装配置不完整");
   }
-  const config = {};
-  for (const key of ["connectorId", "token", "serverUrl", "messageKey", "uploadKey", "baseUrl", "listenAddr", "requestTimeoutSeconds"]) {
-    if (Object.hasOwn(source, key)) config[key] = source[key];
+  const { connectorId } = source;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(connectorId)) throw new Error("中心节点身份无效");
+  if (upgrade) {
+    zip.remove("connector.json");
+    zip.file("node-id.txt", connectorId + "\n", { unixPermissions: 0o600 });
+  } else {
+    const config = {};
+    for (const key of ["connectorId", "token", "serverUrl", "messageKey", "uploadKey", "baseUrl", "listenAddr", "requestTimeoutSeconds"]) {
+      if (Object.hasOwn(source, key)) config[key] = source[key];
+    }
+    config.provider = validated.provider;
+    zip.file("connector.json", JSON.stringify(config, null, 2) + "\n", { unixPermissions: 0o600 });
+    for (const file of validated.files) zip.file(file.path, file.bytes, { unixPermissions: 0o600 });
   }
-  config.provider = validated.provider;
-  zip.file("connector.json", JSON.stringify(config, null, 2) + "\n", { unixPermissions: 0o600 });
-  for (const file of validated.files) zip.file(file.path, file.bytes, { unixPermissions: 0o600 });
   if (!(assets.caBytes instanceof Uint8Array) || !new TextDecoder().decode(assets.caBytes).includes("BEGIN CERTIFICATE")) {
     throw new Error("中心 CA 证书不可用");
   }
-  let script = launcher === "start.cmd" ? assets.windowsLauncher : assets.unixLauncher;
-  if (typeof script !== "string" || !script.includes("SSL_CERT_FILE") || !script.includes("connector.json")) {
+  const launcherText = assets.scripts?.[launcher];
+  if (typeof launcherText !== "string" || !launcherText.includes("SSL_CERT_FILE") || !launcherText.includes("connector.json")) {
     throw new Error("启动脚本不可用");
   }
-  if (launcher === "start.cmd") script = script.replace(/\r?\n/g, "\r\n");
+  for (const name of [launcher, ...installFiles]) {
+    let script = assets.scripts[name];
+    if (typeof script !== "string" || !script.trim()) throw new Error("安装脚本不可用");
+    if (name.endsWith(".cmd") || name.endsWith(".ps1")) script = script.replace(/\r?\n/g, "\r\n");
+    zip.file(name, script, { unixPermissions: 0o700 });
+  }
   zip.file("testflying-prod-ca.crt", assets.caBytes, { unixPermissions: 0o644 });
-  zip.file(launcher, script, { unixPermissions: 0o700 });
-  zip.file("README.md", "# Connector\n\n解压整个安装包后运行 " + launcher +
-    "。凭据已经放在 credentials 目录，路径已经写入 connector.json。\n" +
-    "同一个节点可处理 iOS 和 Android，应用映射只在中心维护。\n" +
-    "本包包含节点认证资料及商店私钥，请只保存在可信设备，不要上传公共仓库或转发。\n", { unixPermissions: 0o600 });
+  const entry = installFiles[0] ?? launcher;
+  const instructions = upgrade
+    ? "升级已安装节点时，解压后运行 " + entry + "，本机配置会保留。\n" +
+      "如果旧版是手动运行的，把本包解压覆盖到旧目录，保留原 connector.json 和 credentials，再运行安装。\n"
+    : "解压整个安装包后运行 " + entry + (installFiles.length ? "，确认系统授权后会立即启动并设置开机启动。\n" : "。\n") +
+      "凭据位于 credentials 目录，请只保存在可信设备。\n";
+  zip.file("README.md", "# Connector\n\n" + instructions, { unixPermissions: 0o600 });
   const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", platform: "UNIX" });
-  return { bytes, connectorId: config.connectorId, fileName: `connector-${target}-${config.connectorId.slice(0, 8)}.zip` };
+  return { bytes, connectorId, fileName: `connector-${target}-${connectorId.slice(0, 8)}${upgrade ? "-upgrade" : ""}.zip` };
 }

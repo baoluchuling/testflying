@@ -9,9 +9,17 @@
 3. 选择需要启用的平台，可同时启用 iOS 和 Android。
 4. iOS 填写团队 API Key 的 Issuer ID、Key ID，选择 Apple `.p8` 文件。文件名为 `AuthKey_XXX.p8` 时自动填写 Key ID；也可手动修改。
 5. Android 选择 Google service account JSON，其邮箱、私钥等信息直接从文件读取。
-6. 点击生成并下载，解压完整 ZIP，Windows 双击 `start.cmd`，Linux/macOS 执行 `./start.sh`。
+6. 下载并解压完整 ZIP。Windows 双击 `install.cmd` 并确认 UAC，macOS 在解压目录运行 `sh ./install.sh` 并完成管理员授权。两者安装完成后立即启动，并在系统开机时自动运行。Linux 运行 `./start.sh`。
 
 不需要填写节点 ID、节点 Token、中心地址、密钥保存位置或应用清单。下载程序复用已发布二进制，不按节点重新编译。重新下载现有节点时保留其身份和中心映射；运行新包前应停止旧实例。
+
+## 覆盖升级
+
+1. 在下载页选择已安装的节点和原安装系统，勾选「仅升级程序」，下载 ZIP。
+2. 已通过安装脚本安装的节点可在任意新目录解压，然后再次运行安装入口。安装器停掉原后台进程、更换程序并重新启动，原 `connector.json` 和商店凭据保留。
+3. 从旧版手动运行包迁移时，先停止旧进程，把升级 ZIP 解压覆盖到旧目录，保留原 `connector.json` 与 `credentials/`，再运行安装入口。
+
+每台机器安装一个后台节点。Windows 使用计划任务「Testflying Connector」，配置在 `%ProgramFiles%\Testflying Connector\data`。macOS 使用系统 LaunchDaemon `com.testflying.connector`，配置在 `/Library/Application Support/Testflying Connector/data`。暂停自启动可在 Windows 任务计划程序中结束并禁用该任务，macOS 执行 `sudo launchctl disable system/com.testflying.connector` 后再执行 `sudo launchctl bootout system/com.testflying.connector`。
 
 ## 包内目录
 
@@ -19,6 +27,8 @@
 connector-windows-amd64-xxxxxxxx.zip
 ├── store-connector.exe
 ├── connector.json
+├── install.cmd
+├── install.ps1
 ├── start.cmd
 ├── testflying-prod-ca.crt
 ├── README.md

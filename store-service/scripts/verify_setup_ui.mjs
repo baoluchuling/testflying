@@ -53,6 +53,9 @@ if (!production) {
     "ca.crt": [path.join(project, "deploy/testflying-prod-ca.crt"), "application/x-pem-file"],
     "start.cmd": [path.join(project, "packaging/connector/start.cmd"), "text/plain"],
     "start.sh": [path.join(project, "packaging/connector/start.sh"), "text/plain"],
+    "install.cmd": [path.join(project, "packaging/connector/install.cmd"), "text/plain"],
+    "install.ps1": [path.join(project, "packaging/connector/install.ps1"), "text/plain"],
+    "install.sh": [path.join(project, "packaging/connector/install.sh"), "text/plain"],
   };
   const csp = fs.readFileSync(path.join(project, "crates/store-api/src/setup.rs"), "utf8").match(/const CSP: &str = "([^"]+)"/)[1];
   server = http.createServer(async (req, res) => {
@@ -220,6 +223,8 @@ try {
   assert.equal(config.apps, undefined);
   assert.equal(config.bundleIdentifier, undefined);
   assert.match(await zip.file("start.cmd").async("string"), /SSL_CERT_FILE/);
+  assert.match(await zip.file("install.cmd").async("string"), /install\.ps1/);
+  assert.match(await zip.file("install.ps1").async("string"), /New-ScheduledTaskTrigger -AtStartup/);
   assert(zip.file("testflying-prod-ca.crt"));
   checks.push("real Windows executable preserved in a downloadable dual-platform private ZIP");
   checks.push("both credential paths are automatic and no application list is included");
@@ -233,6 +238,18 @@ try {
   assert.equal(JSON.parse(await singleZip.file("connector.json").async("string")).connectorId, firstId);
   assert.equal(singleZip.file("credentials/apple-private-key.p8"), null);
   checks.push("repeat download reuses node identity and omits disabled-platform secrets");
+  await page.locator("#upgrade").check();
+  assert.equal(await page.locator("#accountSection").isVisible(), false);
+  const upgrade = await downloadPackage();
+  const upgradePath = path.join(tmp, "program-upgrade.zip");
+  await upgrade.saveAs(upgradePath);
+  const upgradeZip = await JSZip.loadAsync(fs.readFileSync(upgradePath), { checkCRC32: true });
+  assert.equal((await upgradeZip.file("node-id.txt").async("string")).trim(), firstId);
+  assert.equal(upgradeZip.file("connector.json"), null);
+  assert(!Object.keys(upgradeZip.files).some((name) => name.startsWith("credentials/")));
+  assert.equal(hash(await upgradeZip.file("store-connector.exe").async("nodebuffer")), hash(executable));
+  if (!production) assert.equal(nodes.length, 1);
+  checks.push("program-only upgrade preserves node identity without including local configuration");
   credentialsEntered = false;
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("#setupForm").waitFor({ state: "visible" });

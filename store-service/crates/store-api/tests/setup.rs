@@ -133,6 +133,9 @@ async fn setup_assets_have_explicit_types_and_cannot_read_arbitrary_files() {
         ("ca.crt", "application/x-pem-file"),
         ("start.cmd", "text/plain"),
         ("start.sh", "text/plain"),
+        ("install.cmd", "text/plain"),
+        ("install.ps1", "text/plain"),
+        ("install.sh", "text/plain"),
         ("license.txt", "text/plain"),
     ] {
         let response = app()

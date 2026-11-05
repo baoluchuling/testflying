@@ -1,4 +1,4 @@
-import { CREDENTIAL_LIMIT, validateAccount, buildInstaller } from "./packager.mjs";
+import { CREDENTIAL_LIMIT, validateAccount, buildInstaller, installationFiles } from "./packager.mjs";
 
 const $ = (id) => document.getElementById(id);
 const apiBase = new URL("./api/", window.location.href);
@@ -47,12 +47,18 @@ function renderNodes(selected = "new") {
 
 function updateFields() {
   const isNew = $("connector").value === "new";
+  const target = $("installTarget").value;
+  const canUpgrade = !isNew && installationFiles(target).length > 0;
+  if (!canUpgrade) $("upgrade").checked = false;
+  const upgrade = $("upgrade").checked;
+  $("upgradeRow").hidden = !canUpgrade;
   $("nameRow").hidden = !isNew;
   $("connectorName").disabled = !isNew;
-  $("appleFields").disabled = !$("appleEnabled").checked;
-  $("googleFields").disabled = !$("googleEnabled").checked;
-  const system = { "windows-amd64": "Windows", "linux-amd64": "Linux", "darwin-arm64": "macOS" }[$("installTarget").value];
-  $("downloadButton").textContent = `生成并下载 ${system} 安装包`;
+  $("accountSection").hidden = upgrade;
+  $("appleFields").disabled = upgrade || !$("appleEnabled").checked;
+  $("googleFields").disabled = upgrade || !$("googleEnabled").checked;
+  const system = { "windows-amd64": "Windows", "linux-amd64": "Linux", "darwin-arm64": "macOS" }[target];
+  $("downloadButton").textContent = `生成并下载 ${system} ${upgrade ? "升级包" : "安装包"}`;
 }
 
 async function fileBytes(id, label) {
@@ -78,7 +84,7 @@ async function loadNodes() {
 
 $("retryConnection").addEventListener("click", loadNodes);
 
-for (const id of ["connector", "installTarget", "appleEnabled", "googleEnabled"]) $(id).addEventListener("change", updateFields);
+for (const id of ["connector", "installTarget", "appleEnabled", "googleEnabled", "upgrade"]) $(id).addEventListener("change", updateFields);
 $("appleFile").addEventListener("change", () => {
   const match = /^AuthKey_([A-Za-z0-9]+)\.p8$/i.exec($("appleFile").files[0]?.name || "");
   const current = $("keyId").value.trim();
@@ -92,27 +98,30 @@ $("setupForm").addEventListener("submit", async (event) => {
   busy = true;
   $("downloadButton").disabled = true;
   try {
-    status("正在读取并检查本机账号文件…");
+    const upgrade = $("upgrade").checked;
+    status(upgrade ? "正在准备升级包…" : "正在读取并检查本机账号文件…");
     const account = {};
-    if ($("appleEnabled").checked) account.apple = {
+    if (!upgrade && $("appleEnabled").checked) account.apple = {
       issuerId: $("issuerId").value, keyId: $("keyId").value,
       content: await fileBytes("appleFile", " Apple .p8 文件"),
     };
-    if ($("googleEnabled").checked) account.google = { content: await fileBytes("googleFile", " Google 服务账号 JSON") };
-    validateAccount(account);
+    if (!upgrade && $("googleEnabled").checked) account.google = { content: await fileBytes("googleFile", " Google 服务账号 JSON") };
+    if (!upgrade) validateAccount(account);
     const target = $("installTarget").value;
     const name = $("connectorName").value.trim();
     if ($("connector").value === "new" && (!name || new TextEncoder().encode(name).length > 160)) {
       throw new Error("请填写简短的节点名称");
     }
     // Obtain public launch assets before creating a registry entry.
-    const [caResponse, cmdResponse, shResponse] = await Promise.all([
-      fetch(new URL("ca.crt", window.location.href), { cache: "no-store" }),
-      fetch(new URL("start.cmd", window.location.href), { cache: "no-store" }),
-      fetch(new URL("start.sh", window.location.href), { cache: "no-store" }),
-    ]);
-    if (![caResponse, cmdResponse, shResponse].every((response) => response.ok)) throw new Error("无法读取中心启动文件");
-    const assets = { caBytes: new Uint8Array(await caResponse.arrayBuffer()), windowsLauncher: await cmdResponse.text(), unixLauncher: await shResponse.text() };
+    const launcher = target === "windows-amd64" ? "start.cmd" : "start.sh";
+    const installFiles = installationFiles(target);
+    const names = [launcher, ...installFiles];
+    const [caResponse, ...scriptResponses] = await Promise.all(["ca.crt", ...names].map(
+      (name) => fetch(new URL(name, window.location.href), { cache: "no-store" }),
+    ));
+    if (![caResponse, ...scriptResponses].every((response) => response.ok)) throw new Error("无法读取中心安装文件");
+    const scriptTexts = await Promise.all(scriptResponses.map((response) => response.text()));
+    const assets = { caBytes: new Uint8Array(await caResponse.arrayBuffer()), scripts: Object.fromEntries(names.map((name, index) => [name, scriptTexts[index]])) };
     let id = $("connector").value;
     if (id === "new") {
       status("正在创建节点身份…");
@@ -123,8 +132,8 @@ $("setupForm").addEventListener("submit", async (event) => {
     }
     status("正在获取节点程序…");
     const installer = await request(`connectors/${encodeURIComponent(id)}/installer/${target}`, { binary: true });
-    status("正在浏览器内合并配置与账号文件…");
-    const result = await buildInstaller(installer, { target, account }, assets, globalThis.JSZip);
+    status(upgrade ? "正在生成仅含程序的升级包…" : "正在浏览器内合并配置与账号文件…");
+    const result = await buildInstaller(installer, { target, account, upgrade }, assets, globalThis.JSZip);
     const url = URL.createObjectURL(new Blob([result.bytes], { type: "application/zip" }));
     const link = document.createElement("a");
     link.href = url;
@@ -133,8 +142,9 @@ $("setupForm").addEventListener("submit", async (event) => {
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    const startup = target === "windows-amd64" ? "start.cmd" : "start.sh";
-    status(`安装包已生成。解压整个 ZIP 后运行 ${startup}，无需修改路径或节点配置。\n节点：${id}\n应用绑定仍由中心维护，本次下载不会修改应用映射。`, "success");
+    const entry = installFiles[0] ?? launcher;
+    const details = upgrade ? "升级会保留本机配置和商店凭据。" : installFiles.length ? "安装会立即启动并设置开机启动。" : "请保持启动进程运行。";
+    status(`ZIP 已生成。完整解压后运行 ${entry}。${details}\n节点：${id}`, "success");
   } catch (error) {
     status(error.message || "生成失败，请检查信息后重试", "error");
   } finally {

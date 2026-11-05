@@ -5,7 +5,7 @@ COPY crates ./crates
 
 FROM builder AS api-builder
 COPY deploy/testflying-prod-ca.crt ./deploy/
-COPY packaging/connector/start.cmd packaging/connector/start.sh ./packaging/connector/
+COPY packaging/connector/start.cmd packaging/connector/start.sh packaging/connector/install.cmd packaging/connector/install.ps1 packaging/connector/install.sh ./packaging/connector/
 RUN cargo build --locked --release --package store-api
 
 FROM builder AS connector-builder

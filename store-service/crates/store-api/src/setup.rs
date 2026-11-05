@@ -90,6 +90,18 @@ async fn asset(Path(name): Path<String>) -> Response {
             "text/plain; charset=utf-8",
             include_bytes!("../../../packaging/connector/start.sh"),
         ),
+        "install.cmd" => (
+            "text/plain; charset=utf-8",
+            include_bytes!("../../../packaging/connector/install.cmd"),
+        ),
+        "install.ps1" => (
+            "text/plain; charset=utf-8",
+            include_bytes!("../../../packaging/connector/install.ps1"),
+        ),
+        "install.sh" => (
+            "text/plain; charset=utf-8",
+            include_bytes!("../../../packaging/connector/install.sh"),
+        ),
         _ => return secure(StatusCode::NOT_FOUND.into_response()),
     };
     document(kind, bytes)
