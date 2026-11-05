@@ -169,4 +169,30 @@ The final run passed **18 production checks**: public HTTP health, required and 
 
 Public addresses in older deployment reports are now redacted and explicitly marked `addressRedacted`; example addresses are not live verification destinations. Deployment tools read the real `STORE_API_PUBLIC_URL` from private configuration and redact it when producing public verification reports. Exact private reports, recovery data and real node configuration are never committed or uploaded. Supervisor reports do not record released-byte totals. Successful runs retain no temporary evidence; failed compact logs remain under the per-run evidence paths described above and are limited to seven days.
 
-The repository starts again from a single parentless current-code snapshot on 2026-11-05. Main, the existing refactor branch and the retained Rust tag point to that snapshot; historical commit identifiers in earlier verification records describe pre-reset executions. Verified binary and Rust source SHA-256 values remain unchanged. Old history survives only in private local recovery data; GitHub read-only pull-request references and cached unreachable objects require separate platform cleanup and are not covered by a branch/tag force push.
+The repository was reset to a single parentless current-code snapshot on 2026-11-05. At reset, main, the refactor branch and the retained Rust tag pointed to that snapshot; later changes build on it. Historical commit identifiers in earlier verification records describe pre-reset executions. Original history remains in private local recovery data. GitHub read-only pull-request references and cached unreachable objects require separate platform cleanup and are not covered by a branch/tag force push.
+
+## Dual-platform Connector setup page, 2026-11-05
+
+The setup page embeds its static assets and verified JSZip dependency in the Rust API. It uses existing node management endpoints and assembles account files in the browser. One package supports Apple and Google together with automatic relative paths, the existing node identity, public CA and platform launcher. App mappings remain in the center. No actual account credentials were used or sent to the center during verification.
+
+The final local source run passed 45 Rust tests, 6 Node packaging tests, fmt, Clippy and native release builds. The loopback browser passed 10 checks and saved the [blank form preview](connector-setup-preview.png). The [GitHub CI run](https://github.com/baoluchuling/testflying/actions/runs/41972064975) passed, including Docker and Connector platform builds. The new Linux x64 static API was built from `69a862a`; the [production report](setup-deployment-verification.json) records deployment commit `e0e57f1`, 22 API checks and 9 browser checks. It verifies HTTP/HTTPS/WSS, mock iOS/Android routing through one node, original Connector executable hashes, Windows download and browser-only credentials. Existing environments, registry, mappings and proxy routes were preserved. Windows real-hardware execution and real store account permissions remain unverified.
+
+| Run ID | Outcome | Cleanup / retention |
+|---|---|---|
+| 7da692343a1545b488d07abfb7a2b913 | Official JSZip package integrity verified | Owned temporary files removed; vendored library and license retained |
+| 17aaa5415a9340bdbfb9f43133d88704 | Initial six ZIP tests and formatting passed | Entire owned run removed |
+| c95e714c72f64de6b0212e8d31fb51f5 | Initial full source verification passed | Entire owned run removed |
+| fc9d9c4f05594649be09f570008733fa | Browser found a form name shadowing a native DOM property; field renamed | Browser/profile and owned run removed; compact evidence for 7 days |
+| 1248a0d24f644f4fb5fd13b09e3c8045 | Real browser passed dual-platform download and retry checks | Owned browser/profile and temporary ZIPs removed; blank form preview retained |
+| fac084f5f34640e0aa087c4c46f14967 | Existing upload fixture reused a connection after early rejection of a large body; fixture now requests close | Entire owned run removed; compact evidence for 7 days |
+| 7a36bf39ba4b405a8dda336f3be2a117 | Browser passed after Windows launcher newline normalization | Entire owned run removed; formal preview/report retained |
+| a68bce237d6642898af10c207f8c9d5e | Browser passed after changing the selected Apple key updates the detected Key ID | Entire owned run removed; formal preview/report retained |
+| e672b188becb4ef5a629b7ef59166b3b | Final 45 Rust tests, 6 ZIP tests, fmt, Clippy and native builds passed | Entire owned run removed; verification.json retained |
+| 8214154c824942f4b1161151eb71f68e | Staged source syntax and privacy checks passed | Entire owned run removed; source commit retained |
+| 04e481febc5948a48916fe7a3b310b6c | Linux x64 static API release built and hashed | Entire owned run removed; API binary and setup-api-build.json retained |
+| af0ce3417e2c4ad884aac57f20d32ed6 | Initial rollout passed API and download checks; browser verifier flagged the HTTP navigation's separate HTTPS probe | Previous API restored, verification node/mappings cleared; owned temporary resources removed; compact evidence for 7 days |
+| cf853a8238994b69bc8e2037e55db0be | Read-only inspection confirmed rollback, healthy previous API and zero enabled verification nodes/mappings | Entire owned run removed |
+| 974037e869cf4c46aaecff798b3716d9 | Browser passed strict request interception and local packaging checks | Entire owned run removed; formal preview/report retained |
+| d69bd2a3231348a2b54459038794e8f7 | Final 22 production API and 9 browser checks passed; observed one credential-free same-host HTTPS navigation probe before login | Entire owned run removed, browser and mock Connector stopped, nodes disabled and mappings removed; API release and public verification report retained |
+
+Formal source files, preview, binary and verification reports have no expiration. Successful runs retain no temporary evidence or processes. Failed runs retain only bounded compact evidence; expiration is recorded in the supervisor metadata, and released-byte totals are not recorded. Final audit showed the same five prior states and no new quarantine. Verification ZIPs, browser profiles and synthetic private keys were removed and are not published.
