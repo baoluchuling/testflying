@@ -15,20 +15,12 @@
       <div class="brand"><span class="mark">C</span> STORE CONNECTOR</div>
       <h1>填好账号，<br>下载就能启动。</h1>
       <p>一个节点，同时连接 iOS 和 Android。中心地址、节点身份、文件路径和启动脚本自动准备好。</p>
-      <ol class="steps"><li>登录中心</li><li>选择节点与账号文件</li><li>下载、解压、启动</li></ol>
+      <ol class="steps"><li>选择或新建节点</li><li>填写商店账号并选择文件</li><li>下载、解压、启动</li></ol>
       <div class="privacy"><strong>凭据留在你手中</strong><p>账号文件在当前浏览器内合并，不上传或保存在中心。应用映射由中心维护，不写入安装包。</p></div>
       <p class="transport">HTTP 页面没有传输加密，请在可信网络使用；HTTPS 入口同样可用。</p>
     </aside>
     <section class="workspace">
-      <header><div><span class="eyebrow">安装配置</span><h2>生成专属安装包</h2></div><button id="logout" class="quiet" type="button" hidden>退出</button></header>
-      <section id="loginPanel" class="card">
-        <h3>登录中心</h3><p class="muted">使用管理员 Token。它只在当前页面内存中使用，刷新或退出后清除。</p>
-        <form id="loginForm">
-          <label for="adminToken">管理员 Token</label>
-          <input id="adminToken" type="password" autocomplete="off" required placeholder="输入管理员 Token">
-          <button id="loginButton" type="submit">连接中心</button>
-        </form>
-      </section>
+      <header><div><span class="eyebrow">安装配置</span><h2>生成专属安装包</h2></div><button id="retryConnection" class="quiet" type="button" hidden>重试连接</button></header>
       <form id="setupForm" hidden>
         <section class="card">
           <div class="section-title"><span class="number">01</span><div><h3>节点与系统</h3><p class="muted">同一个节点可保存两套账号凭据，服务多个应用。</p></div></div>

@@ -1,6 +1,7 @@
 use axum::{
     extract::Path,
     http::{header, StatusCode},
+    middleware,
     response::{IntoResponse, Redirect, Response},
     routing::get,
     Router,
@@ -10,6 +11,19 @@ use std::sync::Arc;
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
 
 pub(super) fn routes() -> Router<Arc<super::ApiState>> {
+    let setup_api = Router::new()
+        .route(
+            "/connector-setup/api/connectors",
+            get(super::list_connectors).post(super::create_connector),
+        )
+        .route(
+            "/connector-setup/api/connectors/{id}/installer/{target}",
+            get(super::installer),
+        )
+        .route_layer(middleware::map_response(|response| async {
+            secure(response)
+        }));
+
     Router::new()
         .route(
             "/connector-setup",
@@ -25,6 +39,7 @@ pub(super) fn routes() -> Router<Arc<super::ApiState>> {
             }),
         )
         .route("/connector-setup/{asset}", get(asset))
+        .merge(setup_api)
 }
 
 fn secure(mut response: Response) -> Response {

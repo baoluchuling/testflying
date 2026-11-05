@@ -1,17 +1,22 @@
 use axum::{body::Body, http::Request};
 use http_body_util::BodyExt;
-use std::{path::PathBuf, time::Duration};
+use serde_json::Value;
+use std::{fs, io::Cursor, path::PathBuf, time::Duration};
 use store_api::{registry::Registry, ApiState};
 use tower::ServiceExt;
 
 fn app() -> axum::Router {
+    app_with_release_root(PathBuf::from("unused-releases"))
+}
+
+fn app_with_release_root(release_root: PathBuf) -> axum::Router {
     store_api::router(
         ApiState::new(
             Registry::open(":memory:", "setup-signing-test-01234567890123456789").unwrap(),
             "setup-admin-test-0123456789".into(),
             "setup-client-test-0123456789".into(),
             "https://store.example.invalid/store-api".into(),
-            PathBuf::from("unused-releases"),
+            release_root,
             Duration::from_secs(1),
         )
         .unwrap(),
@@ -41,6 +46,7 @@ async fn setup_page_is_public_without_exposing_authentication_or_external_script
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let text = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(text.contains("appleEnabled") && text.contains("googleEnabled"));
+    assert!(!text.contains("adminToken"));
     assert!(!text.contains("setup-admin-test-0123456789"));
     assert!(!text.contains("store.example.invalid"));
     assert!(!text.contains("src=\"http"));
@@ -54,6 +60,67 @@ async fn setup_page_is_public_without_exposing_authentication_or_external_script
         .await
         .unwrap();
     assert_eq!(private.status(), 401);
+}
+
+#[tokio::test]
+async fn setup_api_creates_and_downloads_nodes_without_exposing_other_management_operations() {
+    let releases = tempfile::tempdir().unwrap();
+    fs::create_dir(releases.path().join("windows-amd64")).unwrap();
+    fs::write(
+        releases.path().join("windows-amd64/store-connector.exe"),
+        b"test executable",
+    )
+    .unwrap();
+    let app = app_with_release_root(releases.path().to_path_buf());
+    let send = |method: &'static str, path: String, body: &'static str| {
+        app.clone().oneshot(
+            Request::builder()
+                .method(method)
+                .uri(path)
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+    };
+    let setup = "/connector-setup/api/connectors";
+    let response = send("POST", setup.into(), r#"{"name":"Setup test node"}"#)
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 201);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let created: Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let id = created["connector"]["connectorId"].as_str().unwrap();
+
+    let response = send("GET", setup.into(), "").await.unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let listed: Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(listed["connectors"][0]["connectorId"], id);
+
+    let installer = format!("{id}/installer/windows-amd64");
+    let response = send("GET", format!("{setup}/{installer}"), "")
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let mut zip = zip::ZipArchive::new(Cursor::new(
+        response.into_body().collect().await.unwrap().to_bytes(),
+    ))
+    .unwrap();
+    let config: Value = serde_json::from_reader(zip.by_name("connector.json").unwrap()).unwrap();
+    assert_eq!(config["connectorId"], id);
+    assert_eq!(config["token"], created["installation"]["token"]);
+
+    for (method, path, expected) in [
+        ("POST", "/v1/connectors".to_owned(), 401),
+        ("GET", format!("/v1/connectors/{installer}"), 401),
+        ("PATCH", format!("/v1/connectors/{id}"), 401),
+        ("PATCH", format!("{setup}/{id}"), 404),
+    ] {
+        assert_eq!(send(method, path, "").await.unwrap().status(), expected);
+    }
 }
 
 #[tokio::test]

@@ -1,8 +1,7 @@
 import { CREDENTIAL_LIMIT, validateAccount, buildInstaller } from "./packager.mjs";
 
 const $ = (id) => document.getElementById(id);
-const apiBase = new URL("../", window.location.href);
-let token = "";
+const apiBase = new URL("./api/", window.location.href);
 let busy = false;
 let nodes = [];
 let automaticKeyId = "";
@@ -19,12 +18,11 @@ async function request(path, { method = "GET", body, binary = false } = {}) {
     cache: "no-store",
     credentials: "omit",
     referrerPolicy: "no-referrer",
-    headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+    headers: body ? { "Content-Type": "application/json" } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
-    if (response.status === 401) throw new Error("管理员 Token 无效或已更换，请退出后重新登录");
-    if (response.status === 503) throw new Error("所选系统的程序尚未发布，请选择其他系统");
+    if (binary && response.status === 503) throw new Error("所选系统的程序尚未发布，请选择其他系统");
     throw new Error(`中心请求失败（${response.status}），请检查节点状态后重试`);
   }
   if (binary) {
@@ -63,44 +61,22 @@ async function fileBytes(id, label) {
   return new Uint8Array(await file.arrayBuffer());
 }
 
-$("loginForm").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (busy) return;
-  busy = true;
-  $("loginButton").disabled = true;
-  token = $("adminToken").value.trim();
+async function loadNodes() {
+  $("retryConnection").hidden = true;
   try {
     status("正在连接中心…");
-    const result = await request("v1/connectors");
+    const result = await request("connectors");
     nodes = result.connectors;
     renderNodes();
-    $("adminToken").value = "";
-    $("loginPanel").hidden = true;
     $("setupForm").hidden = false;
-    $("logout").hidden = false;
-    status("已连接中心。选择文件后即可生成安装包。");
+    $("status").hidden = true;
   } catch (error) {
-    token = "";
     status(error.message || "无法连接中心", "error");
-  } finally {
-    busy = false;
-    $("loginButton").disabled = false;
+    $("retryConnection").hidden = false;
   }
-});
+}
 
-$("logout").addEventListener("click", () => {
-  if (busy) return;
-  token = "";
-  nodes = [];
-  automaticKeyId = "";
-  $("setupForm").reset();
-  $("setupForm").hidden = true;
-  $("loginPanel").hidden = false;
-  $("logout").hidden = true;
-  $("status").hidden = true;
-  renderNodes();
-  $("adminToken").focus();
-});
+$("retryConnection").addEventListener("click", loadNodes);
 
 for (const id of ["connector", "installTarget", "appleEnabled", "googleEnabled"]) $(id).addEventListener("change", updateFields);
 $("appleFile").addEventListener("change", () => {
@@ -112,10 +88,9 @@ $("appleFile").addEventListener("change", () => {
 
 $("setupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (busy || !token) return;
+  if (busy) return;
   busy = true;
   $("downloadButton").disabled = true;
-  $("logout").disabled = true;
   try {
     status("正在读取并检查本机账号文件…");
     const account = {};
@@ -141,13 +116,13 @@ $("setupForm").addEventListener("submit", async (event) => {
     let id = $("connector").value;
     if (id === "new") {
       status("正在创建节点身份…");
-      const result = await request("v1/connectors", { method: "POST", body: { name } });
+      const result = await request("connectors", { method: "POST", body: { name } });
       id = result.connector.connectorId;
       nodes.push(result.connector);
       renderNodes(id); // Retain this identity on a failed download/retry.
     }
     status("正在获取节点程序…");
-    const installer = await request(`v1/connectors/${encodeURIComponent(id)}/installer/${target}`, { binary: true });
+    const installer = await request(`connectors/${encodeURIComponent(id)}/installer/${target}`, { binary: true });
     status("正在浏览器内合并配置与账号文件…");
     const result = await buildInstaller(installer, { target, account }, assets, globalThis.JSZip);
     const url = URL.createObjectURL(new Blob([result.bytes], { type: "application/zip" }));
@@ -165,8 +140,7 @@ $("setupForm").addEventListener("submit", async (event) => {
   } finally {
     busy = false;
     $("downloadButton").disabled = false;
-    $("logout").disabled = false;
   }
 });
 
-updateFields();
+loadNodes();

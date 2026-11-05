@@ -114,7 +114,7 @@ assert hashlib.sha256(open(os.path.join(p,'bin/store-api'),'rb').read()).hexdige
     ca = ssl.create_default_context(cafile=str(PROJECT / "deploy/testflying-prod-ca.crt"))
 
     def request(path: str, token: str | None = None, method: str = "GET", data: dict | None = None,
-                scheme: str = "http") -> tuple[int, bytes]:
+                scheme: str = "https") -> tuple[int, bytes]:
         if scheme not in connections:
             connections[scheme] = (http.client.HTTPSConnection(public.hostname, context=ca, timeout=45)
                                    if scheme == "https" else http.client.HTTPConnection(public.hostname, timeout=45))
@@ -162,7 +162,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
         healthy = False
         for _ in range(20):
             try:
-                if request("/health")[0] == 200:
+                if request("/health", scheme="http")[0] == 200:
                     healthy = True
                     break
             except (OSError, http.client.HTTPException):
@@ -175,10 +175,14 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
         for suffix in ("", "app.mjs", "packager.mjs", "style.css", "jszip.min.js", "ca.crt", "start.cmd", "start.sh"):
             check(request("/connector-setup/" + suffix)[0] == 200, "setup asset " + (suffix or "index"))
         check(request("/v1/connectors")[0] == 401, "administrator authentication still required")
-        status, body = request("/v1/connectors", snapshot["admin"], "POST", {"name": "Setup deployment verification (mock only)"})
+        setup = "/connector-setup/api/connectors"
+        status, body = request(setup, method="POST", data={"name": "Setup deployment verification (mock only)"})
         check(status == 201, "temporary verification node created")
         created = json.loads(body)
         node = created["connector"]["connectorId"]
+        status, body = request(setup)
+        check(status == 200 and any(item["connectorId"] == node for item in json.loads(body)["connectors"]),
+              "public list includes the verification node")
         config = created["installation"]
         config.update({"provider": {"mode": "mock"}, "listenAddr": "127.0.0.1:0"})
         private = tmp / "connector.json"

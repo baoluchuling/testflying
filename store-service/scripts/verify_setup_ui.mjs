@@ -29,7 +29,7 @@ const require = createRequire(path.join(tmp, "browser/package.json"));
 const { chromium } = require("playwright-core");
 const JSZip = require(path.join(project, "crates/store-api/src/setup/vendor/jszip.min.js"));
 const web = path.join(project, "crates/store-api/src/setup");
-const token = process.env.SETUP_ADMIN_TOKEN || "browser-admin-test-0123456789";
+const token = process.env.SETUP_ADMIN_TOKEN;
 const production = !!process.env.SETUP_BASE_URL;
 const nodes = [];
 const created = new Set();
@@ -39,6 +39,7 @@ const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 let server;
 let base = process.env.SETUP_BASE_URL;
 let downloadAttempts = 0;
+let listAttempts = 0;
 const executable = fs.readFileSync(path.join(project, "releases/windows-amd64/store-connector.exe"));
 
 if (!production) {
@@ -68,11 +69,11 @@ if (!production) {
       }
       if (url.pathname === "/favicon.ico") { res.writeHead(204).end(); return; }
       res.setHeader("Content-Type", "application/json");
-      if (req.headers.authorization !== `Bearer ${token}`) { res.writeHead(401).end("{}"); return; }
-      if (url.pathname === "/store-api/v1/connectors" && req.method === "GET") {
+      if (url.pathname === "/store-api/connector-setup/api/connectors" && req.method === "GET") {
+        if (++listAttempts === 1) { res.writeHead(503).end("{}"); return; }
         res.end(JSON.stringify({ connectors: nodes })); return;
       }
-      if (url.pathname === "/store-api/v1/connectors" && req.method === "POST") {
+      if (url.pathname === "/store-api/connector-setup/api/connectors" && req.method === "POST") {
         let body = "";
         for await (const chunk of req) body += chunk;
         const data = JSON.parse(body);
@@ -81,7 +82,7 @@ if (!production) {
         nodes.push(node);
         res.writeHead(201).end(JSON.stringify({ connector: node })); return;
       }
-      const match = /^\/store-api\/v1\/connectors\/([^/]+)\/installer\/windows-amd64$/.exec(url.pathname);
+      const match = /^\/store-api\/connector-setup\/api\/connectors\/([^/]+)\/installer\/windows-amd64$/.exec(url.pathname);
       if (match) {
         downloadAttempts++;
         if (downloadAttempts === 1) { res.writeHead(503).end("{}"); return; }
@@ -125,6 +126,10 @@ try {
     const url = new URL(request.url());
     const body = request.postData() || "";
     const authenticated = !!request.headers().authorization;
+    if (authenticated) {
+      violations.push("browser sent an Authorization header");
+      return route.abort();
+    }
     if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) {
       // Chrome can probe HTTPS before falling back to the requested HTTP page.
       // This is permitted only for a credential-free initial navigation to this exact center page.
@@ -146,27 +151,26 @@ try {
     return route.continue();
   });
   page.on("response", async (response) => {
-    if (response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/v1/connectors") && response.status() === 201) {
+    if (response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/connector-setup/api/connectors") && response.status() === 201) {
       const value = await response.json(); created.add(value.connector.connectorId);
     }
   });
-  await page.goto(base + "/connector-setup/", { waitUntil: "networkidle" });
+  await page.goto(base + "/connector-setup/", { waitUntil: "domcontentloaded" });
   assert.equal(new URL(page.url()).origin === origin, true, "page opened on the requested origin");
-  credentialsEntered = true;
-  await page.locator("#adminToken").fill("invalid-token");
-  await page.locator("#loginButton").click();
-  await page.locator("#status[data-kind=error]").waitFor();
-  checks.push("invalid administrator token rejected");
-  await page.locator("#adminToken").fill(token);
-  await page.locator("#loginButton").click();
+  if (!production) {
+    await page.locator("#status[data-kind=error]").waitFor();
+    await page.locator("#retryConnection").click();
+    checks.push("retry connects after an initial request failure");
+  }
   await page.locator("#setupForm").waitFor({ state: "visible" });
-  assert.equal(await page.locator("#adminToken").inputValue(), "");
+  assert.equal(await page.locator("input[type=password]").count(), 0);
   assert.deepEqual(await page.evaluate(() => {
     const form = document.getElementById("setupForm");
     return [typeof form.nodeName, typeof form.target];
   }), ["string", "string"]);
-  checks.push("administrator login clears the token field");
+  checks.push("setup form loads without a login or Authorization header");
   if (!production) await page.screenshot({ path: path.join(tmp, "setup-preview.png"), fullPage: true });
+  credentialsEntered = true;
   await page.locator("#connectorName").fill("Browser verification · dual platform");
   await page.locator("#issuerId").fill("test-issuer");
   await page.locator("#appleFile").setInputFiles(appleFile);
@@ -209,12 +213,13 @@ try {
   assert.equal(JSON.parse(await singleZip.file("connector.json").async("string")).connectorId, firstId);
   assert.equal(singleZip.file("credentials/apple-private-key.p8"), null);
   checks.push("repeat download reuses node identity and omits disabled-platform secrets");
-  await page.locator("#logout").click();
-  await page.locator("#loginPanel").waitFor({ state: "visible" });
+  credentialsEntered = false;
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator("#setupForm").waitFor({ state: "visible" });
   assert.equal(await page.locator("#appleFile").inputValue(), "");
   assert.equal(await page.locator("#googleFile").inputValue(), "");
   assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
-  checks.push("logout clears files and browser storage remains empty");
+  checks.push("reload clears files and browser storage remains empty");
   await page.setViewportSize({ width: 390, height: 844 });
   assert(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth));
   checks.push("mobile layout has no horizontal overflow");
@@ -238,7 +243,7 @@ try {
   try {
     if (production) for (const id of created) {
       try {
-        const response = await fetch(base + "/v1/connectors/" + encodeURIComponent(id), { method: "PATCH", headers: {
+        const response = await fetch(base.replace(/^http:/, "https:") + "/v1/connectors/" + encodeURIComponent(id), { method: "PATCH", headers: {
           Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ enabled: false }) });
         if (response.status !== 200) cleanupFailed = true;
       } catch { cleanupFailed = true; }

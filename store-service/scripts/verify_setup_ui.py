@@ -35,6 +35,7 @@ def main() -> None:
         private = json.loads(result.stdout)
         env["SETUP_BASE_URL"] = private["url"].replace("https://", "http://", 1)
         env["SETUP_ADMIN_TOKEN"] = private["token"]
+        env["NODE_EXTRA_CA_CERTS"] = str(PROJECT / "deploy/testflying-prod-ca.crt")
     profile = tmp / "chrome-profile"
     executable = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
     chrome = subprocess.Popen([executable, "--headless=new", "--remote-debugging-port=0",
