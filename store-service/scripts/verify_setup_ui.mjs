@@ -119,6 +119,25 @@ try {
   browser = await chromium.connectOverCDP(process.env.SETUP_CDP_ENDPOINT);
   const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1440, height: 1100 } });
   const page = await context.newPage();
+  const requestOutcomes = [];
+  function recordOutcome(request, outcome) {
+    const route = new URL(request.url()).pathname;
+    if (!route.includes("/connector-setup/")) return;
+    const operation = route.endsWith("/api/connectors") ? "connectors"
+      : route.includes("/installer/") ? "installer" : route.split("/").at(-1) || "page";
+    requestOutcomes.push([request.method(), operation, outcome]);
+  }
+  async function downloadPackage() {
+    try {
+      const [download] = await Promise.all([page.waitForEvent("download"), page.locator("#downloadButton").click()]);
+      return download;
+    } catch {
+      const state = await page.locator("#status").textContent({ timeout: 2000 });
+      // Exclude server response bodies and generated configuration.
+      throw new Error(JSON.stringify({ stage: state?.split("\n")[0], requests: requestOutcomes, violations }));
+    }
+  }
+  page.on("requestfailed", (request) => recordOutcome(request, request.failure()?.errorText));
   page.on("pageerror", () => violations.push("uncaught browser error"));
   page.on("console", (message) => { if (/Content Security Policy|Refused to execute|Refused to load/.test(message.text())) violations.push("CSP violation"); });
   await page.route("**/*", async (route) => {
@@ -151,6 +170,7 @@ try {
     return route.continue();
   });
   page.on("response", async (response) => {
+    recordOutcome(response.request(), response.status());
     if (response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/connector-setup/api/connectors") && response.status() === 201) {
       const value = await response.json(); created.add(value.connector.connectorId);
     }
@@ -186,7 +206,7 @@ try {
     assert.notEqual(await page.locator("#connector").inputValue(), "new");
     checks.push("failed download retains the newly created node");
   }
-  const [download] = await Promise.all([page.waitForEvent("download"), page.locator("#downloadButton").click()]);
+  const download = await downloadPackage();
   const downloaded = path.join(tmp, "dual-platform.zip");
   await download.saveAs(downloaded);
   const zip = await JSZip.loadAsync(fs.readFileSync(downloaded), { checkCRC32: true });
@@ -206,7 +226,7 @@ try {
   if (!production) assert.equal(nodes.length, 1);
   const firstId = config.connectorId;
   await page.locator("#appleEnabled").uncheck();
-  const [second] = await Promise.all([page.waitForEvent("download"), page.locator("#downloadButton").click()]);
+  const second = await downloadPackage();
   const single = path.join(tmp, "google-only.zip");
   await second.saveAs(single);
   const singleZip = await JSZip.loadAsync(fs.readFileSync(single));
