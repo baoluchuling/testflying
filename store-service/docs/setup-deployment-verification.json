@@ -1,22 +1,23 @@
 {
-  "runId": "7963a5e067a34ecbacb25355dee12904",
-  "stage": "browser-verified",
-  "finishedAt": "2026-11-05T08:19:35.093701+00:00",
-  "deploymentCommit": "66a05b1572adf366cf84c6e9f36578abf5451fda",
-  "binarySourceCommit": "f4ac7e3d5671614a8b90f5726b04ebef420b2a74",
+  "runId": "ea20e028cbf64b33958d6b2679a70fab",
+  "stage": "deployed-and-verified",
+  "finishedAt": "2026-11-05T09:27:49.147296+00:00",
+  "deploymentCommit": "2cfa1e4007da8a85a0058047f3a57cdb84b61b27",
+  "binarySourceCommit": "04c679a2f23d3f3e92537a071881b0a5a84b33d4",
   "checks": [
     "setup form loads without a login or Authorization header",
     "Apple Key ID recognized from the original filename",
     "real Windows executable preserved in a downloadable dual-platform private ZIP",
     "both credential paths are automatic and no application list is included",
     "repeat download reuses node identity and omits disabled-platform secrets",
+    "program-only upgrade preserves node identity without including local configuration",
     "reload clears files and browser storage remains empty",
     "mobile layout has no horizontal overflow",
     "no credential file or account fields are uploaded and CSP passes"
   ],
   "baseUrl": "http://store-api.example.com/store-api",
   "addressRedacted": true,
-  "apiSha256": "bb5f1d48c4a30581e0b66dffe0a2ca131e3fb0cb4c76cd3f662686cd4d09cc94",
+  "apiSha256": "11b9665cdca5db0a2f2b559072e024cdeb137c2ad0a8467f4ff3146fb6f55645",
   "connectorBinarySha256": {
     "linux-amd64": "9027c88c561a898de08d4efe2569f3525033c3c323c836a418152143fb9d5590",
     "darwin-arm64": "0bee2286f60390f8df4900c811b64aed2e90324a018d15dbf9dabb9fa4157b73",
@@ -35,6 +36,9 @@
     "setup asset ca.crt",
     "setup asset start.cmd",
     "setup asset start.sh",
+    "setup asset install.cmd",
+    "setup asset install.ps1",
+    "setup asset install.sh",
     "administrator authentication still required",
     "temporary verification node created",
     "public list includes the verification node",
@@ -49,15 +53,17 @@
     "HTTP HTTPS and other proxy routes unchanged",
     "new API release selected"
   ],
-  "apiRunId": "57bd11f2e308451fbb14d90fb4ae0ef5",
+  "apiRunId": "ea20e028cbf64b33958d6b2679a70fab",
   "browserVerified": true,
   "production": true,
   "windowsExecutableSha256": "dea82d7447df77756f34648557d4f33c1f697dcc2f2562747a8b4dcacccc43f7",
   "credentialFilesUploaded": false,
   "verificationNodeIds": [
-    "6de75529-c259-418d-a324-c471ccf97368"
+    "1e94710d-b3f5-40a7-a89d-b8e3c6f82ef7"
   ],
   "secureNavigationProbes": 1,
   "remainingTemporaryProcesses": [],
-  "verificationNodesDisabled": true
+  "verificationNodesDisabled": true,
+  "verificationNodeDisabled": true,
+  "verificationMappingsRemoved": true
 }
