@@ -1,5 +1,5 @@
 {
-  "runId": "372dd1a81c174ac79fa32f20bb36fb76",
+  "runId": "ab6706b86f8a4cbc945e21fdb2b242df",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -23,6 +23,7 @@
     "real Windows executable preserved in a downloadable dual-platform private ZIP",
     "both credential paths are automatic and no application list is included",
     "repeat download reuses node identity and omits disabled-platform secrets",
+    "program-only upgrade preserves node identity without including local configuration",
     "reload clears files and browser storage remains empty",
     "mobile layout has no horizontal overflow",
     "no credential file or account fields are uploaded and CSP passes"
@@ -32,7 +33,7 @@
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "22aa0141-07b7-4b66-8f8c-77f244b777ef"
+    "f9fafd0c-2073-4fd7-a369-a7e1e4dc4a6c"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0
