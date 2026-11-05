@@ -1,0 +1,23 @@
+services:
+  store-api:
+    build:
+      context: .
+      target: store-api
+    image: testflying-store-api:local
+    command: [store-api]
+    ports:
+      - "8200:8200"
+    environment:
+      STORE_API_PUBLIC_URL: ${STORE_API_PUBLIC_URL:?Set the Store API address reachable by Connector nodes}
+      STORE_API_ADMIN_TOKEN: ${STORE_API_ADMIN_TOKEN:?Set a private administrator token}
+      STORE_API_TOKEN: ${STORE_API_TOKEN:?Set an application API token}
+      STORE_API_NODE_SIGNING_KEY: ${STORE_API_NODE_SIGNING_KEY:?Set a persistent private signing key of at least 32 bytes}
+      STORE_API_REQUEST_TIMEOUT_SECONDS: ${STORE_API_REQUEST_TIMEOUT_SECONDS:-60}
+    volumes:
+      - store-registry:/app/data
+      - ./releases:/app/releases:ro
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+volumes:
+  store-registry:

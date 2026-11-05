@@ -1,0 +1,339 @@
+openapi: 3.1.0
+info:
+  title: Independent Store API
+  version: 0.1.0
+  description: >-
+    Pure real-time Apple/Google API. Application identity is platform plus exact
+    Bundle ID/package name. Multiple apps map to one account Connector.
+    No drafts, content database, task persistence, automatic mutation retries or replay.
+servers:
+  - url: http://localhost:8200
+components:
+  securitySchemes:
+    clientToken: {type: http, scheme: bearer, description: STORE_API_TOKEN}
+    adminToken: {type: http, scheme: bearer, description: STORE_API_ADMIN_TOKEN}
+    nodeToken: {type: http, scheme: bearer, description: Individually provisioned Connector token}
+    uploadToken: {type: http, scheme: bearer, bearerFormat: JWT, description: Thirty-minute file/application-scoped upload credential; not stored in database.}
+  parameters:
+    platform:
+      name: platform
+      in: path
+      required: true
+      schema: {type: string, enum: [ios, android]}
+    bundleIdentifier:
+      name: bundleIdentifier
+      in: path
+      required: true
+      schema: {type: string, minLength: 1, maxLength: 180, pattern: '^[A-Za-z0-9_.-]+$'}
+    id:
+      name: id
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    version:
+      name: version
+      in: query
+      description: iOS version string; omit for application-level information only.
+      schema: {type: string}
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+    ConnectorInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 160}
+    Connector:
+      type: object
+      required: [connectorId, name, enabled, appCount, connected]
+      properties:
+        connectorId: {type: string, format: uuid}
+        name: {type: string}
+        baseUrl: {type: [string, 'null'], description: Reported by authenticated Connector; used only for internal HTTP fallback.}
+        enabled: {type: boolean}
+        appCount: {type: integer, minimum: 0}
+        connected: {type: boolean, description: Active WSS connection only; not an HTTP health probe.}
+    Installation:
+      type: object
+      description: Private node configuration. Add store credential paths locally before live use.
+      properties:
+        connectorId: {type: string, format: uuid}
+        token: {type: string, readOnly: true, description: Secret returned only by authorized provisioning endpoints.}
+        serverUrl: {type: string, format: uri}
+        messageKey: {type: string, description: Private Noise PSK; never sent as a header or URL.}
+        uploadKey: {type: string, description: Private node-specific upload verification key.}
+        baseUrl: {type: [string, 'null'], description: Optional node HTTP address announced with encrypted authentication.}
+        listenAddr: {type: string}
+        requestTimeoutSeconds: {type: integer, minimum: 1, maximum: 300}
+        provider: {type: object, additionalProperties: true}
+    Sync:
+      type: object
+      required: [operation, locale]
+      properties:
+        operation: {type: string, enum: [update_app_metadata, update_release_notes, update_marketing_page]}
+        locale: {type: string, minLength: 1}
+        version: {type: string, description: Required for iOS non-CPP updates.}
+        syncScopes:
+          type: array
+          minItems: 1
+          items: {type: string, enum: [metadata, description, keywords, promotional_text, short_description, title, subtitle, video, store_images, marketing_text]}
+          description: Omit for defaults. Explicit empty/malformed selections are rejected.
+        metadata:
+          type: object
+          description: Missing text fields remain unchanged; explicit empty string clears selected text.
+          properties:
+            title: {type: string}
+            subtitle: {type: string}
+            description: {type: string}
+            fullDescription: {type: string}
+            shortDescription: {type: string}
+            promotionalText: {type: string}
+            keywords: {type: string}
+            videoUrl: {type: string}
+            storeImages: {$ref: '#/components/schemas/StoreImages'}
+        releaseNotes: {type: string}
+        storeRelease:
+          type: object
+          additionalProperties: false
+          minProperties: 1
+          properties:
+            track: {type: string, minLength: 1}
+            versionCode: {type: string, minLength: 1}
+            versionName: {type: string, minLength: 1}
+        marketingPage:
+          type: object
+          properties:
+            pageName: {type: string}
+            applePageId: {type: string}
+            promotionalText: {type: string}
+            storeImages: {$ref: '#/components/schemas/StoreImages'}
+    StoreImages:
+      type: object
+      description: Only present slots are replaced. Assets may reference a temporary uploaded assetId or a downloadUrl/fileName.
+      additionalProperties:
+        type: object
+        properties:
+          urls: {type: array, items: {type: string, format: uri}}
+          assets:
+            type: array
+            items:
+              type: object
+              oneOf:
+                - required: [assetId]
+                  additionalProperties: false
+                  properties:
+                    assetId: {type: string, format: uuid}
+                - required: [downloadUrl]
+                  not: {required: [assetId]}
+              properties:
+                downloadUrl: {type: string, format: uri}
+                fileName: {type: string}
+                assetId: {type: string, format: uuid}
+    UploadInput:
+      type: object
+      additionalProperties: false
+      required: [fileName, contentType, sizeBytes, sha256]
+      properties:
+        fileName: {type: string, minLength: 1, maxLength: 255}
+        contentType: {type: string, enum: [image/png, image/jpeg]}
+        sizeBytes: {type: integer, minimum: 1, maximum: 67108864}
+        sha256: {type: string, pattern: '^[0-9a-fA-F]{64}$'}
+    PPO:
+      type: object
+      required: [name, trafficProportion]
+      properties:
+        name: {type: string, minLength: 1}
+        trafficProportion: {type: integer, minimum: 1, maximum: 100}
+        locales: {type: array, items: {type: string, minLength: 1}}
+        treatments:
+          type: array
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: {type: string}
+              appIconName: {type: string}
+              locales: {type: array, items: {type: string}}
+    Preflight:
+      type: object
+      required: [operation]
+      properties:
+        operation: {type: string, enum: [update_app_metadata, update_release_notes, update_marketing_page]}
+        version: {type: string, description: Required for iOS non-CPP operations.}
+        locale: {type: string, description: Optional in current preflight implementation.}
+  responses:
+    Data:
+      description: Store or registry JSON response. Sync callers must also inspect succeeded/failed status.
+      content: {application/json: {schema: {type: object, additionalProperties: true}}}
+    Error:
+      description: >-
+        401 unauthorized, 404 unmapped app, 409 account busy/duplicate connection,
+        422 invalid payload, 429 store rate limit, 502 upstream failure,
+        503 disabled/disconnected node or unavailable binary, 504 deadline.
+        A timed-out mutation may already have changed the store; query before retriggering.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+security: [{clientToken: []}]
+paths:
+  /health:
+    get:
+      security: []
+      responses: {'200': {$ref: '#/components/responses/Data'}}
+  /v1/connectors:
+    get:
+      security: [{adminToken: []}]
+      summary: List sanitized Connector records
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    post:
+      security: [{adminToken: []}]
+      summary: Create account Connector and return private installation configuration
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ConnectorInput'}}}
+      responses: {'201': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+  /v1/connectors/{id}:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      security: [{adminToken: []}]
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    patch:
+      security: [{adminToken: []}]
+      summary: Enable or disable account Connector; disabling closes WSS
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [enabled], additionalProperties: false, properties: {enabled: {type: boolean}}}}}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+  /v1/connectors/{id}/rotate-token:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    post:
+      security: [{adminToken: []}]
+      summary: Rotate node credentials and close the current WSS connection
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+  /v1/connectors/{id}/installation:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      security: [{adminToken: []}]
+      summary: Retrieve private configuration with Cache-Control no-store
+      responses:
+        '200':
+          description: Private node configuration
+          content: {application/json: {schema: {$ref: '#/components/schemas/Installation'}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/connectors/{id}/installer/{target}:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - name: target
+        in: path
+        required: true
+        schema: {type: string, enum: [linux-amd64, linux-arm64, darwin-amd64, darwin-arm64, windows-amd64]}
+    get:
+      security: [{adminToken: []}]
+      summary: Package published binary, private config and launcher into ZIP
+      responses:
+        '200':
+          description: Private node ZIP, never cache publicly
+          content: {application/zip: {schema: {type: string, format: binary}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/connectors/{id}/ws:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      security: [{nodeToken: []}]
+      description: >-
+        WebSocket upgrade with subprotocol testflying.store.v2 and Token in Authorization header.
+        Noise NNpsk0 using the private messageKey authenticates registration including baseUrl;
+        the endpoint is recorded only after session key confirmation. StoreRequest and StoreReply
+        are fragmented into encrypted binary records. Plaintext and older protocols are rejected.
+        10-second ping, 35-second
+        inactivity deadline. Duplicate active identities rejected; no command replay.
+      responses: {'101': {description: WebSocket established}, default: {$ref: '#/components/responses/Error'}}
+  /v1/store-management/apps/{platform}/{bundleIdentifier}/uploads:
+    parameters: [{$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}]
+    post:
+      summary: Prepare a temporary image upload through the central API
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/UploadInput'}}}
+      responses:
+        '201':
+          description: assetId, central uploadUrl, short-lived uploadToken, expiresAt (Unix seconds) and PUT method. Cache-Control no-store.
+          content: {application/json: {schema: {type: object}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/store-management/apps/{platform}/{bundleIdentifier}/uploads/{assetId}:
+    parameters:
+      - {$ref: '#/components/parameters/platform'}
+      - {$ref: '#/components/parameters/bundleIdentifier'}
+      - {name: assetId, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      security: [{uploadToken: []}]
+      summary: Stream a local file through the center to its account Connector
+      description: No external direct-node URL, no center file persistence, no retries or resume. File is verified and expires after 15 minutes or is consumed by sync.
+      requestBody:
+        required: true
+        content:
+          image/png: {schema: {type: string, format: binary}}
+          image/jpeg: {schema: {type: string, format: binary}}
+          application/octet-stream: {schema: {type: string, format: binary}}
+      responses: {'201': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+  /v1/apps/{platform}/{bundleIdentifier}/connector:
+    parameters: [{$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}]
+    get:
+      security: [{adminToken: []}]
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    put:
+      security: [{adminToken: []}]
+      summary: Set or replace exact application mapping, many applications to one Connector
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [connectorId], additionalProperties: false, properties: {connectorId: {type: string, format: uuid}}}}}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    delete:
+      security: [{adminToken: []}]
+      responses: {'204': {description: Mapping removed}, default: {$ref: '#/components/responses/Error'}}
+  /v1/store-management/apps/{platform}/{bundleIdentifier}/{resource}:
+    parameters:
+      - {$ref: '#/components/parameters/platform'}
+      - {$ref: '#/components/parameters/bundleIdentifier'}
+      - name: resource
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [supported-locales, store-listings, store-images, store-releases, store-reviews, product-page-optimizations, preflight, sync]
+    get:
+      description: >-
+        supported-locales/store-listings/store-images/store-releases/store-reviews/
+        product-page-optimizations only. Other resources return 404.
+      parameters:
+        - {$ref: '#/components/parameters/version'}
+        - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 200}}
+        - {name: pageToken, in: query, schema: {type: string}}
+        - {name: startIndex, in: query, schema: {type: string}}
+        - {name: translationLanguage, in: query, schema: {type: string}}
+        - {name: sort, in: query, schema: {type: string}}
+        - {name: rating, in: query, schema: {type: integer, minimum: 1, maximum: 5}}
+        - {name: locale, in: query, schema: {type: string}}
+        - {name: territory, in: query, schema: {type: string}}
+        - {name: date, in: query, schema: {type: string, format: date}}
+        - {name: startDate, in: query, schema: {type: string, format: date}}
+        - {name: endDate, in: query, schema: {type: string, format: date}}
+        - {name: timezone, in: query, schema: {type: string, default: Asia/Shanghai}}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    post:
+      description: >-
+        sync/preflight/product-page-optimizations only. Other resources return 404.
+        Body is request content, never a reference to persisted drafts.
+        Preflight uses operation/locale/version; PPO uses the PPO schema.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              anyOf: [{$ref: '#/components/schemas/Sync'}, {$ref: '#/components/schemas/PPO'}, {$ref: '#/components/schemas/Preflight'}]
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}

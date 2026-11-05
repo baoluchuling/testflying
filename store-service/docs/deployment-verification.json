@@ -1,0 +1,43 @@
+{
+  "runId": "7234ada4d1f742178e949e42703725da",
+  "finishedAt": "2026-11-04T03:12:03.451424+00:00",
+  "deploymentCommit": "98da57c3601d4b5b6fca69eedeb700718de9679d",
+  "binarySourceCommit": "2d325faf7992e46a5ca2e33acd38bbf4bf20b053",
+  "releaseDirectory": "/opt/testflying-store-api/versions/98da57c3601d4b5b6fca69eedeb700718de9679d",
+  "baseUrl": "https://store-api.example.com/store-api",
+  "addressRedacted": true,
+  "checks": [
+    "external HTTPS health and certificate",
+    "administrator authentication required",
+    "application token cannot administer nodes",
+    "node registration",
+    "generated node credentials",
+    "linux-amd64 installer download",
+    "linux-amd64 installer identity and binary checksum",
+    "darwin-arm64 installer download",
+    "darwin-arm64 installer identity and binary checksum",
+    "unpublished target rejected",
+    "real Connector WSS connection through HTTPS proxy",
+    "verification app is initially unbound",
+    "application maps to Connector",
+    "API dispatch reaches Connector without real store credentials",
+    "verification app mapping removed",
+    "verification node disabled and disconnected",
+    "production service active and enabled at boot"
+  ],
+  "verificationNodeId": "5aff7c72-771b-4f5c-bdb5-c695c380cecf",
+  "verificationNode": "disabled, disconnected, no app mapping or store credentials",
+  "caSha256": "d6a6874992dd6197da68c43037ab176cd3d7f7ce7be2966706293dc499443296",
+  "remainingProductionResources": [
+    "testflying-store-api systemd service",
+    "SQLite registry",
+    "root-only service.env",
+    "release binaries",
+    "TLS proxy route and original config backup"
+  ],
+  "notVerified": [
+    "Real Apple/Google accounts",
+    "Unpublished Connector targets"
+  ],
+  "cleanup": "See the supervisor cleanup report for this runId"
+}

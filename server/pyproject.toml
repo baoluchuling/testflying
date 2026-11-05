@@ -1,0 +1,51 @@
+[project]
+name = "testflying-server"
+version = "0.1.0"
+description = "Central server for the testflying internal app distribution and store sync tool."
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.14,<2.0",
+  "boto3>=1.35,<2.0",
+  "fastapi>=0.115,<1.0",
+  "jinja2>=3.1,<4.0",
+  "pydantic>=2.10,<3.0",
+  "pyaxmlparser>=0.3.31,<0.4.0",
+  "psycopg[binary]>=3.2,<4.0",
+  "python-multipart>=0.0.20,<1.0",
+  "qrcode>=8.0,<9.0",
+  "sqlalchemy>=2.0,<3.0",
+  "uvicorn[standard]>=0.34,<1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "httpx>=0.27,<1.0",
+  "pytest>=8.0,<9.0",
+  "ruff>=0.8,<1.0",
+]
+
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+testflying_api = [
+  "templates/*.html",
+  "docs/*.md",
+  "static/admin-app/*.html",
+  "static/admin-app/*.svg",
+  "static/admin-app/assets/*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]

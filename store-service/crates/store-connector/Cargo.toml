@@ -1,0 +1,20 @@
+[package]
+name = "store-connector"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
+reqwest.workspace = true
+store-protocol.workspace = true
+store-provider.workspace = true
+subtle = "2"
+hex.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

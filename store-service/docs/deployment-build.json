@@ -1,0 +1,54 @@
+{
+  "runId": "10460f29b4764523ad97a4a48b755ed8",
+  "finishedAt": "2026-11-04T07:55:03.616663+00:00",
+  "sourceCommit": "703305180e49cf330d13d3ae507581a2d2226c48",
+  "sourceHashes": {
+    "Cargo.lock": "a5c0e41565b308a9f324c826b605d0299aa5c0cfcedeb829b0a9c6c39e6440a3",
+    "Cargo.toml": "fd87675617bd5deda3fe4e5fb91d81b194a43536aed5a43234b68c7592778db9",
+    "crates/store-api/Cargo.toml": "c5e8e8e73bcfe57f4db5fd1eb0443ec0915fa35f72d3b2866c1f6ab57434545e",
+    "crates/store-api/src/lib.rs": "041199ca23238a5fcea5a1a2570c8a9132cff77c0b6d3beb48025b8d06b313bc",
+    "crates/store-api/src/main.rs": "bd018cec7e721cecb2aa339b6e5c08c9f558b63c0d194e844f3552bdbc6ba73e",
+    "crates/store-api/src/registry.rs": "ca3acbdc1fb772a723e59862834c414d9beaa041a7a7b1e0150287433d73de2c",
+    "crates/store-api/src/transport.rs": "5960bff6a7baba83bc595c9a87e1a24ca943f23dcb5d68b2bc42e8ca421cd56f",
+    "crates/store-api/src/uploads.rs": "52674a84c7c1f0c924b1150fcda83847572d27942e1eac2fbe8c11026465f6c0",
+    "crates/store-api/tests/service.rs": "68847172eb9a39767f25e48d788911085362d528b922b1eb7d89ebbd8a091be2",
+    "crates/store-api/tests/uploads.rs": "1f043257685b2dbb010690d95716b5836a125393a1bbbb55c420e115e78edaa2",
+    "crates/store-connector/Cargo.toml": "9a9614156f0c540f2f8259cfb5f5c6913aabae473d34bc42020e6790438c4c33",
+    "crates/store-connector/src/lib.rs": "e9c7b5112294d36d75e383aceb6273c01f4a1555b56439bc51a8a4ce431b46b8",
+    "crates/store-connector/src/main.rs": "c057270334ff482a9e3ad9d4338e43011a23b10b519587ee4968fd823307e18b",
+    "crates/store-protocol/Cargo.toml": "7d0718bf58ce0b0b04e803533a8a34cff33202e686e049960053676a346729de",
+    "crates/store-protocol/src/crypto.rs": "bb0738313f5535e42b9bdd6dfbee28faed477a1f1b839fe06bf222989f0f5f59",
+    "crates/store-protocol/src/lib.rs": "86832893ef086a6a9b3b0cb6992abfafd1eef237753da1a5d0a863c0f991a04c",
+    "crates/store-protocol/src/upload.rs": "da23d9a5a4060c0bb6afc8e9f1d86a54e9858bce3c2f8ecd072185a4e9b43d9d",
+    "crates/store-protocol/tests/security.rs": "90d7052c2cc474b0e0fabc7bd92adb0b154b1a0e29782956db46f1a8faead00a",
+    "crates/store-provider/Cargo.toml": "10075841697b0f6292f4b41b67da029196c68b7d8f52e54f7cd02eb7ae8ec808",
+    "crates/store-provider/src/apple.rs": "1d2de417ed0142949434ca200674c5565dac71ec83f5128f2ebca70b9ca3b016",
+    "crates/store-provider/src/assets.rs": "cff3573acfae09777933d67c129542c2f4de85934192ccf4b25bb2c1749d7f49",
+    "crates/store-provider/src/google.rs": "0602ede10a91c86ad3a4500071c3bb17b8d7a2cc50588f64d087887b3d27f671",
+    "crates/store-provider/src/images.rs": "2365723818b59849b5c2ec7aa1d2a8acc827ec96222f0ab4d6d665016411262f",
+    "crates/store-provider/src/lib.rs": "046606b3d950aa2d1dff103949ba474c812d4ab0d86c5e5b7cbf64c202d10056",
+    "crates/store-provider/src/reviews.rs": "f4dd91ff8620eea070cc8a97bfc5d0cab08bf56583d706009793ed5327393f3b",
+    "crates/store-provider/src/validation.rs": "d3c19542c217a28f8890ec5383305ce7ee57a94d107380916dadb75fc73e62c2",
+    "crates/store-provider/tests/live.rs": "7c0361f279b4edc50024baa466b9d597ec7ac9ba6202c6552fbbe4e309d9c46a",
+    "scripts/verify_store_refactor.py": "9e8e62233cdb2c0ed9db625ebf2025553ecd19917d6021f7b292b39f047b672f"
+  },
+  "toolchain": "Rust 1.94.0 / cargo-zigbuild 0.20.1 / Zig 0.14.1",
+  "outputs": {
+    "releases/linux-amd64/store-api": {
+      "sha256": "34dd479757fdd66afccf6b77b4df840c7cf357c36f37f668b9b1c832014937db",
+      "bytes": 7392720,
+      "format": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped"
+    },
+    "releases/linux-amd64/store-connector": {
+      "sha256": "9027c88c561a898de08d4efe2569f3525033c3c323c836a418152143fb9d5590",
+      "bytes": 8353224,
+      "format": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped"
+    },
+    "releases/darwin-arm64/store-connector": {
+      "sha256": "0bee2286f60390f8df4900c811b64aed2e90324a018d15dbf9dabb9fa4157b73",
+      "bytes": 9027872,
+      "format": "Mach-O 64-bit executable arm64"
+    }
+  },
+  "cleanup": "See the supervisor cleanup report for this runId"
+}

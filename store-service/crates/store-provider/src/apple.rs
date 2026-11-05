@@ -1,0 +1,843 @@
+use super::*;
+use std::collections::BTreeMap;
+
+impl Gateway {
+    async fn apple(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value> {
+        self.api(Platform::Ios, method, path, body).await
+    }
+    pub(super) async fn apple_execute(&self, r: &StoreRequest) -> Result<Value> {
+        // Identity is resolved exclusively from the trusted envelope Bundle ID.
+        let response = self
+            .apple(
+                Method::GET,
+                &query(
+                    "/v1/apps",
+                    &[("filter[bundleId]", &r.bundle_identifier), ("limit", "2")],
+                ),
+                None,
+            )
+            .await?;
+        let apps = arr(&response, "data");
+        if apps.len() != 1 {
+            return Err(StoreError::new(
+                404,
+                "store_app_not_found",
+                "Bundle ID did not resolve to one Apple app",
+            ));
+        }
+        let app = id(&apps[0])?;
+        if let Some(bundle) = apps[0]["attributes"]
+            .get("bundleId")
+            .and_then(Value::as_str)
+        {
+            if bundle != r.bundle_identifier {
+                return Err(upstream("Apple returned an unexpected app identity"));
+            }
+        }
+        match r.operation {
+            Operation::ProductPageOptimizations => self.apple_ppo(app, None).await,
+            Operation::CreateProductPageOptimization => self.apple_ppo(app, Some(&r.payload)).await,
+            Operation::StoreReviews => self.apple_reviews(app, &r.payload).await,
+            Operation::StoreReleases => Ok(json!({"releases":[]})),
+            Operation::Sync if s(&r.payload, "operation") == "update_marketing_page" => {
+                self.apple_marketing(app, &r.payload).await
+            }
+            _ => {
+                let version = self
+                    .apple_version(app, s(&r.payload, "version"), false)
+                    .await?;
+                match r.operation {
+                    Operation::Preflight => {
+                        if s(&r.payload, "operation") == "update_marketing_page" {
+                            return Ok(preflight(true, None, "marketing_page_editable", true));
+                        }
+                        Ok(match version {
+                            Some(ref v) => {
+                                let state = s(&v["attributes"], "appStoreState");
+                                let editable = editable(state);
+                                preflight(
+                                    editable,
+                                    if editable {
+                                        None
+                                    } else {
+                                        Some("store_version_not_editable")
+                                    },
+                                    state,
+                                    true,
+                                )
+                            }
+                            None => {
+                                preflight(false, Some("store_version_missing"), "missing", false)
+                            }
+                        })
+                    }
+                    Operation::SupportedLocales => {
+                        let localizations = if let Some(v) = version {
+                            self.apple_localizations(
+                                "appStoreVersions",
+                                id(&v)?,
+                                "appStoreVersionLocalizations",
+                            )
+                            .await?
+                        } else {
+                            self.apple_info(app).await?.1
+                        };
+                        let mut locales = localizations
+                            .iter()
+                            .map(|v| s(&v["attributes"], "locale").to_owned())
+                            .filter(|s| !s.is_empty())
+                            .collect::<Vec<_>>();
+                        locales.sort();
+                        locales.dedup();
+                        Ok(json!({"locales":locales}))
+                    }
+                    Operation::StoreListings => {
+                        let mut listings = BTreeMap::<String, Value>::new();
+                        for loc in self.apple_info(app).await?.1 {
+                            let a = &loc["attributes"];
+                            let locale = s(a, "locale");
+                            listings.insert(locale.into(),json!({"locale":locale,"title":s(a,"name"),"subtitle":s(a,"subtitle")}));
+                        }
+                        if let Some(v) = version {
+                            for loc in self
+                                .apple_localizations(
+                                    "appStoreVersions",
+                                    id(&v)?,
+                                    "appStoreVersionLocalizations",
+                                )
+                                .await?
+                            {
+                                let a = &loc["attributes"];
+                                let locale = s(a, "locale");
+                                let row = listings
+                                    .entry(locale.into())
+                                    .or_insert_with(|| json!({"locale":locale}));
+                                for (target, source) in [
+                                    ("description", "description"),
+                                    ("fullDescription", "description"),
+                                    ("keywords", "keywords"),
+                                    ("promotionalText", "promotionalText"),
+                                    ("releaseNotes", "whatsNew"),
+                                ] {
+                                    row[target] = json!(s(a, source));
+                                }
+                            }
+                        }
+                        Ok(json!({"listings":listings.into_values().collect::<Vec<_>>()}))
+                    }
+                    Operation::StoreImages => {
+                        let mut rows = Vec::new();
+                        if let Some(v) = version {
+                            for loc in self
+                                .apple_localizations(
+                                    "appStoreVersions",
+                                    id(&v)?,
+                                    "appStoreVersionLocalizations",
+                                )
+                                .await?
+                            {
+                                let response = self
+                                    .apple_sets("appStoreVersionLocalizations", id(&loc)?)
+                                    .await?;
+                                let mut images =
+                                    json!({"phone_screenshots":[],"tablet_screenshots":[]});
+                                for set in arr(&response, "data") {
+                                    let display = s(&set["attributes"], "screenshotDisplayType");
+                                    let slot = if display.contains("IPHONE") {
+                                        "phone_screenshots"
+                                    } else if display.contains("IPAD") {
+                                        "tablet_screenshots"
+                                    } else {
+                                        continue;
+                                    };
+                                    for link in arr(&set["relationships"]["appScreenshots"], "data")
+                                    {
+                                        if let Some(image) =
+                                            arr(&response, "included").iter().find(|v| {
+                                                s(v, "id") == s(link, "id")
+                                                    && s(v, "type") == "appScreenshots"
+                                            })
+                                        {
+                                            let a = &image["attributes"];
+                                            let asset = &a["imageAsset"];
+                                            images[slot].as_array_mut().expect("array").push(json!({"id":image["id"],"fileName":a["fileName"],
+                                                "url":if s(a,"url").is_empty(){&asset["templateUrl"]}else{&a["url"]},"width":asset["width"],"height":asset["height"]}));
+                                        }
+                                    }
+                                }
+                                rows.push(
+                                    json!({"locale":loc["attributes"]["locale"],"images":images}),
+                                );
+                            }
+                        }
+                        Ok(json!({"locales":rows}))
+                    }
+                    Operation::Sync => {
+                        self.apple_sync(
+                            app,
+                            s(&apps[0]["attributes"], "primaryLocale"),
+                            &r.payload,
+                            version,
+                        )
+                        .await
+                    }
+                    _ => Err(invalid("Unsupported Apple operation")),
+                }
+            }
+        }
+    }
+    async fn apple_version(&self, app: &str, version: &str, latest: bool) -> Result<Option<Value>> {
+        if version.is_empty() && !latest {
+            return Ok(None);
+        }
+        let pairs = if latest {
+            vec![
+                ("limit", "1"),
+                ("sort", "-createdDate"),
+                ("filter[platform]", "IOS"),
+            ]
+        } else {
+            vec![
+                ("filter[versionString]", version),
+                ("filter[platform]", "IOS"),
+                ("limit", "10"),
+            ]
+        };
+        let response = self
+            .apple(
+                Method::GET,
+                &query(
+                    &format!("/v1/apps/{}/appStoreVersions", escape(app)),
+                    &pairs,
+                ),
+                None,
+            )
+            .await?;
+        Ok(arr(&response, "data").first().cloned())
+    }
+    async fn apple_localizations(
+        &self,
+        owner: &str,
+        owner_id: &str,
+        kind: &str,
+    ) -> Result<Vec<Value>> {
+        let response = self
+            .apple(
+                Method::GET,
+                &format!("/v1/{owner}/{}/{kind}?limit=200", escape(owner_id)),
+                None,
+            )
+            .await?;
+        Ok(arr(&response, "data").to_vec())
+    }
+    async fn apple_info(&self, app: &str) -> Result<(String, Vec<Value>)> {
+        let response = self
+            .apple(
+                Method::GET,
+                &format!("/v1/apps/{}/appInfos?limit=1", escape(app)),
+                None,
+            )
+            .await?;
+        let Some(info) = arr(&response, "data").first() else {
+            return Ok((String::new(), vec![]));
+        };
+        let info = id(info)?.to_owned();
+        let locales = self
+            .apple_localizations("appInfos", &info, "appInfoLocalizations")
+            .await?;
+        Ok((info, locales))
+    }
+    async fn apple_ensure_locale(
+        &self,
+        owner_rel: &str,
+        owner_type: &str,
+        owner: &str,
+        kind: &str,
+        locale: &str,
+        creation_attributes: Value,
+    ) -> Result<String> {
+        if let Some(loc) = self
+            .apple_localizations(owner_type, owner, kind)
+            .await?
+            .iter()
+            .find(|v| s(&v["attributes"], "locale") == locale)
+        {
+            return Ok(id(loc)?.into());
+        }
+        let mut attributes = creation_attributes.as_object().cloned().unwrap_or_default();
+        attributes.insert("locale".into(), json!(locale));
+        if kind == "appInfoLocalizations"
+            && attributes
+                .get("name")
+                .and_then(Value::as_str)
+                .is_none_or(|name| name.trim().is_empty())
+        {
+            return Err(invalid(
+                "Creating an app-info localization requires a selected, nonempty title",
+            ));
+        }
+        let response = self
+            .apple(
+                Method::POST,
+                &format!("/v1/{kind}"),
+                Some(resource(
+                    kind,
+                    None,
+                    json!(attributes),
+                    json!({owner_rel:{"data":{"type":owner_type,"id":owner}}}),
+                )),
+            )
+            .await?;
+        Ok(id(&response["data"])?.into())
+    }
+    async fn apple_patch(&self, kind: &str, resource_id: &str, attributes: Value) -> Result<()> {
+        if attributes.as_object().is_some_and(|v| !v.is_empty()) {
+            self.apple(
+                Method::PATCH,
+                &format!("/v1/{kind}/{}", escape(resource_id)),
+                Some(resource(kind, Some(resource_id), attributes, json!({}))),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+    async fn apple_sync(
+        &self,
+        app: &str,
+        primary_locale: &str,
+        p: &Value,
+        version: Option<Value>,
+    ) -> Result<Value> {
+        let operation = required(p, "operation")?;
+        if !matches!(operation, "update_app_metadata" | "update_release_notes") {
+            return Err(invalid("Unsupported sync operation"));
+        }
+        let locale = required(p, "locale")?;
+        let Some(version) = version else {
+            return Ok(failed(
+                "store_version_missing",
+                "Target store version does not exist",
+            ));
+        };
+        if !editable(s(&version["attributes"], "appStoreState")) {
+            return Ok(failed(
+                "store_version_not_editable",
+                "Target store version is not editable",
+            ));
+        }
+        let version_id = id(&version)?;
+        let mut attrs = serde_json::Map::new();
+        let mut info_attrs = serde_json::Map::new();
+        if operation == "update_release_notes" {
+            required(p, "releaseNotes")?;
+            attrs.insert("whatsNew".into(), p["releaseNotes"].clone());
+        } else {
+            let metadata = p
+                .get("metadata")
+                .filter(|m| m.is_object())
+                .ok_or_else(|| invalid("metadata is required"))?;
+            for (scope, target, keys) in [
+                (
+                    "description",
+                    "description",
+                    &["description", "fullDescription"][..],
+                ),
+                ("keywords", "keywords", &["keywords"][..]),
+                (
+                    "promotional_text",
+                    "promotionalText",
+                    &["promotionalText"][..],
+                ),
+            ] {
+                if scopes(p, scope, true) {
+                    copy_field(&mut attrs, target, metadata, keys)?;
+                }
+            }
+            if scopes(p, "title", true) {
+                copy_field(&mut info_attrs, "name", metadata, &["title"])?;
+            }
+            if scopes(p, "subtitle", true) {
+                copy_field(&mut info_attrs, "subtitle", metadata, &["subtitle"])?;
+            }
+        }
+        let has_images =
+            scopes(p, "store_images", false) && p["metadata"]["storeImages"].is_object();
+        if attrs.is_empty() && info_attrs.is_empty() && !has_images {
+            return Ok(failed(
+                "empty_sync_payload",
+                "No selected store content was supplied",
+            ));
+        }
+        let version_locales = self
+            .apple_localizations(
+                "appStoreVersions",
+                version_id,
+                "appStoreVersionLocalizations",
+            )
+            .await?;
+        let new_version_locale = !version_locales
+            .iter()
+            .any(|v| s(&v["attributes"], "locale") == locale);
+        // A new version locale must have matching app-info metadata. Resolve and
+        // validate every required name before performing any localization writes.
+        let info_plan = if new_version_locale || !info_attrs.is_empty() {
+            let (info, locales) = self.apple_info(app).await?;
+            if info.is_empty() {
+                return Err(upstream("Apple app info is unavailable"));
+            }
+            let existing = locales
+                .iter()
+                .any(|v| s(&v["attributes"], "locale") == locale);
+            let mut creation = info_attrs.clone();
+            if !existing {
+                if let Some(name) = creation.get("name") {
+                    if name.as_str().is_none_or(|name| name.trim().is_empty()) {
+                        return Err(invalid(
+                            "Creating an app-info localization requires a nonempty title",
+                        ));
+                    }
+                } else {
+                    let fallback = locales.iter()
+                        .find(|v| !primary_locale.is_empty() && s(&v["attributes"], "locale") == primary_locale)
+                        .map(|v| s(&v["attributes"], "name"))
+                        .filter(|name| !name.trim().is_empty())
+                        .ok_or_else(|| invalid("New store locales require a selected title or the existing primary-locale app name"))?;
+                    creation.insert("name".into(), json!(fallback));
+                }
+            }
+            Some((info, creation))
+        } else {
+            None
+        };
+        let info_localization = if let Some((info, creation)) = info_plan {
+            Some(
+                self.apple_ensure_locale(
+                    "appInfo",
+                    "appInfos",
+                    &info,
+                    "appInfoLocalizations",
+                    locale,
+                    json!(creation),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+        let localization = self
+            .apple_ensure_locale(
+                "appStoreVersion",
+                "appStoreVersions",
+                version_id,
+                "appStoreVersionLocalizations",
+                locale,
+                json!({}),
+            )
+            .await?;
+        self.apple_patch("appStoreVersionLocalizations", &localization, json!(attrs))
+            .await?;
+        if let Some(loc) = info_localization {
+            self.apple_patch("appInfoLocalizations", &loc, json!(info_attrs))
+                .await?;
+        }
+        if has_images {
+            self.apple_sync_images(
+                "appStoreVersionLocalization",
+                "appStoreVersionLocalizations",
+                &localization,
+                &p["metadata"]["storeImages"],
+            )
+            .await?;
+        }
+        Ok(succeeded(json!({})))
+    }
+    async fn apple_reviews(&self, app: &str, p: &Value) -> Result<Value> {
+        let size = p["pageSize"]
+            .as_u64()
+            .filter(|n| *n > 0)
+            .unwrap_or(50)
+            .min(200)
+            .to_string();
+        let sort = if s(p, "sort").is_empty() {
+            "-createdDate"
+        } else {
+            s(p, "sort")
+        };
+        let mut pairs = vec![("limit", size.as_str()), ("sort", sort)];
+        if !s(p, "pageToken").is_empty() {
+            pairs.push(("cursor", s(p, "pageToken")));
+        }
+        let response = self
+            .apple(
+                Method::GET,
+                &query(&format!("/v1/apps/{}/customerReviews", escape(app)), &pairs),
+                None,
+            )
+            .await?;
+        let reviews=arr(&response,"data").iter().map(|v|{let a=&v["attributes"];json!({"id":s(v,"id"),"platform":"ios","rating":a["rating"].as_i64().unwrap_or(0),"title":s(a,"title"),"body":s(a,"body"),
+            "reviewerNickname":s(a,"reviewerNickname"),"authorName":s(a,"reviewerNickname"),"locale":s(a,"locale"),"territory":s(a,"territory"),
+            "appVersion":if s(a,"appVersionString").is_empty(){s(a,"appVersion")}else{s(a,"appVersionString")},"createdAt":s(a,"createdDate"),"updatedAt":s(a,"createdDate"),"raw":a})}).collect::<Vec<_>>();
+        let next = s(&response["links"], "next");
+        let token = Url::parse(next)
+            .ok()
+            .and_then(|u| {
+                u.query_pairs()
+                    .find(|(k, _)| k == "cursor")
+                    .map(|(_, v)| v.into_owned())
+            })
+            .unwrap_or_else(|| next.into());
+        Ok(json!({"reviews":reviews,"nextPageToken":token,"rawPageInfo":response["meta"]}))
+    }
+    async fn apple_ppo(&self, app: &str, p: Option<&Value>) -> Result<Value> {
+        if let Some(p) = p {
+            let name = required(p, "name")?;
+            let traffic = p["trafficProportion"]
+                .as_u64()
+                .filter(|v| *v > 0 && *v <= 100)
+                .ok_or_else(|| invalid("trafficProportion must be 1–100"))?;
+            for treatment in arr(p, "treatments") {
+                required(treatment, "name")?;
+                let locales = if arr(treatment, "locales").is_empty() {
+                    arr(p, "locales")
+                } else {
+                    arr(treatment, "locales")
+                };
+                for locale in locales {
+                    if locale.as_str().is_none_or(|s| s.trim().is_empty()) {
+                        return Err(invalid("Treatment locale must be a string"));
+                    }
+                }
+            }
+            let response = self
+                .apple(
+                    Method::POST,
+                    "/v2/appStoreVersionExperiments",
+                    Some(resource(
+                        "appStoreVersionExperiments",
+                        None,
+                        json!({"name":name,"platform":"IOS","trafficProportion":traffic}),
+                        json!({"app":{"data":{"type":"apps","id":app}}}),
+                    )),
+                )
+                .await?;
+            let mut experiment = ppo(&response["data"]);
+            let experiment_id = id(&response["data"])?;
+            let mut treatments = Vec::new();
+            for treatment in arr(p, "treatments") {
+                let mut attrs = json!({"name":treatment["name"]});
+                if !s(treatment, "appIconName").is_empty() {
+                    attrs["appIconName"] = treatment["appIconName"].clone();
+                }
+                let response=self.apple(Method::POST,"/v1/appStoreVersionExperimentTreatments",Some(resource("appStoreVersionExperimentTreatments",None,attrs,json!({"appStoreVersionExperimentV2":{"data":{"type":"appStoreVersionExperiments","id":experiment_id}}})))).await?;
+                let treatment_id = id(&response["data"])?;
+                let locales = if arr(treatment, "locales").is_empty() {
+                    arr(p, "locales")
+                } else {
+                    arr(treatment, "locales")
+                };
+                for locale in locales {
+                    let locale = locale
+                        .as_str()
+                        .filter(|s| !s.trim().is_empty())
+                        .ok_or_else(|| invalid("Treatment locale must be a string"))?;
+                    self.apple(Method::POST,"/v1/appStoreVersionExperimentTreatmentLocalizations",Some(resource("appStoreVersionExperimentTreatmentLocalizations",None,json!({"locale":locale}),json!({"appStoreVersionExperimentTreatment":{"data":{"type":"appStoreVersionExperimentTreatments","id":treatment_id}}})))).await?;
+                }
+                treatments.push(json!({"id":treatment_id,"name":response["data"]["attributes"]["name"],"appIconName":response["data"]["attributes"]["appIconName"],"locales":locales}));
+            }
+            experiment["treatments"] = json!(treatments);
+            return Ok(json!({"experiment":experiment}));
+        }
+        let response = self
+            .apple(
+                Method::GET,
+                &query(
+                    &format!("/v1/apps/{}/appStoreVersionExperimentsV2", escape(app)),
+                    &[
+                        ("include", "appStoreVersionExperimentTreatments"),
+                        ("limit", "200"),
+                        ("limit[appStoreVersionExperimentTreatments]", "50"),
+                    ],
+                ),
+                None,
+            )
+            .await?;
+        let experiments=arr(&response,"data").iter().map(|v|{let mut experiment=ppo(v);let mut treatments=Vec::new();
+            for link in arr(&v["relationships"]["appStoreVersionExperimentTreatments"],"data"){
+                if let Some(t)=arr(&response,"included").iter().find(|t|s(t,"id")==s(link,"id")){
+                    treatments.push(json!({"id":t["id"],"name":t["attributes"]["name"],"appIconName":t["attributes"]["appIconName"]}));
+                }
+            }experiment["treatments"]=json!(treatments);experiment}).collect::<Vec<_>>();
+        Ok(json!({"experiments":experiments}))
+    }
+    async fn apple_marketing(&self, app: &str, p: &Value) -> Result<Value> {
+        let page = p
+            .get("marketingPage")
+            .filter(|p| p.is_object())
+            .ok_or_else(|| invalid("marketingPage is required"))?;
+        let name = required(page, "pageName")?;
+        let locale = if s(page, "locale").is_empty() {
+            required(p, "locale")?
+        } else {
+            s(page, "locale")
+        };
+        let mut page_id = s(page, "applePageId").to_owned();
+        let created = page_id.is_empty();
+        let mut localization = None;
+        if created {
+            let version = self
+                .apple_version(app, "", true)
+                .await?
+                .ok_or_else(|| invalid("Custom pages require an existing store version"))?;
+            let mut attrs = json!({"locale":locale});
+            if arr(p, "syncScopes").is_empty() || scopes(p, "marketing_text", false) {
+                if let Some(text) = page.get("promotionalText") {
+                    if !text.is_string() {
+                        return Err(invalid("promotionalText must be a string"));
+                    }
+                    attrs["promotionalText"] = text.clone();
+                }
+            }
+            let mut body = resource(
+                "appCustomProductPages",
+                None,
+                json!({"name":name}),
+                json!({"app":{"data":{"type":"apps","id":app}},
+                "appStoreVersionTemplate":{"data":{"type":"appStoreVersions","id":id(&version)?}},
+                "appCustomProductPageVersions":{"data":[{"type":"appCustomProductPageVersions","id":"new-version"}]}}),
+            );
+            body["included"] = json!([{"type":"appCustomProductPageVersions","id":"new-version","relationships":{"appCustomProductPageLocalizations":{"data":[{"type":"appCustomProductPageLocalizations","id":"new-locale"}]}}},
+                {"type":"appCustomProductPageLocalizations","id":"new-locale","attributes":attrs}]);
+            let response = self
+                .apple(Method::POST, "/v1/appCustomProductPages", Some(body))
+                .await?;
+            page_id = id(&response["data"])?.into();
+            localization = arr(&response, "included")
+                .iter()
+                .find(|v| s(v, "type") == "appCustomProductPageLocalizations")
+                .map(|v| s(v, "id").to_owned())
+                .filter(|s| !s.is_empty());
+        } else {
+            // Verify the supplied page belongs to the envelope-resolved app before mutation.
+            let response = self
+                .apple(
+                    Method::GET,
+                    &format!("/v1/appCustomProductPages/{}/app", escape(&page_id)),
+                    None,
+                )
+                .await?;
+            if id(&response["data"])? != app {
+                return Err(invalid(
+                    "Custom product page does not belong to the requested app",
+                ));
+            }
+        }
+        let localization = if let Some(loc) = localization {
+            loc
+        } else {
+            let response = self
+                .apple(
+                    Method::GET,
+                    &format!(
+                        "/v1/appCustomProductPages/{}/appCustomProductPageVersions?limit=1",
+                        escape(&page_id)
+                    ),
+                    None,
+                )
+                .await?;
+            let version = arr(&response, "data")
+                .first()
+                .ok_or_else(|| upstream("Custom page version missing"))?;
+            self.apple_ensure_locale(
+                "appCustomProductPageVersion",
+                "appCustomProductPageVersions",
+                id(version)?,
+                "appCustomProductPageLocalizations",
+                locale,
+                json!({}),
+            )
+            .await?
+        };
+        if arr(p, "syncScopes").is_empty() || scopes(p, "marketing_text", false) {
+            let mut attrs = serde_json::Map::new();
+            copy_field(&mut attrs, "promotionalText", page, &["promotionalText"])?;
+            self.apple_patch(
+                "appCustomProductPageLocalizations",
+                &localization,
+                json!(attrs),
+            )
+            .await?;
+        }
+        if scopes(p, "store_images", false) && page["storeImages"].is_object() {
+            self.apple_sync_images(
+                "appCustomProductPageLocalization",
+                "appCustomProductPageLocalizations",
+                &localization,
+                &page["storeImages"],
+            )
+            .await?;
+        }
+        Ok(succeeded(json!({"applePageId":page_id,"created":created})))
+    }
+    async fn apple_sets(&self, owner: &str, owner_id: &str) -> Result<Value> {
+        self.apple(
+            Method::GET,
+            &query(
+                &format!("/v1/{owner}/{}/appScreenshotSets", escape(owner_id)),
+                &[
+                    ("include", "appScreenshots"),
+                    ("limit", "200"),
+                    ("limit[appScreenshots]", "50"),
+                ],
+            ),
+            None,
+        )
+        .await
+    }
+    async fn apple_sync_images(
+        &self,
+        relationship: &str,
+        owner: &str,
+        owner_id: &str,
+        images: &Value,
+    ) -> Result<()> {
+        for (slot, display) in [
+            ("phone_screenshots", "APP_IPHONE_67"),
+            ("tablet_screenshots", "APP_IPAD_PRO_3GEN_129"),
+        ] {
+            let Some(slot) = images.get(slot) else {
+                continue;
+            };
+            let sources = images::sources(slot)?;
+            let mut downloaded = Vec::new();
+            for source in sources {
+                downloaded.push(self.download_image(&source).await?);
+            }
+            let response = self.apple_sets(owner, owner_id).await?;
+            let set = if let Some(set) = arr(&response, "data")
+                .iter()
+                .find(|v| s(&v["attributes"], "screenshotDisplayType") == display)
+            {
+                set.clone()
+            } else {
+                if downloaded.is_empty() {
+                    continue;
+                }
+                self.apple(
+                    Method::POST,
+                    "/v1/appScreenshotSets",
+                    Some(resource(
+                        "appScreenshotSets",
+                        None,
+                        json!({"screenshotDisplayType":display}),
+                        json!({relationship:{"data":{"type":owner,"id":owner_id}}}),
+                    )),
+                )
+                .await?["data"]
+                    .clone()
+            };
+            let set_id = id(&set)?;
+            for link in arr(&set["relationships"]["appScreenshots"], "data") {
+                self.apple(
+                    Method::DELETE,
+                    &format!("/v1/appScreenshots/{}", escape(id(link)?)),
+                    None,
+                )
+                .await?;
+            }
+            for image in downloaded {
+                let checksum = format!("{:x}", md5::compute(&image.bytes));
+                let response=self.apple(Method::POST,"/v1/appScreenshots",Some(resource("appScreenshots",None,json!({"fileName":image.name,"fileSize":image.bytes.len(),"sourceFileChecksum":checksum}),json!({"appScreenshotSet":{"data":{"type":"appScreenshotSets","id":set_id}}})))).await?;
+                let screenshot = id(&response["data"])?;
+                let operations = arr(&response["data"]["attributes"], "uploadOperations");
+                if operations.is_empty() {
+                    return Err(upstream(
+                        "Apple screenshot reservation omitted upload operations",
+                    ));
+                }
+                for operation in operations {
+                    let start = usize::try_from(
+                        operation
+                            .get("offset")
+                            .unwrap_or(&json!(0))
+                            .as_u64()
+                            .ok_or_else(|| upstream("Invalid Apple upload offset"))?,
+                    )
+                    .map_err(|_| upstream("Invalid Apple upload offset"))?;
+                    let length = usize::try_from(
+                        operation
+                            .get("length")
+                            .unwrap_or(&json!(0))
+                            .as_u64()
+                            .ok_or_else(|| upstream("Invalid Apple upload length"))?,
+                    )
+                    .map_err(|_| upstream("Invalid Apple upload length"))?;
+                    let end = if length == 0 {
+                        image.bytes.len()
+                    } else {
+                        start
+                            .checked_add(length)
+                            .ok_or_else(|| upstream("Invalid Apple upload range"))?
+                    };
+                    if start > end || end > image.bytes.len() {
+                        return Err(upstream("Invalid Apple upload range"));
+                    }
+                    let url = required(operation, "url")?;
+                    let parsed = Url::parse(url).map_err(|_| upstream("Invalid upload URL"))?;
+                    if !matches!(parsed.scheme(), "http" | "https") {
+                        return Err(upstream("Invalid upload URL scheme"));
+                    }
+                    let method = Method::from_bytes(if s(operation, "method").is_empty() {
+                        b"PUT"
+                    } else {
+                        s(operation, "method").as_bytes()
+                    })
+                    .map_err(|_| upstream("Invalid Apple upload method"))?;
+                    let mut request = self
+                        .inner
+                        .client
+                        .request(method, parsed)
+                        .body(image.bytes[start..end].to_vec());
+                    for header in arr(operation, "requestHeaders") {
+                        request = request.header(s(header, "name"), s(header, "value"));
+                    }
+                    let response = request
+                        .send()
+                        .await
+                        .map_err(|_| upstream("Apple screenshot upload failed"))?;
+                    if !response.status().is_success() {
+                        return Err(upstream("Apple screenshot chunk upload failed"));
+                    }
+                }
+                self.apple_patch("appScreenshots", screenshot, json!({"uploaded":true}))
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+}
+fn resource(kind: &str, id: Option<&str>, attributes: Value, relationships: Value) -> Value {
+    let mut data = json!({"type":kind,"attributes":attributes});
+    if let Some(id) = id {
+        data["id"] = json!(id);
+    }
+    if relationships.as_object().is_some_and(|r| !r.is_empty()) {
+        data["relationships"] = relationships;
+    }
+    json!({"data":data})
+}
+fn editable(state: &str) -> bool {
+    matches!(
+        state,
+        "PREPARE_FOR_SUBMISSION"
+            | "DEVELOPER_REJECTED"
+            | "REJECTED"
+            | "METADATA_REJECTED"
+            | "INVALID_BINARY"
+            | "READY_FOR_REVIEW"
+    )
+}
+fn ppo(v: &Value) -> Value {
+    let a = &v["attributes"];
+    json!({"id":s(v,"id"),"name":s(a,"name"),"platform":s(a,"platform"),"state":s(a,"state"),"trafficProportion":a["trafficProportion"].as_u64().unwrap_or(0),
+    "reviewRequired":a["reviewRequired"].as_bool().unwrap_or(false),"startDate":s(a,"startDate"),"endDate":s(a,"endDate"),"treatments":[]})
+}

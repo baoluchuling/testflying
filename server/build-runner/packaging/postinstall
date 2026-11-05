@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_ROOT="/Library/Application Support/TestFlying/build-runner"
+CONFIG_PATH="${INSTALL_ROOT}/config.json"
+RUNNER_BINARY="${INSTALL_ROOT}/testflying-build-runner"
+PACKAGE_AGENT_BINARY="${INSTALL_ROOT}/package-agent"
+
+CONSOLE_USER="$(/usr/bin/stat -f '%Su' /dev/console)"
+if [[ -z "${CONSOLE_USER}" || "${CONSOLE_USER}" == "root" || "${CONSOLE_USER}" == "loginwindow" ]]; then
+  echo "Cannot install LaunchAgent without a logged-in console user" >&2
+  exit 1
+fi
+CONSOLE_UID="$(/usr/bin/id -u "${CONSOLE_USER}")"
+CONSOLE_GROUP="$(/usr/bin/id -gn "${CONSOLE_USER}")"
+CONSOLE_HOME="$(/usr/bin/dscl . -read "/Users/${CONSOLE_USER}" NFSHomeDirectory | /usr/bin/awk '{print $2}')"
+if [[ -z "${CONSOLE_UID}" || -z "${CONSOLE_GROUP}" || -z "${CONSOLE_HOME}" || ! -d "${CONSOLE_HOME}" ]]; then
+  echo "Cannot resolve console user identity or home directory" >&2
+  exit 1
+fi
+
+for binary in "${RUNNER_BINARY}" "${PACKAGE_AGENT_BINARY}"; do
+  if [[ ! -x "${binary}" ]]; then
+    echo "Missing installed executable: ${binary}" >&2
+    exit 1
+  fi
+done
+if [[ ! -f "${CONFIG_PATH}" ]]; then
+  echo "Missing installed config: ${CONFIG_PATH}" >&2
+  exit 1
+fi
+
+LOG_ROOT="${CONSOLE_HOME}/Library/Logs/TestFlying/build-runner"
+LAUNCH_AGENT_DIR="${CONSOLE_HOME}/Library/LaunchAgents"
+PLIST="${LAUNCH_AGENT_DIR}/com.testflying.build-runner.plist"
+WRAPPER="${INSTALL_ROOT}/run-build-runner.sh"
+/bin/mkdir -p "${LOG_ROOT}" "${LAUNCH_AGENT_DIR}"
+/bin/chmod 755 "/Library/Application Support/TestFlying" "${INSTALL_ROOT}"
+/usr/sbin/chown "${CONSOLE_USER}:${CONSOLE_GROUP}" "${INSTALL_ROOT}"
+/usr/sbin/chown "${CONSOLE_USER}:${CONSOLE_GROUP}" "${CONFIG_PATH}" "${LOG_ROOT}" "${LAUNCH_AGENT_DIR}"
+/bin/chmod 600 "${CONFIG_PATH}"
+
+cat > "${WRAPPER}" <<'RUNNER'
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_ROOT="/Library/Application Support/TestFlying/build-runner"
+CONFIG_PATH="${INSTALL_ROOT}/config.json"
+BINARY_PATH="${INSTALL_ROOT}/testflying-build-runner"
+PACKAGE_AGENT_PATH="${INSTALL_ROOT}/package-agent"
+
+if [[ ! -f "${CONFIG_PATH}" || ! -x "${BINARY_PATH}" || ! -x "${PACKAGE_AGENT_PATH}" ]]; then
+  echo "TestFlying build-runner installation is incomplete" >&2
+  exit 1
+fi
+
+eval "$(
+  /usr/bin/python3 - "${CONFIG_PATH}" <<'PY'
+import json
+import shlex
+import sys
+
+with open(sys.argv[1], "r", encoding="utf-8") as handle:
+    config = json.load(handle)
+
+required = {
+    "TESTFLYING_BUILD_RUNNER_ID": "runnerId",
+    "TESTFLYING_BUILD_RUNNER_NAME": "name",
+    "TESTFLYING_BUILD_RUNNER_TOKEN": "token",
+    "TESTFLYING_BUILD_RUNNER_SERVER_URL": "serverUrl",
+    "TESTFLYING_BUILD_RUNNER_ROOT": "rootDir",
+    "TESTFLYING_PACKAGE_AGENT_BIN": "packageAgentBin",
+}
+optional = {
+    "TESTFLYING_BUILD_RUNNER_VERSION": "version",
+    "TESTFLYING_PACKAGE_AGENT_VERSION": "packageAgentVersion",
+    "TESTFLYING_BUILD_RUNNER_POLL_INTERVAL": "pollInterval",
+    "TESTFLYING_BUILD_RUNNER_UPDATE_INTERVAL": "updateInterval",
+}
+csv_fields = {
+    "TESTFLYING_BUILD_RUNNER_LABELS": "labels",
+    "TESTFLYING_BUILD_RUNNER_LLM_ADAPTERS": "llmAdapters",
+}
+
+lines = []
+for environment, key in required.items():
+    value = str(config.get(key, "")).strip()
+    if not value:
+        raise SystemExit(f"config.json missing required field: {key}")
+    lines.append(f"export {environment}={shlex.quote(value)}")
+for environment, key in optional.items():
+    value = str(config.get(key, "")).strip()
+    if value:
+        lines.append(f"export {environment}={shlex.quote(value)}")
+for environment, key in csv_fields.items():
+    values = config.get(key, [])
+    if not isinstance(values, list):
+        raise SystemExit(f"config.json field {key} must be a list")
+    joined = ",".join(str(item).strip() for item in values if str(item).strip())
+    if joined:
+        lines.append(f"export {environment}={shlex.quote(joined)}")
+print("\n".join(lines))
+PY
+)"
+
+exec "${BINARY_PATH}"
+RUNNER
+/bin/chmod 755 "${WRAPPER}"
+
+cat > "${PLIST}" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.testflying.build-runner</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>${WRAPPER}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>WorkingDirectory</key>
+  <string>${INSTALL_ROOT}</string>
+  <key>StandardOutPath</key>
+  <string>${LOG_ROOT}/runner.log</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG_ROOT}/runner.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key>
+    <string>${CONSOLE_HOME}</string>
+  </dict>
+</dict>
+</plist>
+PLIST
+/usr/sbin/chown "${CONSOLE_USER}:${CONSOLE_GROUP}" "${PLIST}"
+/bin/chmod 644 "${PLIST}"
+
+/bin/launchctl bootout "gui/${CONSOLE_UID}" "${PLIST}" >/dev/null 2>&1 || true
+/bin/launchctl bootstrap "gui/${CONSOLE_UID}" "${PLIST}"
+/bin/launchctl kickstart -k "gui/${CONSOLE_UID}/com.testflying.build-runner"
+
+exit 0

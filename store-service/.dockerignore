@@ -1,0 +1,16 @@
+target
+data
+releases
+connector.json
+config.json
+*.sqlite3
+*.sqlite3-*
+.env
+.env.*
+.codex
+docs
+examples
+scripts
+*.p8
+*.pem
+*-service-account.json

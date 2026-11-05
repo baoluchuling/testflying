@@ -1,0 +1,14 @@
+{
+  "connectorId": "use-the-generated-connector-id",
+  "token": "use-the-generated-node-token",
+  "serverUrl": "http://127.0.0.1:8200",
+  "messageKey": "use-the-generated-message-key",
+  "uploadKey": "use-the-generated-upload-key",
+  "baseUrl": "https://connector.example.com",
+  "listenAddr": "0.0.0.0:8100",
+  "requestTimeoutSeconds": 60,
+  "provider": {
+    "mode": "live",
+    "googleServiceAccountPath": "/secure/account/service-account.json"
+  }
+}

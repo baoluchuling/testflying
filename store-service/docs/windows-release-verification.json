@@ -1,0 +1,30 @@
+{
+  "runId": "277befd903d94357b41b07d7a2cf952d",
+  "finishedAt": "2026-11-04T03:22:00.789733+00:00",
+  "baseUrl": "https://store-api.example.com/store-api",
+  "addressRedacted": true,
+  "target": "windows-amd64",
+  "rustTarget": "x86_64-pc-windows-gnu",
+  "binarySha256": "7c05d9e05f5669e9a8bd1485b5a2aa6d4f3fc83b53ff59bd2c721d90017f4809",
+  "releasePath": "/opt/testflying-store-api/versions/98da57c3601d4b5b6fca69eedeb700718de9679d/releases/windows-amd64/store-connector-7c05d9e05f5669e9a8bd1485b5a2aa6d4f3fc83b53ff59bd2c721d90017f4809.exe",
+  "downloadHttpStatus": 200,
+  "zipFiles": [
+    "store-connector.exe",
+    "connector.json",
+    "start.cmd"
+  ],
+  "identityVerified": true,
+  "launcherVerified": true,
+  "apiRestarted": false,
+  "verificationNodeId": "d732f0d6-e734-4b2c-a175-5953034bdeb5",
+  "verificationNode": "disabled, no application mapping or credentials",
+  "deliveryNodeId": "c368de7b-940e-4ac7-a094-587dc9750495",
+  "deliveryNode": "enabled, waiting for account configuration and app mapping",
+  "deliveryPackage": "releases/windows-amd64/connector-windows.zip",
+  "deliveryPackageSha256": "e4d1404106bfd3ba3dc1e396b2cbf39638b9702471a89a6ab95c47e4e3159441",
+  "deliveryPackageMode": "0600; Git ignored; contains private node credentials",
+  "notVerified": [
+    "Execution on a real Windows machine"
+  ],
+  "cleanup": "See supervisor cleanup report; checksum-addressed executable and alias are formal production files"
+}

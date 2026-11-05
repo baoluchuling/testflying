@@ -1,0 +1,29 @@
+[package]
+name = "store-api"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+futures-util.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+hex.workspace = true
+store-protocol.workspace = true
+rusqlite = { version = "0.38", features = ["bundled"] }
+hmac = "0.12"
+subtle = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
+tower.workspace = true
+http-body-util.workspace = true
+tempfile.workspace = true
+tokio-tungstenite.workspace = true
+store-connector = { path = "../store-connector" }
+image = { version = "0.25", default-features = false, features = ["png"] }

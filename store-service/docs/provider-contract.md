@@ -1,0 +1,15 @@
+# Provider implementation contract
+
+The shared execution contract is [`crates/store-protocol/src/lib.rs`](../crates/store-protocol/src/lib.rs). `store-provider` implements store operations; `store-connector` hosts them behind both transports. The Store API runtime does not depend on the provider.
+
+`ProviderConfig` must implement Deserialize, Serialize, Default, Clone with camelCase fields: mode (mock/live), appleIssuerId, appleKeyId, applePrivateKeyPath, googleServiceAccountPath, appleBaseUrl, googleBaseUrl, googleUploadBaseUrl, googleTokenUrl, storeProxyUrl. Fields may be optional as appropriate; deserialization of absent endpoints must use production defaults. Config Debug must not print credentials. `Gateway::new(ProviderConfig) -> Result<Self, StoreError>` and `async execute(&self, &StoreRequest) -> Result<serde_json::Value, StoreError>` are the consumer interface.
+
+Request.payload uses existing JSON conventions: locale/version/operation/syncScopes/metadata/releaseNotes/storeRelease/marketingPage. Read query parameters are payload fields. Request platform/Bundle ID are authoritative; do not require internal appId/accountId, and do not permit body fields to override app identity. Resolve Apple app by `filter[bundleId]` using the node credential; Android package is bundleIdentifier.
+
+The original Go Connector is a behavior reference, not a build dependency. Keep supported locales, listings, images, releases, review pagination, preflight, scoped metadata updates, targeted release notes, and Apple CPP/PPO behavior covered by the [capability matrix](provider-capabilities.md). Google edits commit with both changesNotSentForReview=true and changesInReviewBehavior=ERROR_IF_IN_REVIEW; failures attempt edit cleanup. Apple checks version editability and handles localization creation. Keep omitted fields distinct from explicitly empty text. Apple screenshot uploads reserve, write chunks, and confirm with the checksum and uploaded=true; Google uses multipart uploads. Downloads and image decoding remain bounded.
+
+Credentials: Apple ES256 JWT, Google RS256 service account assertion, token caching, configurable fake upstream URLs, bounded HTTP timeouts, sanitized upstream errors, no retries of store mutations. Provider owns API rate limiting. Both HTTP/WSS call the same Gateway; Connector serializes per-account execution.
+
+Tests must exercise actual HTTP against in-process fake upstream servers, no external store credentials or writes. Cover URL/body/commit safety, account identity, target choice, update scopes, JWT/OAuth caching, images/CPP/PPO and failures. Mock mode is for development, not evidence of live protocol coverage. Maintain a capability matrix stating exact tests and gaps.
+
+Use the [workspace verification procedure](../README.md#验证) for managed local checks. The fixtures do not need the legacy server, external store accounts, or a running Docker daemon.

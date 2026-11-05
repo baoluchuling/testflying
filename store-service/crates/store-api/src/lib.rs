@@ -1,0 +1,473 @@
+pub mod registry;
+pub mod transport;
+mod uploads;
+
+use axum::{
+    extract::{DefaultBodyLimit, Path, Query, State, WebSocketUpgrade},
+    http::{header, HeaderMap, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+use registry::{Connector, ConnectorInput, Registry};
+use serde::Deserialize;
+use serde_json::{json, Value};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use store_protocol::{Operation, Platform, StoreError, StoreRequest};
+use transport::Transport;
+use uuid::Uuid;
+
+pub struct ApiError(pub StoreError);
+impl From<StoreError> for ApiError {
+    fn from(value: StoreError) -> Self {
+        Self(value)
+    }
+}
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        (
+            StatusCode::from_u16(self.0.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            Json(self.0.body()),
+        )
+            .into_response()
+    }
+}
+type Result<T> = std::result::Result<T, ApiError>;
+
+pub struct ApiState {
+    pub registry: Registry,
+    pub transport: Arc<Transport>,
+    admin_token: String,
+    api_token: String,
+    public_url: String,
+    pub release_root: PathBuf,
+}
+
+impl ApiState {
+    pub fn new(
+        registry: Registry,
+        admin_token: String,
+        api_token: String,
+        public_url: String,
+        release_root: PathBuf,
+        timeout: Duration,
+    ) -> std::result::Result<Arc<Self>, StoreError> {
+        if admin_token.len() < 16 || api_token.len() < 16 {
+            return Err(StoreError::new(
+                500,
+                "invalid_api_token",
+                "API and administrator tokens must contain at least 16 bytes",
+            ));
+        }
+        if registry::secret_eq(&admin_token, &api_token) {
+            return Err(StoreError::new(
+                500,
+                "invalid_api_token",
+                "Administrator and application tokens must be distinct",
+            ));
+        }
+        let parsed = reqwest::Url::parse(&public_url).map_err(|_| {
+            StoreError::new(500, "invalid_public_url", "Invalid Store API public URL")
+        })?;
+        if !matches!(parsed.scheme(), "http" | "https")
+            || parsed.host_str().is_none()
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+            || !parsed.username().is_empty()
+            || parsed.password().is_some()
+        {
+            return Err(StoreError::new(
+                500,
+                "invalid_public_url",
+                "Store API public URL must be HTTP(S) without credentials",
+            ));
+        }
+        Ok(Arc::new(Self {
+            registry,
+            transport: Arc::new(Transport::new(timeout)?),
+            admin_token,
+            api_token,
+            public_url: public_url.trim_end_matches('/').to_owned(),
+            release_root,
+        }))
+    }
+}
+
+fn bearer(headers: &HeaderMap) -> &str {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.strip_prefix("Bearer "))
+        .unwrap_or("")
+}
+
+async fn authorize_admin(
+    State(state): State<Arc<ApiState>>,
+    request: axum::extract::Request,
+    next: Next,
+) -> Result<Response> {
+    if !registry::secret_eq(&state.admin_token, bearer(request.headers())) {
+        return Err(StoreError::new(401, "unauthorized", "Administrator token required").into());
+    }
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        "no-store".parse().expect("static header"),
+    );
+    Ok(response)
+}
+async fn authorize_client(
+    State(state): State<Arc<ApiState>>,
+    request: axum::extract::Request,
+    next: Next,
+) -> Result<Response> {
+    if !registry::secret_eq(&state.api_token, bearer(request.headers())) {
+        return Err(StoreError::new(401, "unauthorized", "Store API token required").into());
+    }
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        "no-store".parse().expect("static header"),
+    );
+    Ok(response)
+}
+
+pub fn router(state: Arc<ApiState>) -> Router {
+    let management = Router::new()
+        .route(
+            "/v1/connectors",
+            get(list_connectors).post(create_connector),
+        )
+        .route(
+            "/v1/connectors/{id}",
+            get(get_connector).patch(update_connector),
+        )
+        .route("/v1/connectors/{id}/rotate-token", post(rotate_token))
+        .route("/v1/connectors/{id}/installation", get(installation_config))
+        .route("/v1/connectors/{id}/installer/{target}", get(installer))
+        .route(
+            "/v1/apps/{platform}/{identifier}/connector",
+            get(app_connector)
+                .put(bind_connector)
+                .delete(unbind_connector),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            authorize_admin,
+        ));
+    let public = Router::new()
+        .route(
+            "/v1/store-management/apps/{platform}/{identifier}/uploads",
+            post(uploads::prepare),
+        )
+        .route(
+            "/v1/store-management/apps/{platform}/{identifier}/{resource}",
+            get(read_store).post(write_store),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            authorize_client,
+        ));
+    Router::new()
+        .route("/health", get(|| async { Json(json!({"status":"ok"})) }))
+        .route("/v1/connectors/{id}/ws", get(connect_ws))
+        .route(
+            "/v1/store-management/apps/{platform}/{identifier}/uploads/{asset}",
+            axum::routing::put(uploads::receive).layer(DefaultBodyLimit::disable()),
+        )
+        .merge(management)
+        .merge(public)
+        .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
+        .with_state(state)
+}
+
+fn node_view(state: &ApiState, node: Connector) -> Value {
+    let connected = state.transport.connected(&node.connector_id);
+    let mut value = serde_json::to_value(node).expect("Connector serialization");
+    value["connected"] = json!(connected);
+    value
+}
+
+async fn list_connectors(State(state): State<Arc<ApiState>>) -> Result<Json<Value>> {
+    Ok(Json(
+        json!({"connectors":state.registry.list()?.into_iter().map(|n| node_view(&state,n)).collect::<Vec<_>>()}),
+    ))
+}
+async fn get_connector(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>> {
+    Ok(Json(node_view(&state, state.registry.get(&id)?)))
+}
+async fn create_connector(
+    State(state): State<Arc<ApiState>>,
+    Json(input): Json<ConnectorInput>,
+) -> Result<(StatusCode, Json<Value>)> {
+    let node = state.registry.create(input)?;
+    Ok((
+        StatusCode::CREATED,
+        Json(
+            json!({"connector":node_view(&state,node.clone()),"installation":config(&state,&node)}),
+        ),
+    ))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EnableInput {
+    enabled: bool,
+}
+async fn update_connector(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    Json(input): Json<EnableInput>,
+) -> Result<Json<Value>> {
+    let node = state.registry.set_enabled(&id, input.enabled)?;
+    if !input.enabled {
+        state.transport.disconnect(&id);
+    }
+    Ok(Json(node_view(&state, node)))
+}
+async fn rotate_token(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>> {
+    let node = state.registry.rotate(&id)?;
+    state.transport.disconnect(&id);
+    Ok(Json(config(&state, &node)))
+}
+
+fn config(state: &ApiState, node: &Connector) -> Value {
+    json!({"connectorId":node.connector_id,"token":state.registry.token(node),"serverUrl":state.public_url,
+        "messageKey":state.registry.purpose_key(node,"message"),"uploadKey":state.registry.purpose_key(node,"upload"),
+        "baseUrl":node.base_url,"listenAddr":"0.0.0.0:8100","requestTimeoutSeconds":60,"provider":{"mode":"live"}})
+}
+async fn installation_config(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+) -> Result<Response> {
+    let node = state.registry.get(&id)?;
+    if !node.enabled {
+        return Err(StoreError::new(409, "connector_disabled", "Connector is disabled").into());
+    }
+    Ok((
+        [(header::CACHE_CONTROL, "no-store")],
+        Json(config(&state, &node)),
+    )
+        .into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct BindInput {
+    connector_id: String,
+}
+async fn bind_connector(
+    State(state): State<Arc<ApiState>>,
+    Path((platform, identifier)): Path<(Platform, String)>,
+    Json(input): Json<BindInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(node_view(
+        &state,
+        state
+            .registry
+            .bind(platform, &identifier, &input.connector_id)?,
+    )))
+}
+async fn unbind_connector(
+    State(state): State<Arc<ApiState>>,
+    Path((platform, identifier)): Path<(Platform, String)>,
+) -> Result<StatusCode> {
+    state.registry.unbind(platform, &identifier)?;
+    Ok(StatusCode::NO_CONTENT)
+}
+async fn app_connector(
+    State(state): State<Arc<ApiState>>,
+    Path((platform, identifier)): Path<(Platform, String)>,
+) -> Result<Json<Value>> {
+    Ok(Json(node_view(
+        &state,
+        state.registry.resolve(platform, &identifier)?,
+    )))
+}
+
+async fn connect_ws(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    ws: WebSocketUpgrade,
+) -> Result<Response> {
+    let token = bearer(&headers).to_owned();
+    state.registry.authenticate(&id, &token)?;
+    if !headers
+        .get_all(header::SEC_WEBSOCKET_PROTOCOL)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(','))
+        .any(|v| v.trim() == store_protocol::crypto::SUBPROTOCOL)
+    {
+        return Err(StoreError::new(
+            426,
+            "encrypted_protocol_required",
+            "Connector requires the encrypted v2 protocol",
+        )
+        .into());
+    }
+    if state.transport.connected(&id) {
+        return Err(StoreError::new(
+            409,
+            "connector_already_connected",
+            "Connector already has an active connection",
+        )
+        .into());
+    }
+    Ok(ws
+        .protocols([store_protocol::crypto::SUBPROTOCOL])
+        .max_message_size(store_protocol::crypto::MAX_RECORD_BYTES)
+        .on_upgrade(move |socket| async move {
+            if let Ok(node) = state.registry.authenticate(&id, &token) {
+                let key = state.registry.purpose_key(&node, "message");
+                let (transport, registration_state, registration_id) =
+                    (state.transport.clone(), state.clone(), id.clone());
+                transport
+                    .serve(id, socket, key, move |endpoint| {
+                        registration_state.registry.register_endpoint(
+                            &registration_id,
+                            &token,
+                            endpoint.as_deref(),
+                        )
+                    })
+                    .await;
+            }
+        })
+        .into_response())
+}
+
+async fn execute(
+    state: Arc<ApiState>,
+    platform: Platform,
+    identifier: String,
+    operation: Operation,
+    payload: Value,
+) -> Result<Response> {
+    let node = state.registry.resolve(platform, &identifier)?;
+    let request = StoreRequest {
+        request_id: Uuid::new_v4().to_string(),
+        platform,
+        bundle_identifier: identifier,
+        operation,
+        payload,
+    };
+    request.validate()?;
+    let reply = state
+        .transport
+        .dispatch(&node, &state.registry.token(&node), request)
+        .await?;
+    Ok((
+        StatusCode::from_u16(reply.status).unwrap_or(StatusCode::BAD_GATEWAY),
+        Json(reply.body),
+    )
+        .into_response())
+}
+async fn read_store(
+    State(state): State<Arc<ApiState>>,
+    Path((platform, identifier, resource)): Path<(Platform, String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Response> {
+    let operation = match resource.as_str() {
+        "supported-locales" => Operation::SupportedLocales,
+        "store-listings" => Operation::StoreListings,
+        "store-images" => Operation::StoreImages,
+        "store-releases" => Operation::StoreReleases,
+        "store-reviews" => Operation::StoreReviews,
+        "product-page-optimizations" => Operation::ProductPageOptimizations,
+        _ => return Err(StoreError::new(404, "not_found", "Unknown store resource").into()),
+    };
+    let payload = Value::Object(
+        query
+            .into_iter()
+            .map(|(key, value)| {
+                let parsed = if matches!(key.as_str(), "pageSize" | "rating") {
+                    value
+                        .parse::<u64>()
+                        .map_or_else(|_| json!(value), |v| json!(v))
+                } else {
+                    json!(value)
+                };
+                (key, parsed)
+            })
+            .collect(),
+    );
+    execute(state, platform, identifier, operation, payload).await
+}
+async fn write_store(
+    State(state): State<Arc<ApiState>>,
+    Path((platform, identifier, resource)): Path<(Platform, String, String)>,
+    Json(payload): Json<Value>,
+) -> Result<Response> {
+    let operation = match resource.as_str() {
+        "sync" => Operation::Sync,
+        "preflight" => Operation::Preflight,
+        "product-page-optimizations" => Operation::CreateProductPageOptimization,
+        _ => return Err(StoreError::new(404, "not_found", "Unknown store resource").into()),
+    };
+    execute(state, platform, identifier, operation, payload).await
+}
+
+async fn installer(
+    State(state): State<Arc<ApiState>>,
+    Path((id, target)): Path<(String, String)>,
+) -> Result<Response> {
+    let binary_name = match target.as_str() {
+        "linux-amd64" | "linux-arm64" | "darwin-amd64" | "darwin-arm64" => "store-connector",
+        "windows-amd64" => "store-connector.exe",
+        _ => {
+            return Err(
+                StoreError::new(422, "unsupported_target", "Unsupported Connector target").into(),
+            )
+        }
+    };
+    let node = state.registry.get(&id)?;
+    if !node.enabled {
+        return Err(StoreError::new(409, "connector_disabled", "Connector is disabled").into());
+    }
+    let release = state.release_root.join(&target).join(binary_name);
+    // Only an explicit, allowlisted release binary is read; no user-supplied path or executable.
+    let metadata = tokio::fs::metadata(&release).await.map_err(|_| {
+        StoreError::new(
+            503,
+            "release_unavailable",
+            "Connector binary has not been published for this target",
+        )
+    })?;
+    if !metadata.is_file() || metadata.len() > 128 * 1024 * 1024 {
+        return Err(StoreError::new(503, "invalid_release", "Connector release is invalid").into());
+    }
+    let binary = tokio::fs::read(release).await.map_err(|_| {
+        StoreError::new(503, "release_unavailable", "Cannot read Connector release")
+    })?;
+    let config = serde_json::to_vec_pretty(&config(&state, &node)).expect("Config serialization");
+    let data = tokio::task::spawn_blocking(move || -> std::result::Result<Vec<u8>, StoreError> {
+        use std::io::{Cursor,Write};
+        use zip::{write::SimpleFileOptions,ZipWriter};
+        let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        archive.start_file(binary_name,options.unix_permissions(0o700)).map_err(|_| StoreError::new(500,"installer_error","Cannot package Connector"))?;
+        archive.write_all(&binary).map_err(|_| StoreError::new(500,"installer_error","Cannot package Connector"))?;
+        archive.start_file("connector.json",options.unix_permissions(0o600)).map_err(|_| StoreError::new(500,"installer_error","Cannot package configuration"))?;
+        archive.write_all(&config).map_err(|_| StoreError::new(500,"installer_error","Cannot package configuration"))?;
+        let (script_name,script) = if binary_name.ends_with(".exe") {("start.cmd", "@echo off\r\ncd /d \"%~dp0\"\r\nstore-connector.exe connector.json\r\n")} else {("start.sh", "#!/bin/sh\nset -eu\ncd -- \"$(dirname -- \"$0\")\"\nexec ./store-connector connector.json\n")};
+        archive.start_file(script_name,options.unix_permissions(0o700)).map_err(|_| StoreError::new(500,"installer_error","Cannot package launcher"))?;
+        archive.write_all(script.as_bytes()).map_err(|_| StoreError::new(500,"installer_error","Cannot package launcher"))?;
+        Ok(archive.finish().map_err(|_| StoreError::new(500,"installer_error","Cannot finish installer"))?.into_inner())
+    }).await.map_err(|_| StoreError::new(500,"installer_error","Installer task failed"))??;
+    Ok((
+        [
+            (header::CONTENT_TYPE, "application/zip"),
+            (header::CACHE_CONTROL, "no-store"),
+        ],
+        data,
+    )
+        .into_response())
+}

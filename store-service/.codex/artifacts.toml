@@ -1,0 +1,27 @@
+schema_version = 1
+adapter = "generic"
+expected_bytes = 5379194880
+artifacts = ["tmp", "logs"]
+deliverables = ["docs/verification.json"]
+protected_deliverables = [
+  "Cargo.lock",
+  "releases/linux-amd64/store-api",
+  "releases/linux-amd64/store-connector",
+  "releases/darwin-arm64/store-connector",
+  "docs/deployment-build.json",
+  "docs/deployment-verification.json",
+  "deploy/testflying-prod-ca.crt",
+  "releases/windows-amd64/store-connector.exe",
+  "docs/windows-release-build.json",
+  "docs/windows-release-verification.json",
+  "releases/windows-amd64/connector-windows.zip",
+  "releases/windows-amd64/connector-windows-v2.zip",
+  "releases/windows-amd64/connector-windows-v3.zip",
+  "docs/upload-deployment-verification.json",
+  "releases/github/store-connector-v0.1.0-linux-amd64.tar.gz",
+  "releases/github/store-connector-v0.1.0-darwin-arm64.tar.gz",
+  "releases/github/store-connector-v0.1.0-windows-amd64.zip",
+  "releases/github/store-connector-v0.1.0-SHA256SUMS.txt",
+  "docs/github-release-verification.json",
+  "releases/http-deployment-2026-11-05.json",
+]
