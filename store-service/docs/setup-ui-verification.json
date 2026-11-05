@@ -1,5 +1,5 @@
 {
-  "runId": "974037e869cf4c46aaecff798b3716d9",
+  "runId": "372dd1a81c174ac79fa32f20bb36fb76",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -16,14 +16,14 @@
   "packageTestsPassed": 6,
   "production": false,
   "checks": [
-    "invalid administrator token rejected",
-    "administrator login clears the token field",
+    "retry connects after an initial request failure",
+    "setup form loads without a login or Authorization header",
     "Apple Key ID recognized from the original filename",
     "failed download retains the newly created node",
     "real Windows executable preserved in a downloadable dual-platform private ZIP",
     "both credential paths are automatic and no application list is included",
     "repeat download reuses node identity and omits disabled-platform secrets",
-    "logout clears files and browser storage remains empty",
+    "reload clears files and browser storage remains empty",
     "mobile layout has no horizontal overflow",
     "no credential file or account fields are uploaded and CSP passes"
   ],
@@ -32,7 +32,7 @@
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "9e1d4c5e-37ac-479c-80af-753321640ae4"
+    "22aa0141-07b7-4b66-8f8c-77f244b777ef"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0
