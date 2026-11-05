@@ -7,6 +7,7 @@ import shlex
 import subprocess
 import sys
 import time
+import urllib.parse
 
 from verify_store_refactor import PROJECT, managed_root
 
@@ -54,7 +55,17 @@ def main() -> None:
             raise RuntimeError("Owned headless Chrome did not become ready")
         port, socket = endpoint.read_text().splitlines()[:2]
         env["SETUP_CDP_ENDPOINT"] = "ws://127.0.0.1:" + port + socket
-        subprocess.run(["node", "scripts/verify_setup_ui.mjs"], cwd=PROJECT, env=env, check=True)
+        result = subprocess.run(["node", "scripts/verify_setup_ui.mjs"], cwd=PROJECT, env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        output = result.stdout.decode(errors="replace")
+        if sys.argv[1:] == ["production"]:
+            output = output.replace(private["token"], "[redacted-token]")
+            hostname = urllib.parse.urlsplit(private["url"]).hostname
+            if hostname:
+                output = output.replace(hostname, "[center-host]")
+        if result.returncode:
+            print(output, end="", flush=True)
+            raise RuntimeError("Browser verification failed; see sanitized test output")
     finally:
         chrome.terminate()
         try:

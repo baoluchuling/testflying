@@ -1,5 +1,5 @@
 {
-  "runId": "a68bce237d6642898af10c207f8c9d5e",
+  "runId": "974037e869cf4c46aaecff798b3716d9",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -32,7 +32,8 @@
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "ec81031b-d180-4b04-9952-49f7b126f63d"
+    "9e1d4c5e-37ac-479c-80af-753321640ae4"
   ],
-  "verificationNodesDisabled": false
+  "verificationNodesDisabled": false,
+  "secureNavigationProbes": 0
 }

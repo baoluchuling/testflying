@@ -102,6 +102,9 @@ if (!production) {
 }
 
 const origin = new URL(base).origin;
+const navigation = new URL(base + "/connector-setup/");
+let credentialsEntered = false;
+let secureNavigationProbes = 0;
 const privateKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ type: "pkcs8", format: "pem" });
 const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" });
 const appleFile = path.join(tmp, "AuthKey_TESTKEY123.p8");
@@ -117,11 +120,30 @@ try {
   const page = await context.newPage();
   page.on("pageerror", () => violations.push("uncaught browser error"));
   page.on("console", (message) => { if (/Content Security Policy|Refused to execute|Refused to load/.test(message.text())) violations.push("CSP violation"); });
-  page.on("request", (request) => {
+  await page.route("**/*", async (route) => {
+    const request = route.request();
     const url = new URL(request.url());
-    if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) violations.push("external network request");
     const body = request.postData() || "";
-    if (body.includes("BEGIN PRIVATE KEY") || body.includes("private_key") || body.includes("test-issuer")) violations.push("credentials sent to center");
+    const authenticated = !!request.headers().authorization;
+    if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) {
+      // Chrome can probe HTTPS before falling back to the requested HTTP page.
+      // This is permitted only for a credential-free initial navigation to this exact center page.
+      if (production && !credentialsEntered && !authenticated && !body && request.isNavigationRequest() &&
+          request.method() === "GET" && url.protocol === "https:" && url.hostname === navigation.hostname &&
+          !url.port && url.pathname === navigation.pathname && !url.search) {
+        secureNavigationProbes++;
+      } else {
+        violations.push({ kind: "blocked cross-origin request", sameHost: url.hostname === navigation.hostname,
+          scheme: url.protocol, method: request.method(), type: request.resourceType(),
+          setupPath: url.pathname === navigation.pathname, authenticated, hasBody: !!body });
+        return route.abort();
+      }
+    }
+    if (body.includes("BEGIN PRIVATE KEY") || body.includes("private_key") || body.includes("test-issuer")) {
+      violations.push("blocked credential file transmission");
+      return route.abort();
+    }
+    return route.continue();
   });
   page.on("response", async (response) => {
     if (response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/v1/connectors") && response.status() === 201) {
@@ -129,6 +151,8 @@ try {
     }
   });
   await page.goto(base + "/connector-setup/", { waitUntil: "networkidle" });
+  assert.equal(new URL(page.url()).origin === origin, true, "page opened on the requested origin");
+  credentialsEntered = true;
   await page.locator("#adminToken").fill("invalid-token");
   await page.locator("#loginButton").click();
   await page.locator("#status[data-kind=error]").waitFor();
@@ -205,7 +229,7 @@ try {
   }
   Object.assign(report, { runId: path.basename(root), stage: "browser-tests-passed", browserVerified: false, production,
     checks, windowsExecutableSha256: hash(executable), credentialFilesUploaded: false,
-    verificationNodeIds: [...created],
+    verificationNodeIds: [...created], secureNavigationProbes,
     remainingTemporaryProcesses: [], cleanup: "See the supervisor cleanup report for this runId" });
   fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
   await context.close();
