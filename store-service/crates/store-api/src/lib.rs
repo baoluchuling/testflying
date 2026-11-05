@@ -1,3 +1,4 @@
+mod integrations;
 pub mod registry;
 mod setup;
 pub mod transport;
@@ -8,10 +9,10 @@ use axum::{
     http::{header, HeaderMap, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::{get, post},
-    Json, Router,
+    routing::{get, post, put},
+    Extension, Json, Router,
 };
-use registry::{Connector, ConnectorInput, Registry};
+use registry::{Connector, ConnectorInput, Integration, Registry};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
@@ -120,18 +121,19 @@ async fn authorize_admin(
 }
 async fn authorize_client(
     State(state): State<Arc<ApiState>>,
-    request: axum::extract::Request,
+    mut request: axum::extract::Request,
     next: Next,
 ) -> Result<Response> {
-    if !registry::secret_eq(&state.api_token, bearer(request.headers())) {
-        return Err(StoreError::new(401, "unauthorized", "Store API token required").into());
+    let token = bearer(request.headers());
+    if !registry::secret_eq(&state.api_token, token) {
+        if !token.starts_with(registry::TOKEN_PREFIX) {
+            return Err(StoreError::new(401, "unauthorized", "Store API token required").into());
+        }
+        integrations::require_https(&request)?;
+        let access = state.registry.authenticate_integration(token)?;
+        request.extensions_mut().insert(access);
     }
-    let mut response = next.run(request).await;
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        "no-store".parse().expect("static header"),
-    );
-    Ok(response)
+    Ok(integrations::no_store(next.run(request).await))
 }
 
 pub fn router(state: Arc<ApiState>) -> Router {
@@ -147,17 +149,27 @@ pub fn router(state: Arc<ApiState>) -> Router {
         .route("/v1/connectors/{id}/rotate-token", post(rotate_token))
         .route("/v1/connectors/{id}/installation", get(installation_config))
         .route("/v1/connectors/{id}/installer/{target}", get(installer))
-        .route(
-            "/v1/apps/{platform}/{identifier}/connector",
-            get(app_connector)
-                .put(bind_connector)
-                .delete(unbind_connector),
-        )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             authorize_admin,
         ));
+    let binding = get(app_connector)
+        .delete(unbind_connector)
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            authorize_admin,
+        ))
+        .merge(
+            put(bind_connector).route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                integrations::authorize_binding,
+            )),
+        );
     let public = Router::new()
+        .route(
+            "/v1/store-management/connectors",
+            get(integrations::list_nodes),
+        )
         .route(
             "/v1/store-management/apps/{platform}/{identifier}/uploads",
             post(uploads::prepare),
@@ -172,6 +184,7 @@ pub fn router(state: Arc<ApiState>) -> Router {
         ));
     Router::new()
         .route("/health", get(|| async { Json(json!({"status":"ok"})) }))
+        .route("/v1/apps/{platform}/{identifier}/connector", binding)
         .route("/v1/connectors/{id}/ws", get(connect_ws))
         .route(
             "/v1/store-management/apps/{platform}/{identifier}/uploads/{asset}",
@@ -179,6 +192,7 @@ pub fn router(state: Arc<ApiState>) -> Router {
         )
         .merge(management)
         .merge(public)
+        .merge(integrations::admin_routes(state.clone()))
         .merge(setup::routes())
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(state)
@@ -268,13 +282,17 @@ struct BindInput {
 async fn bind_connector(
     State(state): State<Arc<ApiState>>,
     Path((platform, identifier)): Path<(Platform, String)>,
+    integration: Option<Extension<Integration>>,
     Json(input): Json<BindInput>,
 ) -> Result<Json<Value>> {
     Ok(Json(node_view(
         &state,
-        state
-            .registry
-            .bind(platform, &identifier, &input.connector_id)?,
+        state.registry.bind_scoped(
+            platform,
+            &identifier,
+            &input.connector_id,
+            integration.as_deref(),
+        )?,
     )))
 }
 async fn unbind_connector(
@@ -348,12 +366,15 @@ async fn connect_ws(
 
 async fn execute(
     state: Arc<ApiState>,
+    integration: Option<&Integration>,
     platform: Platform,
     identifier: String,
     operation: Operation,
     payload: Value,
 ) -> Result<Response> {
-    let node = state.registry.resolve(platform, &identifier)?;
+    let node = state
+        .registry
+        .resolve_scoped(platform, &identifier, integration)?;
     let request = StoreRequest {
         request_id: Uuid::new_v4().to_string(),
         platform,
@@ -376,6 +397,7 @@ async fn read_store(
     State(state): State<Arc<ApiState>>,
     Path((platform, identifier, resource)): Path<(Platform, String, String)>,
     Query(query): Query<HashMap<String, String>>,
+    integration: Option<Extension<Integration>>,
 ) -> Result<Response> {
     let operation = match resource.as_str() {
         "supported-locales" => Operation::SupportedLocales,
@@ -401,11 +423,20 @@ async fn read_store(
             })
             .collect(),
     );
-    execute(state, platform, identifier, operation, payload).await
+    execute(
+        state,
+        integration.as_deref(),
+        platform,
+        identifier,
+        operation,
+        payload,
+    )
+    .await
 }
 async fn write_store(
     State(state): State<Arc<ApiState>>,
     Path((platform, identifier, resource)): Path<(Platform, String, String)>,
+    integration: Option<Extension<Integration>>,
     Json(payload): Json<Value>,
 ) -> Result<Response> {
     let operation = match resource.as_str() {
@@ -414,7 +445,15 @@ async fn write_store(
         "product-page-optimizations" => Operation::CreateProductPageOptimization,
         _ => return Err(StoreError::new(404, "not_found", "Unknown store resource").into()),
     };
-    execute(state, platform, identifier, operation, payload).await
+    execute(
+        state,
+        integration.as_deref(),
+        platform,
+        identifier,
+        operation,
+        payload,
+    )
+    .await
 }
 
 async fn installer(

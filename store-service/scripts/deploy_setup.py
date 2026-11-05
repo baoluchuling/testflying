@@ -20,6 +20,9 @@ from verify_store_refactor import PROJECT, managed_root, source_hashes
 
 def main() -> None:
     root = managed_root()
+    if sys.argv[1:] not in ([], ["integrations"]):
+        raise RuntimeError("Use integrations for read-only node verification and temporary token checks")
+    integrations_only = sys.argv[1:] == ["integrations"]
     tmp = root / "tmp"
     tmp.mkdir(exist_ok=True)
     ssh = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o",
@@ -172,10 +175,53 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             time.sleep(0.5)
         check(healthy, "HTTP health after API-only rollout")
         check(request("/health", scheme="https")[0] == 200, "HTTPS health with certificate verification")
-        for suffix in ("", "app.mjs", "packager.mjs", "style.css", "jszip.min.js", "ca.crt", "start.cmd", "start.sh",
+        for suffix in ("", "app.mjs", "integrations.mjs", "packager.mjs", "style.css", "jszip.min.js", "ca.crt", "start.cmd", "start.sh",
                        "install.cmd", "install.ps1", "install.sh"):
             check(request("/connector-setup/" + suffix)[0] == 200, "setup asset " + (suffix or "index"))
         check(request("/v1/connectors")[0] == 401, "administrator authentication still required")
+        if integrations_only:
+            management = "/v1/integrations"
+            discovery = "/v1/store-management/connectors"
+            check(request(management, scheme="http")[0] == 403, "credential management requires HTTPS")
+            check(request(management)[0] == 401, "anonymous credential management rejected")
+            check(request(management, snapshot["token"])[0] == 401, "legacy business token cannot manage credentials")
+            status, body = request(discovery, snapshot["token"])
+            check(status == 200 and bool(json.loads(body)["connectors"]), "legacy business token can list enabled nodes")
+            connector_id = json.loads(body)["connectors"][0]["connectorId"]
+            status, body = request(management, snapshot["admin"])
+            check(status == 200 and all("token" not in row for row in json.loads(body)["integrations"]),
+                  "admin integration listing omits token values")
+            name = "Integration verification " + root.name
+            token = None
+            try:
+                status, body = request(management, snapshot["admin"], "POST", {"name": name, "connectorIds": [connector_id]})
+                check(status == 201, "temporary integration credential issued")
+                created = json.loads(body)
+                integration = management + "/" + created["integration"]["id"]
+                token = created["token"]
+                status, body = request(integration + "/token", snapshot["admin"])
+                check(status == 200 and json.loads(body)["token"] == token, "administrator can retrieve the same credential")
+                check(request(integration + "/token", token)[0] == 401, "integration cannot retrieve admin credentials")
+                status, body = request(discovery, token)
+                check(status == 200 and [row["connectorId"] for row in json.loads(body)["connectors"]] == [connector_id],
+                      "integration lists only its granted node")
+            finally:
+                status, body = request(management, snapshot["admin"])
+                check(status == 200, "temporary integration cleanup listing available")
+                for item in json.loads(body)["integrations"]:
+                    if item["name"] == name:
+                        check(request(management + "/" + item["id"], snapshot["admin"], "DELETE")[0] == 204,
+                              "temporary integration credential revoked")
+            check(token is not None and request(discovery, token)[0] == 401, "revoked integration credential rejected")
+            report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
+                      "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                      "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],
+                      "apiSha256": expected_api, "connectorBinarySha256": snapshot["binaries"],
+                      "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
+                      "temporaryIntegrationRevoked": True, "cleanup": "See the supervisor cleanup report for this runId"}
+            report_path.write_text(json.dumps(report, indent=2) + "\n")
+            success = True
+            return
         setup = "/connector-setup/api/connectors"
         status, body = request(setup, method="POST", data={"name": "Setup deployment verification (mock only)"})
         check(status == 201, "temporary verification node created")

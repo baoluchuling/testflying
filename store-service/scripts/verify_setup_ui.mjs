@@ -32,6 +32,9 @@ const web = path.join(project, "crates/store-api/src/setup");
 const token = process.env.SETUP_ADMIN_TOKEN;
 const production = !!process.env.SETUP_BASE_URL;
 const nodes = [];
+const integrationFixtures = [];
+const fixtureAdminToken = "fixture-admin-token";
+const fixtureIntegrationToken = "fixture-integration-token";
 const created = new Set();
 const posts = [];
 const violations = [];
@@ -46,6 +49,7 @@ if (!production) {
   const assetPaths = {
     "": [path.join(web, "index.html"), "text/html"],
     "app.mjs": [path.join(web, "app.mjs"), "text/javascript"],
+    "integrations.mjs": [path.join(web, "integrations.mjs"), "text/javascript"],
     "packager.mjs": [path.join(web, "packager.mjs"), "text/javascript"],
     "style.css": [path.join(web, "style.css"), "text/css"],
     "jszip.min.js": [path.join(web, "vendor/jszip.min.js"), "text/javascript"],
@@ -72,6 +76,24 @@ if (!production) {
       }
       if (url.pathname === "/favicon.ico") { res.writeHead(204).end(); return; }
       res.setHeader("Content-Type", "application/json");
+      if (url.pathname.startsWith("/store-api/v1/integrations")) {
+        if (req.headers.authorization !== `Bearer ${fixtureAdminToken}`) { res.writeHead(401).end("{}"); return; }
+        if (req.method === "POST") {
+          let body = "";
+          for await (const chunk of req) body += chunk;
+          const integration = { id: randomUUID(), ...JSON.parse(body) };
+          integrationFixtures.push(integration);
+          res.writeHead(201).end(JSON.stringify({ integration, token: fixtureIntegrationToken }));
+        } else if (req.method === "DELETE") {
+          integrationFixtures.pop();
+          res.writeHead(204).end();
+        } else if (url.pathname.endsWith("/token")) {
+          res.end(JSON.stringify({ token: fixtureIntegrationToken }));
+        } else {
+          res.end(JSON.stringify({ integrations: integrationFixtures }));
+        }
+        return;
+      }
       if (url.pathname === "/store-api/connector-setup/api/connectors" && req.method === "GET") {
         if (++listAttempts === 1) { res.writeHead(503).end("{}"); return; }
         res.end(JSON.stringify({ connectors: nodes })); return;
@@ -122,6 +144,13 @@ try {
   browser = await chromium.connectOverCDP(process.env.SETUP_CDP_ENDPOINT);
   const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1440, height: 1100 } });
   const page = await context.newPage();
+  if (!production) {
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "clipboard", {
+        value: { writeText: async (value) => { window.fixtureCopiedToken = value; } },
+      });
+    });
+  }
   const requestOutcomes = [];
   function recordOutcome(request, outcome) {
     const route = new URL(request.url()).pathname;
@@ -148,7 +177,8 @@ try {
     const url = new URL(request.url());
     const body = request.postData() || "";
     const authenticated = !!request.headers().authorization;
-    if (authenticated) {
+    const fixtureAdminRequest = !production && url.origin === origin && url.pathname.startsWith("/store-api/v1/integrations");
+    if (authenticated && !fixtureAdminRequest) {
       violations.push("browser sent an Authorization header");
       return route.abort();
     }
@@ -186,7 +216,7 @@ try {
     checks.push("retry connects after an initial request failure");
   }
   await page.locator("#setupForm").waitFor({ state: "visible" });
-  assert.equal(await page.locator("input[type=password]").count(), 0);
+  assert.equal(await page.locator("#setupForm input[type=password]").count(), 0);
   assert.deepEqual(await page.evaluate(() => {
     const form = document.getElementById("setupForm");
     return [typeof form.nodeName, typeof form.target];
@@ -250,6 +280,38 @@ try {
   assert.equal(hash(await upgradeZip.file("store-connector.exe").async("nodebuffer")), hash(executable));
   if (!production) assert.equal(nodes.length, 1);
   checks.push("program-only upgrade preserves node identity without including local configuration");
+  if (!production) {
+    await page.getByText("接入凭据", { exact: true }).click();
+    await page.locator("#integrationAdmin").fill("wrong-fixture");
+    await page.locator("#integrationUnlock button").click();
+    await page.getByText("管理员 Token 无效", { exact: true }).waitFor();
+    assert.equal(await page.locator("#integrationPanel").isVisible(), false);
+    await page.locator("#integrationAdmin").fill(fixtureAdminToken);
+    await page.locator("#integrationUnlock button").click();
+    await page.locator("#integrationPanel").waitFor();
+    await page.locator("#integrationName").fill("Fixture System");
+    await page.locator("#integrationNodes").selectOption(firstId);
+    await page.locator("#integrationIssue button").click();
+    await page.getByText("Token 已发放，可复制到该系统的后端。", { exact: true }).waitFor();
+    assert.equal(await page.locator("#integrationToken").inputValue(), fixtureIntegrationToken);
+    assert.deepEqual(integrationFixtures[0].connectorIds, [firstId]);
+    await page.locator("#integrationCopy").click();
+    await page.waitForFunction((expected) => window.fixtureCopiedToken === expected, fixtureIntegrationToken);
+    await page.getByText("Token 已复制。", { exact: true }).waitFor();
+    await page.locator("#integrationLock").click();
+    assert.equal(await page.locator("#integrationToken").inputValue(), "");
+    await page.locator("#integrationAdmin").fill(fixtureAdminToken);
+    await page.locator("#integrationUnlock button").click();
+    await page.getByRole("button", { name: "取回 Token", exact: true }).click();
+    await page.getByText("可以复制这枚接入 Token。", { exact: true }).waitFor();
+    assert.equal(await page.locator("#integrationToken").inputValue(), fixtureIntegrationToken);
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "撤销", exact: true }).click();
+    await page.getByText("Token 已撤销。", { exact: true }).waitFor();
+    assert.equal(await page.locator("#integrationToken").inputValue(), "");
+    assert.equal(integrationFixtures.length, 0);
+    checks.push("admin can issue, copy, retrieve, and revoke the scoped integration token in the setup page");
+  }
   credentialsEntered = false;
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.locator("#setupForm").waitFor({ state: "visible" });

@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="./style.css">
   <script src="./jszip.min.js" defer></script>
   <script type="module" src="./app.mjs"></script>
+  <script type="module" src="./integrations.mjs"></script>
 </head>
 <body>
   <main class="shell">
@@ -49,6 +50,34 @@
         <div class="download-bar"><p>生成的 ZIP 含私钥与节点凭据，请勿公开分享。</p><button id="downloadButton" type="submit">生成并下载 Windows 安装包</button></div>
       </form>
       <div id="status" role="status" aria-live="polite" hidden></div>
+      <details class="card">
+        <summary>接入凭据</summary>
+        <p class="muted">为公司内部系统发放 Token，并选择它可以使用的节点。</p>
+        <p id="integrationHttps" hidden><a id="integrationHttpsLink">在 HTTPS 页面管理接入凭据</a></p>
+        <form id="integrationUnlock" autocomplete="off" hidden>
+          <label for="integrationAdmin">管理员 Token</label>
+          <input id="integrationAdmin" type="password" autocomplete="off" required>
+          <button type="submit">解锁凭据管理</button>
+        </form>
+        <section id="integrationPanel" hidden>
+          <button id="integrationLock" type="button" class="quiet">锁定凭据管理</button>
+          <form id="integrationIssue">
+            <label for="integrationName">系统名称</label>
+            <input id="integrationName" maxlength="160" required>
+            <label for="integrationNodes">授权节点</label>
+            <select id="integrationNodes" multiple size="4" required></select>
+            <p class="hint">按住 Ctrl 或 ⌘ 可以选择多个节点。</p>
+            <button type="submit">发放 Token</button>
+          </form>
+          <div id="integrationSecret" hidden>
+            <label for="integrationToken">接入 Token</label>
+            <input id="integrationToken" type="text" readonly autocomplete="off" spellcheck="false">
+            <button id="integrationCopy" type="button">复制 Token</button>
+          </div>
+          <ul id="integrationList"></ul>
+        </section>
+        <p id="integrationStatus" role="status" aria-live="polite"></p>
+      </details>
       <footer>Windows 和 macOS 的安装脚本会设置开机启动。新增应用只需更新中心映射，无需重新打包。<a href="./license.txt" target="_blank" rel="noopener noreferrer">开源许可证</a></footer>
     </section>
   </main>

@@ -1,11 +1,14 @@
 use hmac::{Hmac, Mac};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::{path::Path, sync::Mutex};
 use store_protocol::{validate_identifier, Platform, StoreError};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
+
+mod integrations;
+pub(crate) use integrations::{Integration, IntegrationInput, TOKEN_PREFIX};
 
 pub type Result<T> = std::result::Result<T, StoreError>;
 
@@ -62,7 +65,13 @@ impl Registry {
             platform TEXT NOT NULL CHECK(platform IN ('ios','android')),
             bundle_identifier TEXT NOT NULL,
             connector_id TEXT NOT NULL REFERENCES connectors(id),
-            PRIMARY KEY(platform,bundle_identifier));",
+            PRIMARY KEY(platform,bundle_identifier));
+            CREATE TABLE IF NOT EXISTS integrations (
+            id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE);
+            CREATE TABLE IF NOT EXISTS integration_connectors (
+            integration_id TEXT NOT NULL REFERENCES integrations(id) ON DELETE CASCADE,
+            connector_id TEXT NOT NULL REFERENCES connectors(id) ON DELETE CASCADE,
+            PRIMARY KEY(integration_id,connector_id));",
         )
         .map_err(database_error)?;
         Ok(Self {
@@ -211,16 +220,54 @@ impl Registry {
     }
 
     pub fn bind(&self, platform: Platform, identifier: &str, id: &str) -> Result<Connector> {
+        self.bind_scoped(platform, identifier, id, None)
+    }
+
+    pub(crate) fn bind_scoped(
+        &self,
+        platform: Platform,
+        identifier: &str,
+        id: &str,
+        integration: Option<&Integration>,
+    ) -> Result<Connector> {
         validate_identifier(identifier)?;
-        let node = self.get(id)?;
-        if !node.enabled {
-            return Err(StoreError::new(
-                409,
-                "connector_disabled",
-                "Connector is disabled",
-            ));
+        {
+            let mut db = self.db.lock().unwrap();
+            let transaction = db
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(database_error)?;
+            if let Some(integration) = integration {
+                integration.require_connector(id)?;
+                if let Some(previous) = binding(&transaction, platform, identifier)? {
+                    integration.require_connector(&previous)?;
+                }
+            }
+            let enabled: Option<bool> = transaction
+                .query_row("SELECT enabled FROM connectors WHERE id=?1", [id], |row| {
+                    row.get(0)
+                })
+                .optional()
+                .map_err(database_error)?;
+            match enabled {
+                None => {
+                    return Err(StoreError::new(
+                        404,
+                        "connector_not_found",
+                        "Connector not found",
+                    ))
+                }
+                Some(false) => {
+                    return Err(StoreError::new(
+                        409,
+                        "connector_disabled",
+                        "Connector is disabled",
+                    ))
+                }
+                Some(true) => {}
+            }
+            transaction.execute("INSERT INTO app_bindings(platform,bundle_identifier,connector_id) VALUES(?1,?2,?3) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET connector_id=excluded.connector_id", params![platform.to_string(),identifier,id]).map_err(database_error)?;
+            transaction.commit().map_err(database_error)?;
         }
-        self.db.lock().unwrap().execute("INSERT INTO app_bindings(platform,bundle_identifier,connector_id) VALUES(?1,?2,?3) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET connector_id=excluded.connector_id", params![platform.to_string(),identifier,id]).map_err(database_error)?;
         self.get(id)
     }
 
@@ -238,25 +285,26 @@ impl Registry {
     }
 
     pub fn resolve(&self, platform: Platform, identifier: &str) -> Result<Connector> {
+        self.resolve_scoped(platform, identifier, None)
+    }
+
+    pub(crate) fn resolve_scoped(
+        &self,
+        platform: Platform,
+        identifier: &str,
+        integration: Option<&Integration>,
+    ) -> Result<Connector> {
         validate_identifier(identifier)?;
-        let id: String = self
-            .db
-            .lock()
-            .unwrap()
-            .query_row(
-                "SELECT connector_id FROM app_bindings WHERE platform=?1 AND bundle_identifier=?2",
-                params![platform.to_string(), identifier],
-                |row| row.get(0),
+        let id = binding(&self.db.lock().unwrap(), platform, identifier)?.ok_or_else(|| {
+            StoreError::new(
+                404,
+                "app_not_found",
+                "No Connector is assigned to this application",
             )
-            .optional()
-            .map_err(database_error)?
-            .ok_or_else(|| {
-                StoreError::new(
-                    404,
-                    "app_not_found",
-                    "No Connector is assigned to this application",
-                )
-            })?;
+        })?;
+        if let Some(integration) = integration {
+            integration.require_connector(&id)?;
+        }
         let node = self.get(&id)?;
         if !node.enabled {
             return Err(StoreError::new(
@@ -267,4 +315,14 @@ impl Registry {
         }
         Ok(node)
     }
+}
+
+fn binding(db: &Connection, platform: Platform, identifier: &str) -> Result<Option<String>> {
+    db.query_row(
+        "SELECT connector_id FROM app_bindings WHERE platform=?1 AND bundle_identifier=?2",
+        params![platform.to_string(), identifier],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(database_error)
 }

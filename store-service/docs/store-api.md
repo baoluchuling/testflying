@@ -1,6 +1,6 @@
 # 商店业务与图片上传接口
 
-版本：0.1.0，对应独立 Rust Store API 当前实现。本文包含 9 个商店业务接口和 2 个图片上传接口，共 11 个接口，可供外部后台直接接入。线上版本见 [生产部署记录](production-deployment.md)。
+版本 0.1.0，对应独立 Rust Store API 当前实现。本文涵盖外部后台的节点选择和应用绑定流程，以及 9 个商店业务接口和 2 个图片上传接口。线上版本见 [生产部署记录](production-deployment.md)。
 
 ## 通用约定
 
@@ -8,7 +8,7 @@
 
 HTTP 调用不涉及证书验证，但 Token 和请求正文会明文传输。使用 HTTPS 时仍正常验证证书；当前私有 CA 部署可通过 `--cacert` 指定 [公开 CA 证书](../deploy/testflying-prod-ca.crt)，该文件不含私钥。调用方无需提供 Apple/Google 私钥，商店凭据只配置在 Connector。
 
-所有接口统一前缀：
+按应用调用的商店业务和图片上传接口使用以下路径前缀。
 
 ```text
 /v1/store-management/apps/{platform}/{bundleIdentifier}
@@ -19,23 +19,30 @@ HTTP 调用不涉及证书验证，但 Token 和请求正文会明文传输。�
 | platform | ios / android，小写 |
 | bundleIdentifier | iOS Bundle ID 或 Android 包名，大小写精确匹配，例如 com.example.reader |
 
-调用前应用需已配置商店路由。业务请求只传平台和应用标识，不传 accountId、内部 appId 或 connectorId。
+调用前先[为应用选择并绑定节点](#列出节点和绑定应用)。业务请求只传平台和应用标识。
 
-商店业务接口和申请上传接口使用新服务的应用 API Token（服务配置 `STORE_API_TOKEN`），不使用旧服务 Token、管理员 Token 或节点 Token：
+JSON 字段为 camelCase，最大请求体 2 MiB。以下响应均为格式示例。`{APP}` 表示上述应用路径前缀。
 
-```http
-Authorization: Bearer API_TOKEN
-Content-Type: application/json
-```
+实际文件上传使用申请接口返回的短时 `uploadToken`，正文为原始文件字节，单图最大 64 MiB。外部请求统一访问中心地址。
 
-JSON 字段为 camelCase，最大请求体 2 MiB。以下所有响应均为格式示例，不是线上账号数据。`{APP}` 表示上述统一前缀。
+## 对接凭据
 
-实际文件上传使用申请接口返回的短时 `uploadToken`，正文为原始文件字节，单图最大 64 MiB，不受业务 JSON 的 2 MiB 限制。所有外部请求均访问中心地址，不需要访问 Connector。
+| 操作 | 凭据 |
+|---|---|
+| 获取节点列表 | 接入 Token |
+| 保存应用与节点的绑定 | 同一枚接入 Token |
+| 调用商店业务和申请上传 | 同一枚接入 Token |
+
+中心管理员在 [Connector 下载页](connector-setup.md) 打开「接入凭据」，在 HTTPS 页面用管理员 Token 解锁，填写系统名称、选择授权节点并发放。每套内部系统配置一枚接入 Token，调用时用 HTTPS 和 `Authorization: Bearer <接入 Token>`。
+
+接入 Token 的范围由授权节点决定。多个系统共享同一节点时，共享该节点下已绑定的应用范围。应用管理后端持有 Token，并负责校验当前用户对应用的权限。中心管理员可在同一管理区撤销 Token。
 
 ## 接口列表
 
 | 序号 | 方法 | 路径 | 用途 |
 |---|---|---|---|
+| — | GET | /v1/store-management/connectors | 读取获授权的启用节点 |
+| — | PUT | /v1/apps/{platform}/{bundleIdentifier}/connector | 设置或更换应用绑定 |
 | 1 | GET | {APP}/supported-locales | 查询现有商店语言 |
 | 2 | GET | {APP}/store-listings | 查询商店文案 |
 | 3 | GET | {APP}/store-images | 查询图片和截图 |
@@ -47,6 +54,23 @@ JSON 字段为 camelCase，最大请求体 2 MiB。以下所有响应均为格�
 | 9 | POST | {APP}/sync | 单项或多字段同步内容 |
 | 10 | POST | {APP}/uploads | 申请图片上传凭据 |
 | 11 | PUT | {APP}/uploads/{assetId} | 经中心上传图片文件字节 |
+
+## 列出节点和绑定应用
+
+外部后台可在应用管理页让用户选择节点。以下路径直接追加在中心基础地址后。
+
+1. 带接入 Token 调用 `GET /v1/store-management/connectors`。响应中的 `connectors` 是该系统获授权且启用的节点数组。下拉框用 `connectorId` 作为选项值，显示 `name`，用 `connected` 标注当前 WSS 在线状态。
+2. 应用管理后端核验用户权限，再用同一枚 Token 调用绑定接口。iOS 路径用 Bundle ID，Android 路径用包名。
+
+   ```http
+   PUT /v1/apps/ios/com.example.reader/connector
+   Authorization: Bearer INTEGRATION_TOKEN
+   Content-Type: application/json
+
+   {"connectorId":"636b5d86-4e1b-4f88-aeb9-a1abdf0cdd33"}
+   ```
+
+绑定成功后，用同一枚 Token 按应用路径调用商店业务接口。接入系统可以绑定尚未关联的应用，或在自己的授权节点之间换绑。越权节点返回 `403 connector_not_allowed`。 [绑定接口详情](api-reference.md#8-应用与-connector-映射)
 
 ## 1. 查询语言
 
@@ -392,7 +416,7 @@ CPP 成功时 storeState 包含 applePageId、created；Android 版本说明成�
 
 `POST /v1/store-management/apps/{platform}/{bundleIdentifier}/uploads`
 
-认证：`Authorization: Bearer API_TOKEN`，即新服务配置中的 `STORE_API_TOKEN`。
+认证使用 `Authorization: Bearer INTEGRATION_TOKEN`。旧集成仍可使用配置中的 `STORE_API_TOKEN`。
 
 ```json
 {

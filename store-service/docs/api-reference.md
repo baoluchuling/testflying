@@ -2,7 +2,7 @@
 
 版本：0.1.0。本文对应 `store-service/` 当前 Rust 实现；线上版本见 [生产部署记录](production-deployment.md)，现有 Testflying 后台尚未接入。示例均为接口格式示意，不是线上账号数据。
 
-仅需业务接入时可查看合并的 [商店业务与图片上传接口文档](store-api.md)，包含 9 个商店操作和 2 个上传接口。
+外部后台接入可查看 [商店业务与图片上传接口文档](store-api.md)，其中包括节点选择、应用绑定、商店操作和上传接口。
 
 本地文件上传新增两个中心接口：POST `APP_PATH/uploads` 申请短时凭据，PUT `APP_PATH/uploads/{assetId}` 发送文件字节。中心流式转发到 Connector，sync 用 assetId 引用，不需要先上对象存储。参数、限额和完整步骤见 [图片上传接口](image-upload-api.md)。
 
@@ -25,7 +25,7 @@ APP_PATH = /v1/store-management/apps/{platform}/{bundleIdentifier}
 
 一个 Connector 可同时配置一套 Apple 和一套 Google 凭据，两边的多个应用都可以绑定到该节点。应用清单只在中心维护，不写入节点配置。Store API 根据应用标识查映射，再选择 HTTP 或 WSS 执行；不需要调用方提供 `accountId`、内部 `appId` 或 Apple 数字 App ID。
 
-生成包含凭据与相对路径的专属安装包可使用 `/connector-setup/` [下载配置页](connector-setup.md)。页面复用下述管理员 API；账号文件在浏览器本地合并，不上传中心。
+生成包含凭据与相对路径的专属安装包可使用 `/connector-setup/` [下载配置页](connector-setup.md)。页面使用其公开接口查询节点、创建节点和获取安装包；账号文件在浏览器本地合并。
 
 所有需认证的请求使用：
 
@@ -38,13 +38,16 @@ Content-Type: application/json
 |---|---|---|
 | 应用 API Token | 查询和更新商店 | `STORE_API_TOKEN` |
 | 管理 Token | 创建节点、维护映射、下载安装包 | `STORE_API_ADMIN_TOKEN` |
+| 接入 Token | 列出授权节点、保存应用绑定及读写商店 | 管理员在 HTTPS 下载页发放 |
 | 节点 Token | Connector 连接或执行协议 | 创建节点时签发，每节点独立 |
 
 应用和管理 Token 必须不同。JSON 字段使用 camelCase；请求体最大 **2 MiB**。普通业务成功响应不额外包装 `data`，示例中的根字段就是实际返回结构。
 
 ## 2. 接口总览
 
-### 2.1 商店操作：应用 API Token
+### 2.1 商店操作：接入 Token 或应用 API Token
+
+`GET /v1/store-management/connectors` 返回启用节点。接入 Token 只看到获授权的节点。
 
 以下路径均在 `APP_PATH` 后追加：
 
@@ -72,13 +75,14 @@ Content-Type: application/json
 | GET | `/v1/connectors/{id}/installation` | 获取节点安装配置 |
 | GET | `/v1/connectors/{id}/installer/{target}` | 下载带身份配置的 ZIP 安装包 |
 | GET | `/v1/apps/{platform}/{bundleIdentifier}/connector` | 查询应用对应节点 |
-| PUT | `/v1/apps/{platform}/{bundleIdentifier}/connector` | 设置或更换应用映射 |
+| PUT | `/v1/apps/{platform}/{bundleIdentifier}/connector` | 设置或更换应用映射，接入 Token 也可按授权范围调用 |
 | DELETE | `/v1/apps/{platform}/{bundleIdentifier}/connector` | 解除映射 |
 
 ### 2.3 健康检查和节点协议
 
 | 目标 | 方法 | 路径 | 鉴权 |
 |---|---|---|---|
+| Store API | GET | `/connector-setup/api/connectors` | 无，供选择节点 |
 | Store API | GET | `/health` | 无 |
 | Store API | GET → WebSocket | `/v1/connectors/{id}/ws` | 节点 Token |
 | HTTP Connector | GET | `/health` | 无 |
