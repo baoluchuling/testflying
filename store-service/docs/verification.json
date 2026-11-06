@@ -1,6 +1,6 @@
 {
-  "runId": "a036372d366e4eb3a01678b352fd8877",
-  "finishedAt": "2026-11-06T10:15:26.824807+00:00",
+  "runId": "930c8ca6d3c4427da1e51d52e3396cf8",
+  "finishedAt": "2026-11-06T11:25:03.888412+00:00",
   "checks": [
     {
       "command": [
@@ -61,15 +61,16 @@
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.04s",
-        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
-        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.88s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.86s",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
         "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
-        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.30s",
+        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.35s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
@@ -144,7 +145,7 @@
       "testSummaries": []
     }
   ],
-  "testsPassed": 60,
+  "testsPassed": 62,
   "sourceHashes": {
     "Cargo.lock": "6ac5b7841cd975ae2c50058a5fc6e2b7f8fc47f6c80dde8c8ec51c355ef20967",
     "Cargo.toml": "fd87675617bd5deda3fe4e5fb91d81b194a43536aed5a43234b68c7592778db9",
@@ -177,8 +178,9 @@
     "crates/store-connector/examples/screenshot/goal.rs": "e47b7bde43dbfb34957963790d548f2c5c1d6145c7de61d7a9df0976a0bb8487",
     "crates/store-connector/examples/screenshot/worker.rs": "1358b80847923f8b16faaee6658f493f65de5fdb000553a42e79e2d7c6048a02",
     "crates/store-connector/examples/screenshot-connector.rs": "8ca9480c603296c5ad138a9a66293ad71b29dfe7ce9ce5dc6f835a72f95eb066",
-    "crates/store-connector/src/lib.rs": "e9c7b5112294d36d75e383aceb6273c01f4a1555b56439bc51a8a4ce431b46b8",
+    "crates/store-connector/src/lib.rs": "1b0b1825e3ab7ffe4b7121ecea2d534785cad0b5afe52a0cad451a770ef8219e",
     "crates/store-connector/src/main.rs": "c057270334ff482a9e3ad9d4338e43011a23b10b519587ee4968fd823307e18b",
+    "crates/store-connector/tests/platform_mode_test.rs": "78d3ddf949c66e2a4331c72ef51941cb037fba5fdb53bb115382a715eb0094b4",
     "crates/store-protocol/Cargo.toml": "7d0718bf58ce0b0b04e803533a8a34cff33202e686e049960053676a346729de",
     "crates/store-protocol/src/crypto.rs": "bb0738313f5535e42b9bdd6dfbee28faed477a1f1b839fe06bf222989f0f5f59",
     "crates/store-protocol/src/lib.rs": "86832893ef086a6a9b3b0cb6992abfafd1eef237753da1a5d0a863c0f991a04c",
