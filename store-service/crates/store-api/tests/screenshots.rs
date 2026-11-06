@@ -519,20 +519,16 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
 }
 
 #[tokio::test]
-async fn jobs_require_https_and_a_configured_destination() {
+async fn jobs_run_without_a_destination_and_only_image_delivery_fails() {
     let app = store_api::router(state());
-    let (mac, _) = node(&app, "Mac", "screenshot").await;
+    let (mac, mac_token) = node(&app, "Mac", "screenshot").await;
     let token = integration(&app, "external", &[&mac]).await;
-    let payload = json!({"connectorId":mac,"profile":"android-tablet","prompt":"Open settings"});
-    assert_eq!(
-        send(&app, "POST", "/v1/screenshot-jobs", &token, payload.clone())
-            .await
-            .status(),
-        503
-    );
+    let payload = json!({"connectorId":mac,"prompt":"Open settings"});
+    let submit = "/v1/screenshot-jobs";
     let response = app
+        .clone()
         .oneshot(
-            Request::post("/v1/screenshot-jobs")
+            Request::post(submit)
                 .header(header::AUTHORIZATION, format!("Bearer {token}"))
                 .header(header::CONTENT_TYPE, "application/json")
                 .header("x-forwarded-proto", "http")
@@ -543,4 +539,56 @@ async fn jobs_require_https_and_a_configured_destination() {
         .unwrap();
     assert_eq!(response.status(), 403);
     assert!(ScreenshotUploader::new("http://external.example.invalid/upload", None).is_err());
+
+    let response = send(&app, "POST", submit, &token, payload.clone()).await;
+    assert_eq!(response.status(), 202);
+    let job = value(response).await;
+    let id = job["jobId"].as_str().unwrap();
+    let prefix = format!("/v1/connectors/{mac}/screenshot-jobs");
+    let claim = format!("{prefix}/claim");
+    let response = send(&app, "POST", &claim, &mac_token, Value::Null).await;
+    assert_eq!(response.status(), 200);
+    let claimed = value(response).await;
+    assert_eq!(claimed["jobId"], id);
+    assert_eq!(claimed["prompt"], "Open settings");
+    let job_status = format!("{submit}/{id}");
+    let mut png = Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(2, 2)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let png = png.into_inner();
+    let upload = |lease: &str| {
+        app.clone().oneshot(
+            Request::put(format!("{prefix}/{id}/image"))
+                .header("x-forwarded-proto", "https")
+                .header(header::AUTHORIZATION, format!("Bearer {mac_token}"))
+                .header(header::CONTENT_TYPE, "image/png")
+                .header("x-screenshot-lease", lease)
+                .body(Body::from(png.clone()))
+                .unwrap(),
+        )
+    };
+    assert_eq!(
+        upload("99999999-9999-4999-8999-999999999999")
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    let running = value(send(&app, "GET", &job_status, &token, Value::Null).await).await;
+    assert_eq!(running["status"], "running");
+    let lease = claimed["lease"].as_str().unwrap();
+    let response = upload(lease).await.unwrap();
+    assert_eq!(response.status(), 503);
+    assert_eq!(
+        value(response).await["error"]["code"],
+        "screenshot_upload_unconfigured"
+    );
+    assert_eq!(upload(lease).await.unwrap().status(), 409);
+    let failed = value(send(&app, "GET", &job_status, &token, Value::Null).await).await;
+    assert_eq!(failed["status"], "failed");
+    assert_eq!(failed["error"], "screenshot_upload_unconfigured");
+    let next = value(send(&app, "POST", submit, &token, payload).await).await;
+    let claimed = value(send(&app, "POST", &claim, &mac_token, Value::Null).await).await;
+    assert_eq!(claimed["jobId"], next["jobId"]);
 }

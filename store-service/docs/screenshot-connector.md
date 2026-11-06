@@ -70,6 +70,6 @@ sh ./install.sh
 
 ## 外部上传占位协议
 
-在中心设置 `STORE_API_SCREENSHOT_UPLOAD_URL`。真实服务可选设置 `STORE_API_SCREENSHOT_UPLOAD_TOKEN` 用于下游 Bearer 鉴权，节点或外部系统的 Token 不随转发发送。URL 必须是固定 HTTPS 地址，本地联调可用回环 HTTP。未设置上传地址时，中心已暴露任务接口，提交请求返回 `503 screenshot_upload_unconfigured`。
+在中心设置 `STORE_API_SCREENSHOT_UPLOAD_URL`。真实服务可选设置 `STORE_API_SCREENSHOT_UPLOAD_TOKEN` 用于下游 Bearer 鉴权，节点或外部系统的 Token 不随转发发送。URL 必须是固定 HTTPS 地址，本地联调可用回环 HTTP。任务可以在地址为空或转发配置无效时提交、领取和执行。Mac 交回图片时，如果中心仍无有效的接收配置，回传接口返回 `503 screenshot_upload_unconfigured`，任务状态为 `failed`，并记录此回传错误、释放任务租约。
 
 中心在内存中接收并验证 PNG，随后向该地址 POST `multipart/form-data`。图片字段名为 `file`，文件名为 `screenshot.png`，并发送值为 jobId 的 `Idempotency-Key`。中心只持久化任务状态和可选的 HTTPS `imageUrl`。外部正式协议明确后可单独更换这一层。中心拒绝跳转和重复交图，上传超时记录为 `delivery_unknown`，避免重试导致重复上传。

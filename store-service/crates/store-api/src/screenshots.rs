@@ -20,7 +20,9 @@ pub struct ScreenshotUploader {
 
 impl ScreenshotUploader {
     pub fn from_environment() -> std::result::Result<Option<Self>, StoreError> {
-        let Some(url) = std::env::var_os("STORE_API_SCREENSHOT_UPLOAD_URL") else {
+        let Some(url) =
+            std::env::var_os("STORE_API_SCREENSHOT_UPLOAD_URL").filter(|url| !url.is_empty())
+        else {
             return Ok(None);
         };
         let url = url.into_string().map_err(|_| invalid_upstream())?;
@@ -141,17 +143,6 @@ fn delivery_error(error: reqwest::Error) -> StoreError {
         "delivery_unknown",
         "Screenshot delivery could not be confirmed",
     )
-}
-
-fn configured(uploader: &Option<Arc<ScreenshotUploader>>) -> Result<&ScreenshotUploader> {
-    uploader.as_deref().ok_or_else(|| {
-        StoreError::new(
-            503,
-            "screenshot_upload_unconfigured",
-            "Screenshot upload destination is not configured",
-        )
-        .into()
-    })
 }
 
 pub(super) fn routes(
@@ -300,11 +291,9 @@ fn require_integration(access: Option<Extension<Integration>>) -> Result<Integra
 async fn submit(
     State(state): State<Arc<ApiState>>,
     access: Option<Extension<Integration>>,
-    Extension(uploader): Extension<Option<Arc<ScreenshotUploader>>>,
     Json(input): Json<Submit>,
 ) -> Result<(StatusCode, Json<Value>)> {
     let access = require_integration(access)?;
-    configured(&uploader)?;
     if input.profile.as_ref().is_some_and(|profile| {
         profile.is_empty()
             || profile.len() > 64
@@ -359,11 +348,9 @@ fn authorize_worker(state: &ApiState, id: &str, headers: &HeaderMap) -> Result<(
 async fn claim(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
-    Extension(uploader): Extension<Option<Arc<ScreenshotUploader>>>,
     headers: HeaderMap,
 ) -> Result<Response> {
     authorize_worker(&state, &id, &headers)?;
-    configured(&uploader)?;
     Ok(match state.registry.claim_screenshot(&id)? {
         Some(job) => Json(job).into_response(),
         None => StatusCode::NO_CONTENT.into_response(),
@@ -419,7 +406,6 @@ async fn image(
     request: Request,
 ) -> Result<StatusCode> {
     authorize_worker(&state, &id, request.headers())?;
-    let uploader = configured(&uploader)?;
     let lease = lease(request.headers())?.to_owned();
     if request
         .headers()
@@ -428,6 +414,18 @@ async fn image(
     {
         return Err(StoreError::new(415, "invalid_image_type", "Send a PNG image").into());
     }
+    let Some(uploader) = uploader else {
+        let error = StoreError::new(
+            503,
+            "screenshot_upload_unconfigured",
+            "Screenshot upload destination is unavailable",
+        );
+        state.registry.begin_screenshot_upload(&id, &job, &lease)?;
+        state
+            .registry
+            .finish_screenshot(&id, &job, &lease, Err(&error.code), "uploading")?;
+        return Err(error.into());
+    };
     let _slot = uploader.transfers.try_acquire().map_err(|_| {
         StoreError::new(
             503,

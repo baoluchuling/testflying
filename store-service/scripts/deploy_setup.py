@@ -321,10 +321,8 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                       "new integration lists all enabled store nodes")
                 status, body = request("/v1/screenshot-jobs", token, "POST",
                                        {"connectorId": connector_id, "prompt": "verify"})
-                expected = (422, "invalid_screenshot_connector") if snapshot["screenshotUploadConfigured"] else (
-                    503, "screenshot_upload_unconfigured")
-                check((status, json.loads(body)["error"]["code"]) == expected,
-                      "screenshot job route accepts a profile-free request and applies destination and node type checks")
+                check((status, json.loads(body)["error"]["code"]) == (422, "invalid_screenshot_connector"),
+                      "profile-free screenshot submission validates the node independently of the upload destination")
             finally:
                 status, body = request(management, snapshot["admin"])
                 check(status == 200, "temporary integration cleanup listing available")

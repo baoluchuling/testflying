@@ -28,7 +28,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     println!("Store API listening on {}", listener.local_addr()?);
     let shutdown = state.clone();
-    let uploader = ScreenshotUploader::from_environment()?;
+    let uploader = ScreenshotUploader::from_environment().unwrap_or_else(|error| {
+        eprintln!("Screenshot delivery unavailable ({})", error.code);
+        None
+    });
     axum::serve(
         listener,
         store_api::router_with_screenshots(state, uploader),
