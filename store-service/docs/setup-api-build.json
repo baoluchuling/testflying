@@ -1,7 +1,7 @@
 {
-  "runId": "40cc44c266b24a61ba4b4b6724dc06c0",
-  "finishedAt": "2026-11-06T07:29:59.301968+00:00",
-  "sourceCommit": "c0ff8dcb8598f5309925ea774d4481a89bb975a6",
+  "runId": "fad9a793e31247f1827d4270169fd339",
+  "finishedAt": "2026-11-06T07:53:22.133737+00:00",
+  "sourceCommit": "a384b7a214a33f028bf678c8a93d5bc89528fdaf",
   "sourceHashes": {
     "Cargo.lock": "6ac5b7841cd975ae2c50058a5fc6e2b7f8fc47f6c80dde8c8ec51c355ef20967",
     "Cargo.toml": "fd87675617bd5deda3fe4e5fb91d81b194a43536aed5a43234b68c7592778db9",
@@ -30,7 +30,7 @@
     "crates/store-api/tests/uploads.rs": "f25cacb548bf1fc264e159e5385f3a09c56bb2626df8d37de35be8509e4f720d",
     "crates/store-connector/Cargo.toml": "a7340cf89ae6016edbc1027e416943c5d6e3bfc7560e7baa3c4e273b4ee0a65f",
     "crates/store-connector/examples/screenshot/connector.rs": "ad79a09685068a89db480e68b3cce2ced76fe62f7b8c2ca68c4dc0958fb47a3e",
-    "crates/store-connector/examples/screenshot/worker.rs": "8868b0c0e2702b3e7db8f5297229d44a59c68e84b72d5ec940a04ac388526b83",
+    "crates/store-connector/examples/screenshot/worker.rs": "e1a32c425a5b7c0ee6cf5b6835dc30383ab20ef9fcd87bc9be0290672bc3d135",
     "crates/store-connector/examples/screenshot-connector.rs": "8ca9480c603296c5ad138a9a66293ad71b29dfe7ce9ce5dc6f835a72f95eb066",
     "crates/store-connector/src/lib.rs": "e9c7b5112294d36d75e383aceb6273c01f4a1555b56439bc51a8a4ce431b46b8",
     "crates/store-connector/src/main.rs": "c057270334ff482a9e3ad9d4338e43011a23b10b519587ee4968fd823307e18b",
@@ -64,9 +64,14 @@
   "toolchain": "Rust 1.94.0 / cargo-zigbuild 0.20.1 / Zig 0.14.1",
   "outputs": {
     "releases/linux-amd64/store-api": {
-      "sha256": "427894e90da78a23bd62d022c6714587bc8a041331ea280e3be6300f8fdbfb2a",
+      "sha256": "f8dbac3a24047b5944588345105a68f754af2bf0f06db24fdb5cbd205353acbf",
       "bytes": 7988632,
       "format": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped"
+    },
+    "releases/darwin-universal/screenshot-connector": {
+      "sha256": "c3b07204ab31c0ee7b978b89169d9ff9a6fe42abc6da72dc2c0663f67553efa9",
+      "bytes": 10884480,
+      "format": "Mach-O universal binary with 2 architectures: [x86_64:Mach-O 64-bit executable x86_64] [arm64]\n/private/tmp/codex-artifacts/fad9a793e31247f1827d4270169fd339/tmp/screenshot-connector (for architecture x86_64):\tMach-O 64-bit executable x86_64\n/private/tmp/codex-artifacts/fad9a793e31247f1827d4270169fd339/tmp/screenshot-connector (for architecture arm64):\tMach-O 64-bit executable arm64"
     }
   },
   "cleanup": "See the supervisor cleanup report for this runId"
