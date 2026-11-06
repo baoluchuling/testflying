@@ -501,8 +501,7 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
             config["serverUrl"],
             "https://center.example.invalid/store-api"
         );
-        assert_eq!(config["profiles"], json!({}));
-        assert_eq!(config["projectRoots"], json!([]));
+        assert!(config.get("profiles").is_none() && config.get("projectRoots").is_none());
     }
     for name in [
         "run.sh",

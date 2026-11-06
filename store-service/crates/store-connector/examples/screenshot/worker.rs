@@ -50,10 +50,6 @@ pub(super) struct Config {
     codex_home: PathBuf,
     #[serde(default)]
     codex_permission_profile: String,
-    #[serde(default)]
-    project_roots: Vec<PathBuf>,
-    #[serde(default)]
-    profiles: HashMap<String, Profile>,
     adb_path: Option<PathBuf>,
     ca_file: Option<PathBuf>,
 }
@@ -90,30 +86,8 @@ impl Config {
         Ok(config)
     }
 
-    fn discovery_roots(&self) -> Vec<PathBuf> {
-        let home = env::var_os("HOME").map(PathBuf::from);
-        let mut roots: Vec<_> = if self.project_roots.is_empty() {
-            home.iter()
-                .chain(self.profiles.values().map(|profile| &profile.project_root))
-                .filter_map(|root| local_path(root, true).ok())
-                .collect()
-        } else {
-            self.project_roots
-                .iter()
-                .filter_map(|root| local_path(root, true).ok())
-                .collect()
-        };
-        roots.sort();
-        roots.dedup();
-        roots
-    }
-
-    fn adb(&self, hint: Option<&Profile>) -> Option<PathBuf> {
-        if let Some(path) = self
-            .adb_path
-            .as_ref()
-            .or_else(|| hint.and_then(|hint| hint.adb_path.as_ref()))
-        {
+    fn adb(&self) -> Option<PathBuf> {
+        if let Some(path) = &self.adb_path {
             return local_path(path, false).ok();
         }
         ["ANDROID_HOME", "ANDROID_SDK_ROOT", "HOME"]
@@ -127,15 +101,6 @@ impl Config {
             })
             .next()
     }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Profile {
-    platform: String,
-    project_root: PathBuf,
-    device_id: String,
-    adb_path: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -270,23 +235,18 @@ impl<'a> Worker<'a> {
         stop: &mut watch::Receiver<bool>,
     ) -> Result<Vec<u8>, &'static str> {
         let unavailable = |_| "profile_unavailable";
-        let roots = self.config.discovery_roots();
         let codex = local_path(&self.config.codex_path, false).map_err(unavailable)?;
         let codex_home = local_path(&self.config.codex_home, true).map_err(unavailable)?;
         let permission = &self.config.codex_permission_profile;
-        if roots.is_empty() || !valid_permission(permission) {
+        if !valid_permission(permission) {
             return Err("profile_unavailable");
         }
-        let hint = job
-            .profile
-            .as_ref()
-            .and_then(|name| self.config.profiles.get(name));
-        let adb = self.config.adb(hint);
+        let adb = self.config.adb();
 
         let schema = root.join("codex-result-schema.json");
         let result = root.join("codex-result.json");
         fs::write(&schema, SELECTION_SCHEMA).map_err(|_| "codex_failed")?;
-        let prompt = self.session_prompt(job, &roots, hint, adb.as_deref());
+        let prompt = self.session_prompt(job, adb.as_deref());
         let mut command = Command::new(codex);
         command
             .args(["--ask-for-approval", "never", "--ignore-user-config", "-c"])
@@ -318,7 +278,7 @@ impl<'a> Worker<'a> {
             return Err("codex_failed");
         }
 
-        let device = selection.validate(&roots).ok_or("selection_invalid")?;
+        let device = selection.validate().ok_or("selection_invalid")?;
         device
             .verify_running(root, &codex_home, adb.as_deref(), stop)
             .await
@@ -351,13 +311,7 @@ impl<'a> Worker<'a> {
         Ok(bytes)
     }
 
-    fn session_prompt(
-        &self,
-        job: &Job,
-        roots: &[PathBuf],
-        hint: Option<&Profile>,
-        adb: Option<&Path>,
-    ) -> String {
+    fn session_prompt(&self, job: &Job, adb: Option<&Path>) -> String {
         let context = json!({
             "task": {
                 "jobId": job.job_id,
@@ -365,16 +319,10 @@ impl<'a> Worker<'a> {
                 "profile": job.profile,
                 "prompt": job.prompt,
             },
-            "projectRoots": roots,
-            "profileHint": hint.map(|hint| json!({
-                "projectRoot": hint.project_root,
-                "platform": hint.platform,
-                "deviceId": hint.device_id,
-            })),
             "adbPath": adb,
         });
         format!(
-            "Discover the app project for the screenshot task within projectRoots. Inspect project markers and choose an appropriate iOS Simulator or Android Emulator from this Mac using simctl or the indicated local adb. Use profileHint as a suggestion. Choose a single simulator, never a physical device. Decide whether to build, install, launch or interact with the app and leave the requested screen visible. Treat project source as read-only. Keep generated files in the working directory and use the DerivedData and Gradle paths in the environment. Do not capture or upload screenshots yourself. Return ready=true, the absolute projectRoot, platform and deviceId only after the screen is ready on that booted simulator. Use the simulator UUID on iOS or the emulator serial on Android. If the task cannot be prepared or the project or device is ambiguous, return ready=false and null for the selection fields.\nTask context (JSON):\n{context}"
+            "Find the app project for this task on this Mac using the local files and development tools available to this session. Search for the project by the app or project named in the task and verify it against local project files. Treat the optional task.profile as a hint. Choose one appropriate iOS Simulator or Android Emulator using simctl or local adb. Decide whether to build, install, launch or interact with the app and leave the requested screen visible. Treat project source as read-only. Keep generated files in the working directory and use the DerivedData and Gradle paths in the environment. Do not capture or upload screenshots yourself. Return ready=true, the absolute projectRoot, platform and deviceId only after the screen is ready on that booted simulator. Use the simulator UUID on iOS or the emulator serial on Android. If the project or device cannot be identified or the screen cannot be prepared, return ready=false and null for the selection fields.\nTask context (JSON):\n{context}"
         )
     }
 }
@@ -401,11 +349,9 @@ enum Device {
 }
 
 impl Selection {
-    fn validate(self, roots: &[PathBuf]) -> Option<Device> {
+    fn validate(self) -> Option<Device> {
         let project = local_path(self.project_root.as_deref()?, true).ok()?;
-        if !roots.iter().any(|root| project.starts_with(root)) {
-            return None;
-        }
+        project.parent()?;
         let id = self.device_id?;
         match self.platform? {
             Platform::Ios => Uuid::parse_str(&id).ok().map(Device::Ios),
@@ -730,28 +676,28 @@ mod tests {
     }
 
     #[test]
-    fn rejects_physical_devices_and_project_paths_outside_discovery_roots() {
+    fn accepts_existing_local_projects_and_rejects_invalid_paths_and_physical_devices() {
         let workspace = tempfile::tempdir().unwrap();
         let path = workspace.path().canonicalize().unwrap();
-        let root = path.join("allowed");
-        fs::create_dir(&root).unwrap();
-        let link = root.join("escape");
-        std::os::unix::fs::symlink(&path, &link).unwrap();
         let selection = |project, device: &str| Selection {
             ready: true,
             project_root: Some(project),
             platform: Some(Platform::Android),
             device_id: Some(device.into()),
         };
-        let roots = std::slice::from_ref(&root);
-        assert!(selection(root.clone(), "emulator-5554")
-            .validate(roots)
+        assert!(selection(path.clone(), "emulator-5554")
+            .validate()
             .is_some());
-        assert!(selection(root.clone(), "physical-phone")
-            .validate(roots)
+        assert!(selection(path.clone(), "physical-phone")
+            .validate()
             .is_none());
-        assert!(selection(path, "emulator-5554").validate(roots).is_none());
-        assert!(selection(link, "emulator-5554").validate(roots).is_none());
+        for invalid in [
+            PathBuf::from("/"),
+            PathBuf::from("relative"),
+            path.join("missing"),
+        ] {
+            assert!(selection(invalid, "emulator-5554").validate().is_none());
+        }
     }
 
     #[tokio::test]
@@ -760,8 +706,6 @@ mod tests {
 
         let workspace = tempfile::tempdir().unwrap();
         let root = workspace.path().canonicalize().unwrap();
-        let project = root.join("projects");
-        fs::create_dir(&project).unwrap();
         let codex = root.join("fixture-codex");
         fs::write(&codex, r#"#!/bin/sh
 set -eu
@@ -777,7 +721,6 @@ printf '%s\n' '{"ready":true,"projectRoot":"/","platform":"android","deviceId":"
             "kind":"screenshot","connectorId":node,"token":token,
             "serverUrl":"https://example.invalid","messageKey":"fixture-key",
             "codexPath":codex,"codexHome":root,"codexPermissionProfile":"screenshot-worker",
-            "projectRoots":[project],
         }))
         .unwrap();
         let worker = Worker::new(&config, &root.join("connector.json")).unwrap();
@@ -802,7 +745,8 @@ printf '%s\n' '{"ready":true,"projectRoot":"/","platform":"android","deviceId":"
             context["task"],
             json!({"jobId":job.job_id,"connectorId":node,"profile":null,"prompt":job.prompt})
         );
-        assert_eq!(context["projectRoots"], json!([project]));
+        assert!(context.get("projectRoots").is_none() && context.get("profileHint").is_none());
+        assert!(stdin.contains("Find the app project for this task on this Mac"));
         assert!(
             !stdin.contains(&token)
                 && !stdin.contains(&job.lease.to_string())

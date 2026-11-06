@@ -206,8 +206,6 @@ pub(super) async fn screenshot_installer(
     config["codexPath"] = json!("");
     config["codexHome"] = json!("");
     config["codexPermissionProfile"] = json!("screenshot-worker");
-    config["projectRoots"] = json!([]);
-    config["profiles"] = json!({});
     let config = serde_json::to_vec_pretty(&config).expect("Connector config serialization");
     let executable = state
         .release_root

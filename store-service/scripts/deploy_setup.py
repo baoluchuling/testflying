@@ -320,11 +320,11 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                 check(status == 200 and {row["connectorId"] for row in json.loads(body)["connectors"]} == business_nodes,
                       "new integration lists all enabled store nodes")
                 status, body = request("/v1/screenshot-jobs", token, "POST",
-                                       {"connectorId": connector_id, "profile": "verification", "prompt": "verify"})
+                                       {"connectorId": connector_id, "prompt": "verify"})
                 expected = (422, "invalid_screenshot_connector") if snapshot["screenshotUploadConfigured"] else (
                     503, "screenshot_upload_unconfigured")
                 check((status, json.loads(body)["error"]["code"]) == expected,
-                      "screenshot job route applies the production destination and node type checks")
+                      "screenshot job route accepts a profile-free request and applies destination and node type checks")
             finally:
                 status, body = request(management, snapshot["admin"])
                 check(status == 200, "temporary integration cleanup listing available")
@@ -361,6 +361,8 @@ print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-uni
                         config = json.loads(archive.read("connector.json"))
                         check(archive.read("install.sh") == (PROJECT / "packaging/screenshot-connector/install.sh").read_bytes(),
                               "download contains the current LaunchDaemon installer script")
+                        check("projectRoots" not in config and "profiles" not in config,
+                              "download supports machine-local discovery without predefined projects or profiles")
                         check(config["connectorId"] == screenshot_id and len(config["messageKey"]) == 64
                               and archive.getinfo("install.sh").external_attr >> 16 & 0o700 == 0o700
                               and hashlib.sha256(archive.read("screenshot-connector")).hexdigest() == expected_worker,
