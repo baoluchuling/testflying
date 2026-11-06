@@ -79,5 +79,17 @@
   "screenshotUploadConfigured": false,
   "screenshotConnectorSha256": "a41f8006b9502f3f540a5d735f8eb92bc903910078c7ce42bb980e44f221f776",
   "temporaryIntegrationRevoked": true,
+  "storeConnectorPublication": {
+    "runId": "7e590252b2b7485e98205db92071045b",
+    "sourceCommit": "1840163",
+    "downloadVerified": {
+      "linux-amd64": "83e90bc9d188e796a7020f3adfe46e96ff63373f2376c1b34484caf2801244a9",
+      "darwin-arm64": "faec6c190b4d86ac7d7a2e259d2eec910a263e358437d0484a815f4d9a4e5c7d",
+      "windows-amd64": "9b96b18d7eeab765d21c0dd72982ebc38abc566c325e94147fd1b58fba318dba"
+    },
+    "processPreserved": true,
+    "serviceConfigPreserved": true,
+    "screenshotBinaryPreserved": true
+  },
   "cleanup": "See the supervisor cleanup report for this runId"
 }
