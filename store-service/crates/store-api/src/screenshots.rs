@@ -206,6 +206,7 @@ pub(super) async fn screenshot_installer(
     config["codexPath"] = json!("");
     config["codexHome"] = json!("");
     config["codexPermissionProfile"] = json!("screenshot-worker");
+    config["projectRoots"] = json!([]);
     config["profiles"] = json!({});
     let config = serde_json::to_vec_pretty(&config).expect("Connector config serialization");
     let executable = state
@@ -283,7 +284,7 @@ fn installer_archive(config: &[u8], executable: &[u8]) -> zip::result::ZipResult
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Submit {
     connector_id: String,
-    profile: String,
+    profile: Option<String>,
     prompt: String,
 }
 
@@ -306,26 +307,26 @@ async fn submit(
 ) -> Result<(StatusCode, Json<Value>)> {
     let access = require_integration(access)?;
     configured(&uploader)?;
-    if input.profile.is_empty()
-        || input.profile.len() > 64
-        || !input
-            .profile
-            .bytes()
-            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
-        || input.prompt.trim().is_empty()
+    if input.profile.as_ref().is_some_and(|profile| {
+        profile.is_empty()
+            || profile.len() > 64
+            || !profile
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+    }) || input.prompt.trim().is_empty()
         || input.prompt.len() > 16 * 1024
     {
         return Err(StoreError::new(
             422,
             "invalid_screenshot_job",
-            "Provide a profile and a prompt of at most 16 KiB",
+            "Provide a prompt of at most 16 KiB and an optional valid profile",
         )
         .into());
     }
     let job = state.registry.enqueue_screenshot(
         &access,
         &input.connector_id,
-        &input.profile,
+        input.profile.as_deref().unwrap_or_default(),
         &input.prompt,
     )?;
     state.transport.notify_screenshot(&input.connector_id);
@@ -401,7 +402,7 @@ async fn fail(
     authorize_worker(&state, &id, &headers)?;
     if !matches!(
         failure.code.as_str(),
-        "profile_unavailable" | "codex_failed" | "capture_failed"
+        "profile_unavailable" | "codex_failed" | "selection_invalid" | "capture_failed"
     ) {
         return Err(
             StoreError::new(422, "invalid_failure", "Unknown screenshot failure code").into(),

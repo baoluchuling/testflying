@@ -23,6 +23,17 @@ use uuid::Uuid;
 
 const MAX_IMAGE: usize = 16 * 1024 * 1024;
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+const SELECTION_SCHEMA: &[u8] = br#"{
+  "type":"object",
+  "properties":{
+    "ready":{"type":"boolean"},
+    "projectRoot":{"type":["string","null"]},
+    "platform":{"type":["string","null"],"enum":["ios","android",null]},
+    "deviceId":{"type":["string","null"]}
+  },
+  "required":["ready","projectRoot","platform","deviceId"],
+  "additionalProperties":false
+}"#;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +51,10 @@ pub(super) struct Config {
     #[serde(default)]
     codex_permission_profile: String,
     #[serde(default)]
+    project_roots: Vec<PathBuf>,
+    #[serde(default)]
     profiles: HashMap<String, Profile>,
+    adb_path: Option<PathBuf>,
     ca_file: Option<PathBuf>,
 }
 
@@ -75,6 +89,44 @@ impl Config {
         }
         Ok(config)
     }
+
+    fn discovery_roots(&self) -> Vec<PathBuf> {
+        let home = env::var_os("HOME").map(PathBuf::from);
+        let mut roots: Vec<_> = if self.project_roots.is_empty() {
+            home.iter()
+                .chain(self.profiles.values().map(|profile| &profile.project_root))
+                .filter_map(|root| local_path(root, true).ok())
+                .collect()
+        } else {
+            self.project_roots
+                .iter()
+                .filter_map(|root| local_path(root, true).ok())
+                .collect()
+        };
+        roots.sort();
+        roots.dedup();
+        roots
+    }
+
+    fn adb(&self, hint: Option<&Profile>) -> Option<PathBuf> {
+        if let Some(path) = self
+            .adb_path
+            .as_ref()
+            .or_else(|| hint.and_then(|hint| hint.adb_path.as_ref()))
+        {
+            return local_path(path, false).ok();
+        }
+        ["ANDROID_HOME", "ANDROID_SDK_ROOT", "HOME"]
+            .into_iter()
+            .filter_map(|key| {
+                let mut root = PathBuf::from(env::var_os(key)?);
+                if key == "HOME" {
+                    root.push("Library/Android/sdk");
+                }
+                local_path(&root.join("platform-tools/adb"), false).ok()
+            })
+            .next()
+    }
 }
 
 #[derive(Deserialize)]
@@ -91,7 +143,7 @@ struct Profile {
 struct Job {
     job_id: Uuid,
     lease: Uuid,
-    profile: String,
+    profile: Option<String>,
     prompt: String,
 }
 
@@ -218,37 +270,23 @@ impl<'a> Worker<'a> {
         stop: &mut watch::Receiver<bool>,
     ) -> Result<Vec<u8>, &'static str> {
         let unavailable = |_| "profile_unavailable";
-        let profile = self
-            .config
-            .profiles
-            .get(&job.profile)
-            .ok_or("profile_unavailable")?;
-        let project = local_path(&profile.project_root, true).map_err(unavailable)?;
+        let roots = self.config.discovery_roots();
         let codex = local_path(&self.config.codex_path, false).map_err(unavailable)?;
         let codex_home = local_path(&self.config.codex_home, true).map_err(unavailable)?;
         let permission = &self.config.codex_permission_profile;
-        if !valid_permission(permission) {
+        if roots.is_empty() || !valid_permission(permission) {
             return Err("profile_unavailable");
         }
-        let png = root.join("screenshot.png");
-        let (mut capture, device, stdout) = profile.capture_command(&png).map_err(unavailable)?;
-        if stdout {
-            // Only use the operator-started local ADB server.
-            tokio::select! {
-                result = timeout(Duration::from_secs(2), TcpStream::connect(("127.0.0.1", 5037))) => {
-                    result.map_err(|_| "profile_unavailable")?.map_err(unavailable)?;
-                }
-                _ = stop.wait_for(|stopped| *stopped) => return Err("capture_failed"),
-            }
-        }
+        let hint = job
+            .profile
+            .as_ref()
+            .and_then(|name| self.config.profiles.get(name));
+        let adb = self.config.adb(hint);
 
         let schema = root.join("codex-result-schema.json");
         let result = root.join("codex-result.json");
-        fs::write(&schema, br#"{"type":"object","properties":{"ready":{"type":"boolean"}},"required":["ready"],"additionalProperties":false}"#)
-            .map_err(|_| "codex_failed")?;
-        let prompt = format!(
-            "Prepare an app screen for a screenshot on the configured simulator. Decide whether to build, install, launch, or interact with the app. Use only the indicated simulator. Treat the project as a local source reference. Keep generated files in the current working directory, copy source there if a build writes in-tree, and use the DerivedData and Gradle cache paths in the environment. Do not start or stop other devices or upload files. Leave the requested screen visible. Report ready=true only when ready for capture.\nProject: {}\nPlatform: {}\nSimulator: {}\nTask:\n{}",
-            project.display(), profile.platform, device, job.prompt);
+        fs::write(&schema, SELECTION_SCHEMA).map_err(|_| "codex_failed")?;
+        let prompt = self.session_prompt(job, &roots, hint, adb.as_deref());
         let mut command = Command::new(codex);
         command
             .args(["--ask-for-approval", "never", "--ignore-user-config", "-c"])
@@ -273,11 +311,22 @@ impl<'a> Worker<'a> {
         )
         .await
         .map_err(|_| "codex_failed")?;
-        let ready = read_owned(&result, 4096, false).map_err(|_| "codex_failed")?;
-        if serde_json::from_slice::<serde_json::Value>(&ready).ok() != Some(json!({"ready":true})) {
+        let selection = read_owned(&result, 4096, false).map_err(|_| "codex_failed")?;
+        let selection: Selection =
+            serde_json::from_slice(&selection).map_err(|_| "selection_invalid")?;
+        if !selection.ready {
             return Err("codex_failed");
         }
 
+        let device = selection.validate(&roots).ok_or("selection_invalid")?;
+        device
+            .verify_running(root, &codex_home, adb.as_deref(), stop)
+            .await
+            .map_err(|_| "selection_invalid")?;
+        let png = root.join("screenshot.png");
+        let (mut capture, stdout) = device
+            .capture_command(&png, adb.as_deref())
+            .map_err(|_| "capture_failed")?;
         if stdout {
             let output = OpenOptions::new()
                 .write(true)
@@ -301,49 +350,183 @@ impl<'a> Worker<'a> {
         }
         Ok(bytes)
     }
+
+    fn session_prompt(
+        &self,
+        job: &Job,
+        roots: &[PathBuf],
+        hint: Option<&Profile>,
+        adb: Option<&Path>,
+    ) -> String {
+        let context = json!({
+            "task": {
+                "jobId": job.job_id,
+                "connectorId": self.config.connector_id,
+                "profile": job.profile,
+                "prompt": job.prompt,
+            },
+            "projectRoots": roots,
+            "profileHint": hint.map(|hint| json!({
+                "projectRoot": hint.project_root,
+                "platform": hint.platform,
+                "deviceId": hint.device_id,
+            })),
+            "adbPath": adb,
+        });
+        format!(
+            "Discover the app project for the screenshot task within projectRoots. Inspect project markers and choose an appropriate iOS Simulator or Android Emulator from this Mac using simctl or the indicated local adb. Use profileHint as a suggestion. Choose a single simulator, never a physical device. Decide whether to build, install, launch or interact with the app and leave the requested screen visible. Treat project source as read-only. Keep generated files in the working directory and use the DerivedData and Gradle paths in the environment. Do not capture or upload screenshots yourself. Return ready=true, the absolute projectRoot, platform and deviceId only after the screen is ready on that booted simulator. Use the simulator UUID on iOS or the emulator serial on Android. If the task cannot be prepared or the project or device is ambiguous, return ready=false and null for the selection fields.\nTask context (JSON):\n{context}"
+        )
+    }
 }
 
-impl Profile {
-    fn capture_command(&self, png: &Path) -> io::Result<(Command, String, bool)> {
-        if self.platform == "ios" {
-            let device = Uuid::parse_str(&self.device_id)
-                .map_err(io::Error::other)?
-                .to_string()
-                .to_uppercase();
-            let mut command = Command::new("/usr/bin/xcrun");
-            command
-                .args(["simctl", "io", &device, "screenshot"])
-                .arg(png);
-            return Ok((command, device, false));
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Selection {
+    ready: bool,
+    project_root: Option<PathBuf>,
+    platform: Option<Platform>,
+    device_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Platform {
+    Ios,
+    Android,
+}
+
+enum Device {
+    Ios(Uuid),
+    Android(String),
+}
+
+impl Selection {
+    fn validate(self, roots: &[PathBuf]) -> Option<Device> {
+        let project = local_path(self.project_root.as_deref()?, true).ok()?;
+        if !roots.iter().any(|root| project.starts_with(root)) {
+            return None;
         }
-        let device = &self.device_id;
-        if self.platform == "android"
-            && device.strip_prefix("emulator-").is_some_and(|serial| {
-                (4..=5).contains(&serial.len()) && serial.bytes().all(|b| b.is_ascii_digit())
-            })
-        {
-            let adb = self
-                .adb_path
-                .as_deref()
-                .ok_or_else(|| io::Error::other("ADB path required"))?;
-            let mut command = Command::new(local_path(adb, false)?);
-            command.args([
-                "-H",
-                "127.0.0.1",
-                "-P",
-                "5037",
-                "-s",
-                device,
-                "exec-out",
-                "screencap",
-                "-p",
-            ]);
-            return Ok((command, device.clone(), true));
+        let id = self.device_id?;
+        match self.platform? {
+            Platform::Ios => Uuid::parse_str(&id).ok().map(Device::Ios),
+            Platform::Android => {
+                let serial = id.strip_prefix("emulator-")?;
+                ((4..=5).contains(&serial.len()) && serial.bytes().all(|b| b.is_ascii_digit()))
+                    .then_some(Device::Android(id))
+            }
         }
-        Err(io::Error::other(
-            "Configure an iOS simulator or Android emulator",
-        ))
     }
+}
+
+impl Device {
+    async fn verify_running(
+        &self,
+        root: &Path,
+        codex_home: &Path,
+        adb: Option<&Path>,
+        stop: &mut watch::Receiver<bool>,
+    ) -> io::Result<()> {
+        let mut list = match self {
+            Self::Ios(_) => {
+                let mut command = Command::new("/usr/bin/xcrun");
+                command.args(["simctl", "list", "devices", "booted", "-j"]);
+                command
+            }
+            Self::Android(_) => {
+                timeout(
+                    Duration::from_secs(2),
+                    TcpStream::connect(("127.0.0.1", 5037)),
+                )
+                .await
+                .map_err(io::Error::other)??;
+                let mut command = adb_command(adb)?;
+                command.arg("devices");
+                command
+            }
+        };
+        let output = root.join("device-list");
+        list.stdout(
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(&output)?,
+        );
+        job_environment(&mut list, root, codex_home);
+        run_command(&mut list, None, Duration::from_secs(10), stop).await?;
+        if self.is_running(&read_owned(&output, 1024 * 1024, false)?) {
+            Ok(())
+        } else {
+            Err(io::Error::other("Selected simulator is unavailable"))
+        }
+    }
+
+    fn is_running(&self, output: &[u8]) -> bool {
+        match self {
+            Self::Ios(selected) => {
+                #[derive(Deserialize)]
+                struct Devices {
+                    devices: HashMap<String, Vec<Simulator>>,
+                }
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase")]
+                struct Simulator {
+                    udid: Uuid,
+                    state: String,
+                    is_available: bool,
+                }
+                serde_json::from_slice::<Devices>(output).is_ok_and(|inventory| {
+                    inventory
+                        .devices
+                        .iter()
+                        .filter(|(runtime, _)| {
+                            runtime.starts_with("com.apple.CoreSimulator.SimRuntime.iOS-")
+                        })
+                        .flat_map(|(_, devices)| devices)
+                        .any(|device| {
+                            device.udid == *selected
+                                && device.state == "Booted"
+                                && device.is_available
+                        })
+                })
+            }
+            Self::Android(selected) => std::str::from_utf8(output).is_ok_and(|inventory| {
+                inventory.lines().any(|line| {
+                    let mut fields = line.split_ascii_whitespace();
+                    fields.next() == Some(selected.as_str()) && fields.next() == Some("device")
+                })
+            }),
+        }
+    }
+
+    fn capture_command(&self, png: &Path, adb: Option<&Path>) -> io::Result<(Command, bool)> {
+        match self {
+            Self::Ios(device) => {
+                let mut command = Command::new("/usr/bin/xcrun");
+                command
+                    .args([
+                        "simctl",
+                        "io",
+                        &device.to_string().to_uppercase(),
+                        "screenshot",
+                    ])
+                    .arg(png);
+                Ok((command, false))
+            }
+            Self::Android(device) => {
+                let mut command = adb_command(adb)?;
+                command.args(["-s", device, "exec-out", "screencap", "-p"]);
+                Ok((command, true))
+            }
+        }
+    }
+}
+
+fn adb_command(adb: Option<&Path>) -> io::Result<Command> {
+    let adb = adb.ok_or_else(|| io::Error::other("ADB path required"))?;
+    let mut command = Command::new(adb);
+    command.args(["-H", "127.0.0.1", "-P", "5037"]);
+    Ok(command)
 }
 
 fn valid_permission(permission: &str) -> bool {
@@ -491,17 +674,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn uses_only_the_configured_emulator_or_simulator() {
-        let mut profile = Profile {
-            platform: "ios".into(),
-            project_root: PathBuf::from("/fixture"),
-            device_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".into(),
-            adb_path: None,
-        };
-        let (command, device, stdout) = profile
-            .capture_command(Path::new("/fixture/screenshot.png"))
+    fn accepts_only_running_simulators_and_targets_the_selected_id() {
+        let id = Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap();
+        let device = Device::Ios(id);
+        let mut inventory = json!({"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-26-0":[
+            {"udid":id,"state":"Booted","isAvailable":true}
+        ]}});
+        assert!(device.is_running(inventory.to_string().as_bytes()));
+        inventory["devices"]["com.apple.CoreSimulator.SimRuntime.iOS-26-0"][0]["state"] =
+            json!("Shutdown");
+        assert!(!device.is_running(inventory.to_string().as_bytes()));
+        let (command, stdout) = device
+            .capture_command(Path::new("/fixture/screenshot.png"), None)
             .unwrap();
-        assert_eq!(device, "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA");
         assert!(!stdout);
         assert_eq!(command.as_std().get_program(), "/usr/bin/xcrun");
         assert_eq!(
@@ -509,16 +694,23 @@ mod tests {
             [
                 "simctl",
                 "io",
-                &device,
+                "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA",
                 "screenshot",
                 "/fixture/screenshot.png",
             ]
         );
-        profile.platform = "android".into();
-        profile.device_id = "emulator-5554".into();
-        profile.adb_path = Some(PathBuf::from("/bin/sh"));
-        let (command, _, stdout) = profile
-            .capture_command(Path::new("/fixture/screenshot.png"))
+        let device = Device::Android("emulator-5554".into());
+        assert!(device.is_running(
+            b"List of devices attached\nphysical-phone\tdevice\nemulator-5554\tdevice\n"
+        ));
+        assert!(!device.is_running(
+            b"List of devices attached\nemulator-5554\toffline\nemulator-5556\tdevice\n"
+        ));
+        let (command, stdout) = device
+            .capture_command(
+                Path::new("/fixture/screenshot.png"),
+                Some(Path::new("/bin/sh")),
+            )
             .unwrap();
         assert!(stdout);
         assert_eq!(
@@ -535,10 +727,88 @@ mod tests {
                 "-p",
             ]
         );
-        profile.device_id = "physical-phone".into();
-        assert!(profile
-            .capture_command(Path::new("/fixture/screenshot.png"))
-            .is_err());
+    }
+
+    #[test]
+    fn rejects_physical_devices_and_project_paths_outside_discovery_roots() {
+        let workspace = tempfile::tempdir().unwrap();
+        let path = workspace.path().canonicalize().unwrap();
+        let root = path.join("allowed");
+        fs::create_dir(&root).unwrap();
+        let link = root.join("escape");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        let selection = |project, device: &str| Selection {
+            ready: true,
+            project_root: Some(project),
+            platform: Some(Platform::Android),
+            device_id: Some(device.into()),
+        };
+        let roots = std::slice::from_ref(&root);
+        assert!(selection(root.clone(), "emulator-5554")
+            .validate(roots)
+            .is_some());
+        assert!(selection(root.clone(), "physical-phone")
+            .validate(roots)
+            .is_none());
+        assert!(selection(path, "emulator-5554").validate(roots).is_none());
+        assert!(selection(link, "emulator-5554").validate(roots).is_none());
+    }
+
+    #[tokio::test]
+    async fn starts_a_fresh_codex_session_with_task_data_without_a_profile() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let workspace = tempfile::tempdir().unwrap();
+        let root = workspace.path().canonicalize().unwrap();
+        let project = root.join("projects");
+        fs::create_dir(&project).unwrap();
+        let codex = root.join("fixture-codex");
+        fs::write(&codex, r#"#!/bin/sh
+set -eu
+printf '%s\n' "$@" > args
+/bin/cat > input
+while [ "$1" != "--output-last-message" ]; do shift; done
+printf '%s\n' '{"ready":true,"projectRoot":"/","platform":"android","deviceId":"physical-phone"}' > "$2"
+"#).unwrap();
+        fs::set_permissions(&codex, fs::Permissions::from_mode(0o700)).unwrap();
+        let node = Uuid::new_v4();
+        let token = "a".repeat(64);
+        let config: Config = serde_json::from_value(json!({
+            "kind":"screenshot","connectorId":node,"token":token,
+            "serverUrl":"https://example.invalid","messageKey":"fixture-key",
+            "codexPath":codex,"codexHome":root,"codexPermissionProfile":"screenshot-worker",
+            "projectRoots":[project],
+        }))
+        .unwrap();
+        let worker = Worker::new(&config, &root.join("connector.json")).unwrap();
+        let job = Job {
+            job_id: Uuid::new_v4(),
+            lease: Uuid::new_v4(),
+            profile: None,
+            prompt: "打开设置\n截图".into(),
+        };
+        let (_stop, mut stopped) = watch::channel(false);
+        assert_eq!(
+            worker.capture_in(&root, &job, &mut stopped).await,
+            Err("selection_invalid")
+        );
+        let args = fs::read_to_string(root.join("args")).unwrap();
+        assert!(args.contains("exec\n--ephemeral\n"));
+        assert!(!args.contains("resume") && !args.contains(&job.prompt));
+        let stdin = fs::read_to_string(root.join("input")).unwrap();
+        let (_, context) = stdin.split_once("Task context (JSON):\n").unwrap();
+        let context: serde_json::Value = serde_json::from_str(context).unwrap();
+        assert_eq!(
+            context["task"],
+            json!({"jobId":job.job_id,"connectorId":node,"profile":null,"prompt":job.prompt})
+        );
+        assert_eq!(context["projectRoots"], json!([project]));
+        assert!(
+            !stdin.contains(&token)
+                && !stdin.contains(&job.lease.to_string())
+                && !stdin.contains("fixture-key")
+        );
+        assert!(!root.join("device-list").exists());
     }
 
     #[tokio::test]

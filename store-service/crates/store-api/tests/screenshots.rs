@@ -390,7 +390,19 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     wait_for_screenshot_wake(&mut socket, &mut channel, 2).await;
     let claimed = value(send(&app, "POST", &claim, &mac_token, Value::Null).await).await;
     assert_eq!(claimed["jobId"], abandoned["jobId"]);
-    let next = value(send(&app, "POST", submit, &client, payload).await).await;
+    let next = send(
+        &app,
+        "POST",
+        submit,
+        &client,
+        json!({"connectorId":mac,"prompt":prompt}),
+    )
+    .await;
+    assert_eq!(next.status(), 202);
+    let next = value(next).await;
+    let next_status = format!("{submit}/{}", next["jobId"].as_str().unwrap());
+    let pending = value(send(&app, "GET", &next_status, &client, Value::Null).await).await;
+    assert_eq!(pending.get("profile"), Some(&Value::Null));
     wait_for_screenshot_wake(&mut socket, &mut channel, 2).await;
     assert_eq!(
         send(&app, "POST", &claim, &mac_token, Value::Null)
@@ -408,6 +420,8 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     wait_for_screenshot_wake(&mut socket, &mut channel, 12).await;
     let claimed = value(send(&app, "POST", &claim, &mac_token, Value::Null).await).await;
     assert_eq!(claimed["jobId"], next["jobId"]);
+    assert_eq!(claimed.get("profile"), Some(&Value::Null));
+    assert_eq!(claimed["prompt"], prompt);
 
     assert_eq!(
         send(&app, "GET", "/v1/screenshot-artifacts", ADMIN, Value::Null)
@@ -488,6 +502,7 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
             "https://center.example.invalid/store-api"
         );
         assert_eq!(config["profiles"], json!({}));
+        assert_eq!(config["projectRoots"], json!([]));
     }
     for name in [
         "run.sh",

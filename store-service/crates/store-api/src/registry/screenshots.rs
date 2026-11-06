@@ -134,6 +134,7 @@ impl Registry {
             .map_err(|_| {
                 StoreError::new(500, "registry_error", "Invalid screenshot delivery record")
             })?;
+        let profile = (!profile.is_empty()).then_some(profile);
         Ok(
             json!({"jobId":id,"connectorId":node,"profile":profile,"status":status,"result":result,"error":error}),
         )
@@ -152,6 +153,7 @@ impl Registry {
                 "UPDATE screenshot_jobs SET status='running', deadline=?2, lease=?3, prompt='' WHERE id=?1",
                 params![id, time + 1800, lease],
             ).map_err(database_error)?;
+            let profile = (!profile.is_empty()).then_some(profile);
             Some(json!({"jobId":id,"profile":profile,"prompt":prompt,"lease":lease}))
         } else {
             None

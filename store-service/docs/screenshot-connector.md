@@ -1,6 +1,6 @@
 # macOS 截图 Connector
 
-外部系统提交提示词和截图配置名。中心将任务交给指定 Mac，Mac 上的 Codex 根据提示词决定是否构建、安装和操作 App。Codex 确认画面就绪后，worker 从指定模拟器截取一张 PNG，交回中心，由中心转发到外部上传服务。
+外部系统提交节点 ID 和提示词。Mac 上的 Connector 为每个任务开启独立 Codex 会话，由 Codex 发现项目、选择模拟器，并决定是否构建、安装和操作 App。Codex 返回项目路径、平台和设备标识。Connector 验证选择后截取 PNG，交回中心，由中心转发到外部上传服务。
 
 ## 创建节点
 
@@ -27,16 +27,15 @@ Content-Type: application/json
 
 {
   "connectorId":"11111111-1111-4111-8111-111111111111",
-  "profile":"iphone",
-  "prompt":"打开设置，切换到深色模式，保留设置首页。"
+  "prompt":"在 iPhone 模拟器打开示例 App 的设置页，切换到深色模式后截图。"
 }
 ```
 
-成功返回 `202` 和 `{"jobId":"…","status":"queued"}`。`profile` 是 Mac 上已配置的名称，允许 1–64 个 ASCII 字母、数字、下划线或短横线。提示词不能为空，上限为 16 KiB。发起任务的系统用同一枚 Token 请求 `GET /v1/screenshot-jobs/{jobId}`。状态为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。成功时 `result` 可包含外部服务返回的 HTTPS `imageUrl`，失败时 `error` 为中心错误代码。每个 Mac 同时处理一个任务，最多排队 20 个，任务记录保留约七天。
+成功返回 `202` 和 `{"jobId":"…","status":"queued"}`。`profile` 可选，允许 1–64 个 ASCII 字母、数字、下划线或短横线。传入的名称和同名本地配置会作为 Codex 的提示，查询省略该字段的任务时返回 `"profile":null`。提示词不能为空，上限为 16 KiB。发起任务的系统用同一枚 Token 请求 `GET /v1/screenshot-jobs/{jobId}`。状态为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。成功时 `result` 可包含外部服务返回的 HTTPS `imageUrl`，失败时 `error` 为中心错误代码。每个 Mac 同时处理一个任务，最多排队 20 个，任务记录保留约七天。
 
 ## 在实体 Mac 上运行
 
-将部署 ZIP 解压到 Mac 的私密目录并限制目录访问，将 `connector.json` 设为 `0600`。在这台 Mac 上提前准备专用账号、项目、Codex 登录和已启动的专用模拟器。每个配置指向本地项目及一台模拟器，iPhone 和 iPad 使用各自的 Simulator UUID，Android 手机和平板使用各自的 `emulator-NNNN` serial。Android 的 ADB 服务使用默认本地端口，由部署方启动。
+将部署 ZIP 解压到 Mac 的私密目录并限制目录访问，将 `connector.json` 设为 `0600`。在这台 Mac 上提前准备专用账号、项目、Codex 登录和可用的模拟器。`projectRoots` 可指定项目搜索范围。省略或留空时使用截图账号的主目录和已有 `profiles` 的项目路径。Android 的 ADB 服务使用默认本地端口，由部署方启动。Connector 优先使用配置的 `adbPath` 或匹配提示中的路径，其次查找 Android SDK 的 `platform-tools/adb`。
 
 ```json
 {
@@ -48,23 +47,13 @@ Content-Type: application/json
   "codexPath": "/absolute/path/to/codex",
   "codexHome": "/absolute/path/to/dedicated/codex-home",
   "codexPermissionProfile": "screenshot-worker",
-  "profiles": {
-    "iphone": {
-      "platform": "ios",
-      "projectRoot": "/absolute/path/to/ios-project",
-      "deviceId": "22222222-2222-4222-8222-222222222222"
-    },
-    "android-tablet": {
-      "platform": "android",
-      "projectRoot": "/absolute/path/to/android-project",
-      "deviceId": "emulator-5556",
-      "adbPath": "/absolute/path/to/adb"
-    }
-  }
+  "projectRoots": ["/absolute/path/to/projects"]
 }
 ```
 
 使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 直接运行 Codex 和模拟器命令。每个任务使用 Connector 创建的私有临时目录，完成、失败或正常停止时由 Connector 清理。Codex 使用本机定义的命名权限配置，该配置需允许读取预配项目和 SDK、写入本轮工作目录及访问所需模拟器工具。启动时跳过 Codex 用户配置并禁止自动化过程申请权限提升。 [OpenAI Docs](https://learn.chatgpt.com/docs/permissions)
+
+Codex 在独立会话中接收 `jobId`、`connectorId`、`profile` 和 `prompt`，以 JSON 返回 `ready`、`projectRoot`、`platform` 和 `deviceId`。Connector 仅接受搜索范围内的项目路径，以及设备列表中已启动的 iOS Simulator UUID 或在线的 Android Emulator serial。结构或选择校验失败时返回 `selection_invalid`。[OpenAI Docs](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
 
 将解压目录移到截图账号的 `~/Library/Application Support/` 下，填好配置并设好文件权限后，在该目录执行安装。安装脚本会请求管理员授权，将节点注册为系统 LaunchDaemon，并以截图账号立即启动。开机后服务自动运行，无需保持终端打开。
 
