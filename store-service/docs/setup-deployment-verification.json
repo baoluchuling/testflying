@@ -1,11 +1,11 @@
 {
-  "runId": "b4e59b71f1c940bfb830ce85e0f59e78",
+  "runId": "15d5e98e2197476d9edf14b179206723",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-06T08:45:59.845941+00:00",
-  "deploymentCommit": "8d6a29f8358c6f6541214d7d9ecaac73d27665eb",
-  "binarySourceCommit": "d2e80f941cc38cea8c42aa471a520540c358adcd",
-  "apiSha256": "2d5057423e52da2d6855eeba330c1caa3d89000e503eae057bcba2918e5a07e0",
+  "finishedAt": "2026-11-06T09:17:04.490443+00:00",
+  "deploymentCommit": "8d5460c85454857829e173b1abb756aeb66307e9",
+  "binarySourceCommit": "ae0bdb5633bddd9dafe177f2716fc44ab74c290b",
+  "apiSha256": "1f580af9f143dfdfab13c6716f4100eaf9e2cb29babbd88424f04446a4b0e43f",
   "connectorBinarySha256": {
     "linux-amd64": "9027c88c561a898de08d4efe2569f3525033c3c323c836a418152143fb9d5590",
     "darwin-arm64": "0bee2286f60390f8df4900c811b64aed2e90324a018d15dbf9dabb9fa4157b73",
@@ -77,7 +77,7 @@
   "testNodesCreated": 0,
   "appBindingsWritten": 0,
   "screenshotUploadConfigured": false,
-  "screenshotConnectorSha256": "ac665349a7f6e72b656164cc11e9025a00de32381dd74948263f4217f68f7b4c",
+  "screenshotConnectorSha256": "6143ff3c8a4b2076b8d856eeacd8f78ea0d4ca7ed478399de334253bf911e249",
   "temporaryIntegrationRevoked": true,
   "cleanup": "See the supervisor cleanup report for this runId"
 }
