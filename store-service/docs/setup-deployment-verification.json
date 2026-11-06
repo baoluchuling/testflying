@@ -1,11 +1,11 @@
 {
-  "runId": "8f6d933a57eb45b6901a685ce39f7634",
+  "runId": "632f84336ff646aabc44feba140baf46",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-06T04:02:11.116990+00:00",
-  "deploymentCommit": "6bdf02ae85874fa808309acbb5981fc277a3091e",
-  "binarySourceCommit": "3dda66a0f1809b6e292c63505476ae84c7ff390a",
-  "apiSha256": "3ec6b01a5436fd660ac4840b5a1d79e6804d5f532ea809ec729c871d41cd6800",
+  "finishedAt": "2026-11-06T04:33:48.106002+00:00",
+  "deploymentCommit": "14a7aa83e0f9da47b37e8e4e948e4c67320149d6",
+  "binarySourceCommit": "870f6bb1d6766be5ea6315036485be4c33183a66",
+  "apiSha256": "1a2475d4127c1066ceaa247bb94636f0b2ee2c76a341c1d14f3f6317444f1eaa",
   "connectorBinarySha256": {
     "linux-amd64": "9027c88c561a898de08d4efe2569f3525033c3c323c836a418152143fb9d5590",
     "darwin-arm64": "0bee2286f60390f8df4900c811b64aed2e90324a018d15dbf9dabb9fa4157b73",
@@ -39,7 +39,7 @@
     "anonymous credential management rejected",
     "legacy business token cannot manage credentials",
     "legacy business token can list enabled nodes",
-    "deployed setup includes screenshot download panel and issues tokens without a node picker",
+    "deployed setup includes screenshot download and connection status and issues global tokens",
     "screenshot installer route is administrator-only and rejects a store node",
     "all existing integrations report full node access without exposing token values",
     "original existing token can access all enabled store nodes",
@@ -54,11 +54,15 @@
     "revoked integration credential rejected",
     "new API release selected",
     "persistent API configuration unchanged",
-    "HTTP and HTTPS proxy configuration unchanged"
+    "HTTP and HTTPS proxy configuration unchanged",
+    "published universal macOS Screenshot Connector checksum",
+    "administrator can download an existing screenshot node installer",
+    "download contains the node's WSS configuration, installer and verified macOS worker"
   ],
   "testNodesCreated": 0,
   "appBindingsWritten": 0,
   "screenshotUploadConfigured": false,
+  "screenshotConnectorSha256": "b2995770baefbb4c00e58b089ce330846013bb203ee51635e4826e908d95bfd7",
   "temporaryIntegrationRevoked": true,
   "cleanup": "See the supervisor cleanup report for this runId"
 }
