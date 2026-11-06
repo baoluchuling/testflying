@@ -7,6 +7,7 @@
   "baseUrl": null,
   "listenAddr": "0.0.0.0:8100",
   "requestTimeoutSeconds": 60,
+  "platformMode": "ios",
   "provider": {
     "mode": "live",
     "appleIssuerId": "your-issuer-id",

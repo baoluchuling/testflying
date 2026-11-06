@@ -41,6 +41,18 @@ connector-windows-amd64-xxxxxxxx.zip
 
 同一个节点的 provider 可同时包含 Apple 与 Google 凭据。应用映射仅保存在中心，包内不带应用清单；每次业务请求携带 platform 和 Bundle ID／包名。新增应用只更新中心映射，不用重新下载。禁用某个平台时，新包不包含该平台的凭据文件。
 
+## 本机平台范围
+
+在商店 Connector 的本机 `connector.json` 顶层设置 `platformMode`，保存后重启 Connector。
+
+| 值 | 允许的请求 |
+|---|---|
+| `all` | iOS 和 Android，旧配置省略此项时采用此值 |
+| `ios` | 仅 iOS |
+| `android` | 仅 Android |
+
+单平台模式只加载对应的商店凭据。Connector 会以 `422 platform_not_supported` 拒绝其他平台的商店操作和图片上传。此设置保存在本机，修改已有节点时可保留原节点身份和绑定。
+
 ## 凭据处理
 
 凭据文件在浏览器本地合并进 ZIP，不发送给中心、不进入中心数据库、日志或 GitHub Release。每个凭据文件最大 256 KiB。先检查选中的账号文件，再创建节点；下载失败后重试复用已创建的节点。

@@ -9,7 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
-use store_protocol::{crypto, upload, Operation, StoreError, StoreReply, StoreRequest};
+use store_protocol::{crypto, upload, Operation, Platform, StoreError, StoreReply, StoreRequest};
 use store_provider::{assets::AssetStore, Gateway, ProviderConfig};
 use subtle::ConstantTimeEq;
 use tokio::sync::{mpsc, oneshot, watch, Semaphore};
@@ -17,6 +17,24 @@ use tokio_tungstenite::{
     connect_async_with_config,
     tungstenite::{client::IntoClientRequest, Message},
 };
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlatformMode {
+    #[default]
+    All,
+    Ios,
+    Android,
+}
+
+impl PlatformMode {
+    fn supports(self, platform: Platform) -> bool {
+        matches!(
+            (self, platform),
+            (Self::All, _) | (Self::Ios, Platform::Ios) | (Self::Android, Platform::Android)
+        )
+    }
+}
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -34,6 +52,8 @@ pub struct ConnectorConfig {
     pub listen_addr: String,
     #[serde(default = "request_timeout")]
     pub request_timeout_seconds: u64,
+    #[serde(default)]
+    pub platform_mode: PlatformMode,
     #[serde(default)]
     pub provider: ProviderConfig,
 }
@@ -97,8 +117,25 @@ impl Executor {
             .as_deref()
             .map(upload::normalize_base_url)
             .transpose()?;
+        let mut provider = config.provider.clone();
+        let defaults = ProviderConfig::default();
+        match config.platform_mode {
+            PlatformMode::All => {}
+            PlatformMode::Ios => {
+                provider.google_service_account_path = None;
+                provider.google_base_url = defaults.google_base_url;
+                provider.google_upload_base_url = defaults.google_upload_base_url;
+                provider.google_token_url = defaults.google_token_url;
+            }
+            PlatformMode::Android => {
+                provider.apple_issuer_id = None;
+                provider.apple_key_id = None;
+                provider.apple_private_key_path = None;
+                provider.apple_base_url = defaults.apple_base_url;
+            }
+        }
         let assets = AssetStore::new(config.connector_id.clone(), config.upload_key.clone());
-        let gateway = Gateway::with_assets(config.provider.clone(), Some(assets.clone()))?;
+        let gateway = Gateway::with_assets(provider, Some(assets.clone()))?;
         Ok(Arc::new(Self {
             config,
             gateway,
@@ -110,6 +147,16 @@ impl Executor {
     pub async fn execute(self: Arc<Self>, request: StoreRequest) -> StoreReply {
         if let Err(error) = request.validate() {
             return StoreReply::from_result(request.request_id, Err(error));
+        }
+        if !self.config.platform_mode.supports(request.platform) {
+            return StoreReply::from_result(
+                request.request_id,
+                Err(StoreError::new(
+                    422,
+                    "platform_not_supported",
+                    format!("This Connector does not support {}", request.platform),
+                )),
+            );
         }
         if request.operation.is_upload() {
             return self.upload_command(request).await;
