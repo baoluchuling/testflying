@@ -359,6 +359,8 @@ print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-uni
                                                         "run.sh", "README.md", "testflying-prod-ca.crt"},
                               "screenshot package contains the native worker and its installation files")
                         config = json.loads(archive.read("connector.json"))
+                        check(archive.read("install.sh") == (PROJECT / "packaging/screenshot-connector/install.sh").read_bytes(),
+                              "download contains the current LaunchDaemon installer script")
                         check(config["connectorId"] == screenshot_id and len(config["messageKey"]) == 64
                               and archive.getinfo("install.sh").external_attr >> 16 & 0o700 == 0o700
                               and hashlib.sha256(archive.read("screenshot-connector")).hexdigest() == expected_worker,

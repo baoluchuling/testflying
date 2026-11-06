@@ -51,9 +51,9 @@ plist_insert Label -string "$label"
 plist_insert UserName -string "$user"
 plist_insert WorkingDirectory -string "$root"
 plist_insert ProgramArguments -array
-plist_insert ProgramArguments -append -string /bin/sh
-plist_insert ProgramArguments -append -string "$root/run.sh"
-plist_insert ProgramArguments -append -string --service
+plist_insert ProgramArguments.0 -string /bin/sh
+plist_insert ProgramArguments.1 -string "$root/run.sh"
+plist_insert ProgramArguments.2 -string --service
 plist_insert EnvironmentVariables -dictionary
 plist_insert EnvironmentVariables.HOME -string "$home"
 plist_insert EnvironmentVariables.PATH -string "$2"
