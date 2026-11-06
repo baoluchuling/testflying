@@ -1,11 +1,11 @@
 {
-  "runId": "9718aef173c64e68959b0baf15a5b4de",
+  "runId": "b4e59b71f1c940bfb830ce85e0f59e78",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-06T08:04:24.230974+00:00",
-  "deploymentCommit": "be6f14e557b5a902d5bde131b29e9e787a7bb48a",
-  "binarySourceCommit": "016ba36e4e53da663fbec200bd361fb88098905e",
-  "apiSha256": "29d89953de8fbbe4ab06c884e0db22711f3a4d62673cdbc171aa9b56567fb244",
+  "finishedAt": "2026-11-06T08:45:59.845941+00:00",
+  "deploymentCommit": "8d6a29f8358c6f6541214d7d9ecaac73d27665eb",
+  "binarySourceCommit": "d2e80f941cc38cea8c42aa471a520540c358adcd",
+  "apiSha256": "2d5057423e52da2d6855eeba330c1caa3d89000e503eae057bcba2918e5a07e0",
   "connectorBinarySha256": {
     "linux-amd64": "9027c88c561a898de08d4efe2569f3525033c3c323c836a418152143fb9d5590",
     "darwin-arm64": "0bee2286f60390f8df4900c811b64aed2e90324a018d15dbf9dabb9fa4157b73",
@@ -70,13 +70,14 @@
     "screenshot package contains the native worker and its installation files",
     "download contains the current LaunchDaemon installer script",
     "download supports machine-local discovery without predefined projects or profiles",
+    "download uses the installed Codex without machine-specific settings",
     "download contains a single-architecture Apple Silicon Mach-O",
     "download contains the node's WSS configuration, installer and verified macOS worker"
   ],
   "testNodesCreated": 0,
   "appBindingsWritten": 0,
   "screenshotUploadConfigured": false,
-  "screenshotConnectorSha256": "f1551894d7204202c12fa452e503c53b69db6ae4b47cc1afec1ea5ac46f067bf",
+  "screenshotConnectorSha256": "ac665349a7f6e72b656164cc11e9025a00de32381dd74948263f4217f68f7b4c",
   "temporaryIntegrationRevoked": true,
   "cleanup": "See the supervisor cleanup report for this runId"
 }
