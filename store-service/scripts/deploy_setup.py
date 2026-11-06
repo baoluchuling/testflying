@@ -14,6 +14,7 @@ import sys
 import tarfile
 import time
 import urllib.parse
+import zipfile
 
 from verify_store_refactor import PROJECT, managed_root, source_hashes
 
@@ -218,7 +219,8 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
         check(request(setup + "/not-a-node/installer/windows-amd64")[0] == 401,
               "anonymous installer download rejected before lookup")
         check(request(setup, snapshot["token"])[0] == 401, "business token cannot access node setup")
-        check(request(setup, snapshot["admin"])[0] == 200, "administrator can access node setup")
+        status, setup_nodes = request(setup, snapshot["admin"])
+        check(status == 200, "administrator can access node setup")
         if integrations_only:
             discovery = "/v1/store-management/connectors"
             check(request(management, scheme="http")[0] == 403, "credential management requires HTTPS")
@@ -286,6 +288,18 @@ print(json.dumps({'environmentSha256':hashlib.sha256(open('/etc/testflying-store
 import hashlib
 print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-universal/screenshot-connector','rb').read()).hexdigest())
 """).decode().strip() == worker["sha256"], "published universal macOS Screenshot Connector checksum")
+                screenshot_node = next((node for node in json.loads(setup_nodes)["connectors"]
+                                        if node["kind"] == "screenshot" and node["enabled"]), None)
+                if screenshot_node:
+                    screenshot_id = screenshot_node["connectorId"]
+                    status, package = request(f"/v1/connectors/{screenshot_id}/screenshot-installer", snapshot["admin"])
+                    check(status == 200, "administrator can download an existing screenshot node installer")
+                    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                        config = json.loads(archive.read("connector.json"))
+                        check(config["connectorId"] == screenshot_id and len(config["messageKey"]) == 64
+                              and archive.getinfo("install.sh").external_attr >> 16 & 0o700 == 0o700
+                              and hashlib.sha256(archive.read("screenshot-connector")).hexdigest() == worker["sha256"],
+                              "download contains the node's WSS configuration, installer and verified macOS worker")
             report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
                       "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                       "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],

@@ -79,8 +79,8 @@ def main() -> None:
         commands.append(["/usr/bin/lipo", "-create", "-output", str(tmp / "screenshot-connector"),
                          *(str(tmp / "target" / target / "release/examples/screenshot-connector")
                            for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"))])
-        commands.append(["/usr/bin/lipo", "-verify_arch", "arm64", "x86_64",
-                         str(tmp / "screenshot-connector")])
+        commands.append(["/usr/bin/lipo", str(tmp / "screenshot-connector"),
+                         "-verify_arch", "arm64", "x86_64"])
     for command in commands:
         print("Running: " + " ".join(command), flush=True)
         # Resume transient official-toolchain download failures within the same owned cache.
