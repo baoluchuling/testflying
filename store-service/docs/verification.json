@@ -1,6 +1,6 @@
 {
-  "runId": "39adac000eee430abde89e129c882996",
-  "finishedAt": "2026-11-06T06:44:01.981594+00:00",
+  "runId": "c5b71debf10f419bb562c19290eda50a",
+  "finishedAt": "2026-11-06T07:07:18.414756+00:00",
   "checks": [
     {
       "command": [
@@ -60,16 +60,16 @@
       "testSummaries": [
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.04s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.03s",
         "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
         "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.90s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.88s",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
         "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
-        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.46s",
+        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.67s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
@@ -88,7 +88,7 @@
       ],
       "exitCode": 0,
       "testSummaries": [
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.12s"
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.12s"
       ]
     },
     {
@@ -144,7 +144,7 @@
       "testSummaries": []
     }
   ],
-  "testsPassed": 54,
+  "testsPassed": 56,
   "sourceHashes": {
     "Cargo.lock": "6ac5b7841cd975ae2c50058a5fc6e2b7f8fc47f6c80dde8c8ec51c355ef20967",
     "Cargo.toml": "fd87675617bd5deda3fe4e5fb91d81b194a43536aed5a43234b68c7592778db9",
@@ -153,9 +153,9 @@
     "crates/store-api/src/lib.rs": "c78c7aa7277c25deb214e6fc219d9410de79f35a8052df9d905bbb90f4e42312",
     "crates/store-api/src/main.rs": "37828fef44516b85efa01923a838c2c715556ad93a137372e3644627f8003d72",
     "crates/store-api/src/registry/integrations.rs": "780698502237c498626b8057208740456bac322d8da72c6ead6ce4de6c3bb86a",
-    "crates/store-api/src/registry/screenshots.rs": "25e49372f86a4cace2169300ae456159121454221a963047349d000a52449db6",
+    "crates/store-api/src/registry/screenshots.rs": "7e6e4f2c5e6d27701bb81cbded2088cf9feffdc169db893ef321c83b54c891f7",
     "crates/store-api/src/registry.rs": "5ae6635a11f3fd125f5de0ab3bfe67d620b44f0cf6937ccdca75ce9478694a7b",
-    "crates/store-api/src/screenshots.rs": "6dc33ea228a1adf55893ed9bafbf5818640b33b2bf7dd1ac8a8b4d873f2a6b90",
+    "crates/store-api/src/screenshots.rs": "919aa9fdf46cebad5473a39eb9efde6365822a94ec303b3f56294534bb7b5a59",
     "crates/store-api/src/setup/app.mjs": "cd548610bc98a6db1746d4b3841da3d23a6b4789639572bc1eea34a179e03b7a",
     "crates/store-api/src/setup/index.html": "161c4c8d8e937e04d672ab71e649c94603ea6587b79707bb44c091119111b00a",
     "crates/store-api/src/setup/integrations.mjs": "1e12510de9980e761afeb0b67e19d27d221d2ca19f416804f7b1fc1e66edd172",
@@ -166,14 +166,14 @@
     "crates/store-api/src/setup.rs": "81c2caec990e952f7833e7daad42b5190da564ee2e7f17171deca8c1953036e2",
     "crates/store-api/src/transport.rs": "323a6b960e2c4cff36e5cf3bd5539643042680a76a8ef511426e8ce72f82818d",
     "crates/store-api/src/uploads.rs": "52674a84c7c1f0c924b1150fcda83847572d27942e1eac2fbe8c11026465f6c0",
-    "crates/store-api/tests/screenshots.rs": "7d6ab58352a2f1715a5c53a50935ab5760b2ef77ebdcb583d399dab527859e12",
+    "crates/store-api/tests/screenshots.rs": "adf3f0fb415b80d3d335db88b423d2edef59afa566cce9ead81018653e9c5952",
     "crates/store-api/tests/service.rs": "68847172eb9a39767f25e48d788911085362d528b922b1eb7d89ebbd8a091be2",
     "crates/store-api/tests/setup-package.test.mjs": "616775e20a6da1e4634fc1753b634117f2e3bf36c78996a7e6c11dd8da7c2e3a",
     "crates/store-api/tests/setup.rs": "10081a9c1fc7dbde080981726521952f49dcca73280754d0c14232218a7c36c1",
     "crates/store-api/tests/uploads.rs": "f25cacb548bf1fc264e159e5385f3a09c56bb2626df8d37de35be8509e4f720d",
     "crates/store-connector/Cargo.toml": "a7340cf89ae6016edbc1027e416943c5d6e3bfc7560e7baa3c4e273b4ee0a65f",
     "crates/store-connector/examples/screenshot/connector.rs": "ad79a09685068a89db480e68b3cce2ced76fe62f7b8c2ca68c4dc0958fb47a3e",
-    "crates/store-connector/examples/screenshot/worker.rs": "a1e6ff5208495b5a65ce7d3b688739aace9a7f968fd10e9d75ed35c8501aef50",
+    "crates/store-connector/examples/screenshot/worker.rs": "8868b0c0e2702b3e7db8f5297229d44a59c68e84b72d5ec940a04ac388526b83",
     "crates/store-connector/examples/screenshot-connector.rs": "8ca9480c603296c5ad138a9a66293ad71b29dfe7ce9ce5dc6f835a72f95eb066",
     "crates/store-connector/src/lib.rs": "e9c7b5112294d36d75e383aceb6273c01f4a1555b56439bc51a8a4ce431b46b8",
     "crates/store-connector/src/main.rs": "c057270334ff482a9e3ad9d4338e43011a23b10b519587ee4968fd823307e18b",
@@ -197,7 +197,7 @@
     "packaging/connector/install.sh": "74a96b17fb8c878583d58d47e37a09105bd870c96782252b30a84c6e7bdaf064",
     "packaging/connector/start.cmd": "ecc92264b3fd9d4adc9612a3f68cf29da362af32d26b9a822a4fc5aaf80ad5aa",
     "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
-    "packaging/screenshot-connector/README.md": "679adb9e0f8799ce0fd3ea7e2a943b57466552d1ed9f5f6e0d3d3b4acce6416a",
+    "packaging/screenshot-connector/README.md": "05e2bf8e1e771cc30306d49acf6a9911c568beeb24b2294e86da522bf6800b2a",
     "packaging/screenshot-connector/install.sh": "a8990a1f1308c4d941b62d9a390e3a7af8af30d4cf976b39d3e01a2d470de356",
     "packaging/screenshot-connector/run.sh": "1ce10eee90d4c6a04b5edfa86d844917af69bf8eb7cb742340023e53b67a5f2a",
     "scripts/managed_workspace.py": "840a77c1c75de77372bacfcbd5049179340a5e910923f30b4a7ed0828a37e203",
