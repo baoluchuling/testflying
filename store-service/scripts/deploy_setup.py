@@ -234,7 +234,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             discovery = "/v1/store-management/connectors"
             login = "/connector-setup/api/session"
             cookies = []
-            check(request(login, snapshot["admin"], "POST", scheme="http", setup_session="")[0] == 403,
+            check(request(login, method="POST", scheme="http", setup_session="")[0] == 403,
                   "administrator session login requires HTTPS")
             check(request(login, method="POST", setup_session="")[0] == 401,
                   "anonymous requests cannot issue administrator sessions")
