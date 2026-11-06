@@ -19,6 +19,29 @@ import zipfile
 from verify_store_refactor import PROJECT, managed_root, source_hashes
 
 
+def existing_connector_source_matches(relative: str, digest: str) -> bool:
+    contents = (PROJECT / relative).read_bytes()
+    if hashlib.sha256(contents).hexdigest() == digest:
+        return True
+    # The screenshot example alone uses these dev-dependencies. Require every
+    # other line and every resolved package to match the existing store builds.
+    if relative == "crates/store-connector/Cargo.toml":
+        normal, separator, dev = contents.partition(b"[dev-dependencies]\n")
+        for line in (b'libc = "0.2"\n', b"tempfile.workspace = true\n", b"uuid.workspace = true\n"):
+            dev = dev.replace(line, b"", 1)
+        contents = normal + separator + dev
+    elif relative == "Cargo.lock":
+        sections = contents.split(b"\n[[package]]\n")
+        for index, section in enumerate(sections):
+            if section.startswith(b'name = "store-connector"\n'):
+                for line in (b' "libc",\n', b' "tempfile",\n', b' "uuid",\n'):
+                    section = section.replace(line, b"", 1)
+                sections[index] = section
+                break
+        contents = b"\n[[package]]\n".join(sections)
+    return hashlib.sha256(contents).hexdigest() == digest
+
+
 def main() -> None:
     root = managed_root()
     if sys.argv[1:] not in ([], ["integrations"]):
@@ -85,7 +108,7 @@ print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdig
             raise RuntimeError("An existing Connector binary changed")
         for relative, digest in old["sourceHashes"].items():
             if relative.startswith(("crates/store-protocol/", "crates/store-provider/", "crates/store-connector/")) or relative in ("Cargo.toml", "Cargo.lock"):
-                if hashlib.sha256((PROJECT / relative).read_bytes()).hexdigest() != digest:
+                if not existing_connector_source_matches(relative, digest):
                     raise RuntimeError("Connector source compatibility changed")
     source_archive = git("archive", "--format=tar", "--prefix=source/", commit + ":store-service")
     archive = io.BytesIO()
@@ -332,6 +355,9 @@ print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-uni
                     status, package = request(f"/v1/connectors/{screenshot_id}/screenshot-installer", snapshot["admin"])
                     check(status == 200, "administrator can download an existing screenshot node installer")
                     with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                        check(set(archive.namelist()) == {"connector.json", "screenshot-connector", "install.sh",
+                                                        "run.sh", "README.md", "testflying-prod-ca.crt"},
+                              "screenshot package contains the native worker and its installation files")
                         config = json.loads(archive.read("connector.json"))
                         check(config["connectorId"] == screenshot_id and len(config["messageKey"]) == 64
                               and archive.getinfo("install.sh").external_attr >> 16 & 0o700 == 0o700

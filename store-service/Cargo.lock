@@ -2134,14 +2134,17 @@ dependencies = [
  "axum",
  "futures-util",
  "hex",
+ "libc",
  "reqwest",
  "serde",
  "serde_json",
  "store-protocol",
  "store-provider",
  "subtle",
+ "tempfile",
  "tokio",
  "tokio-tungstenite 0.28.0",
+ "uuid",
 ]
 
 [[package]]

@@ -115,7 +115,8 @@ if (!production) {
         zip.file("run.sh", fs.readFileSync(path.join(project, "packaging/screenshot-connector/run.sh")));
         zip.file("install.sh", fs.readFileSync(path.join(project, "packaging/screenshot-connector/install.sh")));
         zip.file("screenshot-connector", "mock macOS executable");
-        zip.file("scripts/screenshot_connector.py", fs.readFileSync(path.join(project, "scripts/screenshot_connector.py")));
+        zip.file("README.md", fs.readFileSync(path.join(project, "packaging/screenshot-connector/README.md")));
+        zip.file("testflying-prod-ca.crt", fs.readFileSync(path.join(project, "deploy/testflying-prod-ca.crt")));
         res.setHeader("Content-Type", "application/zip");
         res.end(await zip.generateAsync({ type: "nodebuffer" }));
         return;
@@ -419,8 +420,8 @@ try {
     const nodeConfig = JSON.parse(await deployment.file("connector.json").async("string"));
     assert.equal(nodeConfig.connectorId, nodeId);
     assert.equal(nodeConfig.kind, "screenshot");
-    assert(deployment.file("install.sh") && deployment.file("screenshot-connector") &&
-      deployment.file("run.sh") && deployment.file("scripts/screenshot_connector.py"));
+    assert.deepEqual(Object.keys(deployment.files).sort(),
+      ["README.md", "connector.json", "install.sh", "run.sh", "screenshot-connector", "testflying-prod-ca.crt"]);
     await Promise.all([
       page.waitForResponse((response) => response.request().method() === "DELETE" && new URL(response.url()).pathname === setupApi + "session"),
       page.locator("#adminLock").click(),

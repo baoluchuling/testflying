@@ -474,7 +474,7 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
     assert_eq!(response.headers()[header::CONTENT_TYPE], "application/zip");
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-    assert_eq!(zip.len(), 9);
+    assert_eq!(zip.len(), 6);
     {
         let config = zip.by_name("connector.json").unwrap();
         assert_eq!(config.unix_mode().unwrap() & 0o777, 0o600);
@@ -494,10 +494,7 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
         "install.sh",
         "screenshot-connector",
         "README.md",
-        ".codex/artifacts.toml",
         "testflying-prod-ca.crt",
-        "scripts/screenshot_connector.py",
-        "scripts/managed_workspace.py",
     ] {
         assert!(zip.by_name(name).is_ok(), "{name}");
     }

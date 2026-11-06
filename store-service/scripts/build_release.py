@@ -28,9 +28,7 @@ def main() -> None:
     baseline = source_hashes()
     source = tmp / "source"
     for relative in baseline:
-        if relative.startswith("scripts/") and relative not in {
-            "scripts/screenshot_connector.py", "scripts/managed_workspace.py",
-        }:
+        if relative.startswith("scripts/"):
             continue
         destination = source / relative
         destination.parent.mkdir(parents=True, exist_ok=True)

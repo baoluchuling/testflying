@@ -1,4 +1,0 @@
-schema_version = 1
-adapter = "generic"
-expected_bytes = 5379194880
-artifacts = ["tmp", "logs"]

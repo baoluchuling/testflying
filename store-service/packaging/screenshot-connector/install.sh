@@ -8,17 +8,12 @@ root=$(CDPATH= cd -- "$(/usr/bin/dirname -- "$0")" && pwd -P)
 
 if [ "$(/usr/bin/id -u)" -ne 0 ]; then
     [ "$#" -eq 0 ] || fail 'Usage: sh ./install.sh'
-    python=${SCREENSHOT_CONNECTOR_PYTHON:-$(command -v python3)}
-    tools=${SCREENSHOT_CONNECTOR_LIFECYCLE_BIN:-"$HOME/Library/Application Support/CodexArtifactLifecycle/bin"}
-    "$python" -B -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' ||
-        fail 'Install Python 3.11 or newer.'
-    "$tools/artifact-audit" --self-check >/dev/null || fail 'Activate the artifact lifecycle integration first.'
-    exec /usr/bin/sudo -- /bin/sh "$root/install.sh" --register "$python" "$tools" "$PATH"
+    exec /usr/bin/sudo -- /bin/sh "$root/install.sh" --register "$PATH"
 fi
 
 PATH=/usr/bin:/bin:/usr/sbin:/sbin
 export PATH
-[ "$#" -eq 4 ] && [ "$1" = --register ] || fail 'Run sh ./install.sh from the screenshot account.'
+[ "$#" -eq 2 ] && [ "$1" = --register ] || fail 'Run sh ./install.sh from the screenshot account.'
 user=${SUDO_USER:-}
 case "$user" in ''|*[!a-zA-Z0-9_.-]*) fail 'Cannot identify the screenshot account.' ;; esac
 uid=$(/usr/bin/id -u "$user")
@@ -28,9 +23,6 @@ case "$home" in /*) ;; *) fail 'Cannot determine the local account home director
 case "$root" in "$home/Library/Application Support/"*) ;; *)
     fail 'Move the extracted package under ~/Library/Application Support before installing.' ;;
 esac
-for path in "$2" "$3"; do
-    case "$path" in /*) ;; *) fail 'Python and lifecycle tool paths must be absolute.' ;; esac
-done
 [ "$(/usr/bin/stat -f '%u %Lp' "$root")" = "$uid 700" ] ||
     fail 'Set package directory permissions to 700.'
 config="$root/connector.json"
@@ -64,9 +56,7 @@ plist_insert ProgramArguments -append -string "$root/run.sh"
 plist_insert ProgramArguments -append -string --service
 plist_insert EnvironmentVariables -dictionary
 plist_insert EnvironmentVariables.HOME -string "$home"
-plist_insert EnvironmentVariables.PATH -string "$4"
-plist_insert EnvironmentVariables.SCREENSHOT_CONNECTOR_PYTHON -string "$2"
-plist_insert EnvironmentVariables.SCREENSHOT_CONNECTOR_LIFECYCLE_BIN -string "$3"
+plist_insert EnvironmentVariables.PATH -string "$2"
 plist_insert RunAtLoad -bool YES
 plist_insert KeepAlive -bool YES
 plist_insert ThrottleInterval -integer 5
@@ -77,9 +67,14 @@ plist_insert ExitTimeOut -integer 60
 created=false
 if [ -e "$plist" ] || [ -L "$plist" ]; then
     [ -f "$plist" ] && [ ! -L "$plist" ] &&
-        [ "$(/usr/bin/stat -f '%u %Lp' "$plist")" = '0 644' ] &&
-        /usr/bin/cmp -s "$stage" "$plist" ||
+        [ "$(/usr/bin/stat -f '%u %Lp' "$plist")" = '0 644' ] ||
         fail 'A different installation uses this node ID. The existing job was preserved.'
+    for key in Label UserName WorkingDirectory ProgramArguments RunAtLoad KeepAlive; do
+        current=$(/usr/bin/plutil -extract "$key" xml1 -o - -- "$plist")
+        wanted=$(/usr/bin/plutil -extract "$key" xml1 -o - -- "$stage")
+        [ "$current" = "$wanted" ] ||
+            fail 'A different installation uses this node ID. The existing job was preserved.'
+    done
 else
     if /bin/launchctl print "$job" >/dev/null 2>&1; then
         fail 'A different loaded job uses this node ID.'
@@ -88,8 +83,15 @@ else
     created=true
 fi
 
-if ! /bin/launchctl enable "$job" ||
-    { ! /bin/launchctl print "$job" >/dev/null 2>&1 && ! /bin/launchctl bootstrap system "$plist"; }; then
+start_job() {
+    /bin/launchctl enable "$job" || return 1
+    if /bin/launchctl print "$job" >/dev/null 2>&1; then
+        /bin/launchctl kill SIGTERM "$job" 2>/dev/null || /bin/launchctl kickstart "$job"
+    else
+        /bin/launchctl bootstrap system "$plist"
+    fi
+}
+if ! start_job; then
     if "$created" && ! /bin/launchctl print "$job" >/dev/null 2>&1; then
         /bin/rm -f -- "$plist"
     fi

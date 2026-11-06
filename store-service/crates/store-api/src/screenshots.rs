@@ -248,7 +248,7 @@ fn release_unavailable() -> StoreError {
 
 fn installer_archive(config: &[u8], executable: &[u8]) -> zip::result::ZipResult<Vec<u8>> {
     let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
-    let files: [(&str, &[u8], u32); 9] = [
+    let files: [(&str, &[u8], u32); 6] = [
         ("connector.json", config, 0o600),
         ("screenshot-connector", executable, 0o700),
         (
@@ -264,21 +264,6 @@ fn installer_archive(config: &[u8], executable: &[u8]) -> zip::result::ZipResult
         (
             "README.md",
             include_bytes!("../../../packaging/screenshot-connector/README.md"),
-            0o600,
-        ),
-        (
-            ".codex/artifacts.toml",
-            include_bytes!("../../../packaging/screenshot-connector/artifacts.toml"),
-            0o600,
-        ),
-        (
-            "scripts/screenshot_connector.py",
-            include_bytes!("../../../scripts/screenshot_connector.py"),
-            0o600,
-        ),
-        (
-            "scripts/managed_workspace.py",
-            include_bytes!("../../../scripts/managed_workspace.py"),
             0o600,
         ),
         (

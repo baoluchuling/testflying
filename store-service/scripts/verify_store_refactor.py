@@ -18,7 +18,6 @@ def source_hashes() -> dict[str, str]:
     crates = PROJECT / "crates"
     files = sorted([PROJECT / "Cargo.toml", PROJECT / "Cargo.lock", Path(__file__).resolve(),
                     PROJECT / "scripts/verify_connector_install.py",
-                    PROJECT / "scripts/screenshot_connector.py",
                     PROJECT / "scripts/managed_workspace.py",
                     PROJECT / "deploy/testflying-prod-ca.crt",
                     PROJECT / "packaging/connector/start.cmd", PROJECT / "packaging/connector/start.sh",
@@ -44,11 +43,11 @@ def main() -> int:
     commands = [
         ["node", "--test", "crates/store-api/tests/setup-package.test.mjs"],
         [sys.executable, "-B", "scripts/verify_connector_install.py"],
-        [sys.executable, "-B", "scripts/screenshot_connector.py", "--self-test"],
         ["/bin/sh", "-n", "packaging/screenshot-connector/run.sh"],
         ["/bin/sh", "-n", "packaging/screenshot-connector/install.sh"],
         ["cargo", "fmt", "--all", "--", "--check"],
         ["cargo", "test", "--locked", "--workspace"],
+        ["cargo", "test", "--locked", "--package", "store-connector", "--example", "screenshot-connector"],
         ["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"],
         ["cargo", "build", "--locked", "--release", "--package", "store-api"],
         ["cargo", "build", "--locked", "--release", "--package", "store-connector"],

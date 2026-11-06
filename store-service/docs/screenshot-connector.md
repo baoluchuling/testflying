@@ -64,7 +64,7 @@ Content-Type: application/json
 }
 ```
 
-使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Codex 从受管临时目录工作，使用本机受管配置定义的命名权限配置。该配置需允许读取对应的预配项目和 SDK，写入本轮工作目录，以及访问所需模拟器工具。限制模型生成的命令对本地凭据、个人目录和网络的访问。启动时跳过 Codex 用户配置并禁止自动化过程申请权限提升。上线前应在专用账号上验证实际权限配置。 [OpenAI Docs](https://learn.chatgpt.com/docs/permissions)
+使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 直接运行 Codex 和模拟器命令。每个任务使用 Connector 创建的私有临时目录，完成、失败或正常停止时由 Connector 清理。Codex 使用本机定义的命名权限配置，该配置需允许读取预配项目和 SDK、写入本轮工作目录及访问所需模拟器工具。启动时跳过 Codex 用户配置并禁止自动化过程申请权限提升。 [OpenAI Docs](https://learn.chatgpt.com/docs/permissions)
 
 将解压目录移到截图账号的 `~/Library/Application Support/` 下，填好配置并设好文件权限后，在该目录执行安装。安装脚本会请求管理员授权，将节点注册为系统 LaunchDaemon，并以截图账号立即启动。开机后服务自动运行，无需保持终端打开。
 
@@ -75,6 +75,8 @@ sh ./install.sh
 ```
 
 启动后，截图节点和商店节点一样主动建立加密 WSS 长连接。中心入队后实时发出任务通知，断线重连后节点会重新检查队列。后台「截图 Connector 部署」的节点下拉框显示连接状态，可点「刷新连接状态」。实际截图仍要求本机对应模拟器可用。
+
+升级已有节点时，把新版 ZIP 中的 `screenshot-connector`、`run.sh`、`install.sh` 和 `testflying-prod-ca.crt` 覆盖到原安装目录，保留原来的 `connector.json`，再运行 `sh ./install.sh` 重启服务。
 
 节点收到通知后通过 `POST /v1/connectors/{id}/screenshot-jobs/claim` 领取任务，空队列返回 204。执行失败通过 `POST /v1/connectors/{id}/screenshot-jobs/{jobId}/failure` 报告。成功后通过 `PUT /v1/connectors/{id}/screenshot-jobs/{jobId}/image` 上传 PNG 原始字节，最大 16 MiB。两条任务结果接口都要求节点 Bearer Token 和领单返回的 `X-Screenshot-Lease`。任务超时后需要重新提交。
 
