@@ -1,7 +1,7 @@
 {
-  "runId": "76b109b20f4a464c8f0d40dcdb342a77",
-  "finishedAt": "2026-11-06T08:44:15.510828+00:00",
-  "sourceCommit": "d2e80f941cc38cea8c42aa471a520540c358adcd",
+  "runId": "63e158d5fd2d4b17b538810c97905ba1",
+  "finishedAt": "2026-11-06T09:13:36.147739+00:00",
+  "sourceCommit": "ae0bdb5633bddd9dafe177f2716fc44ab74c290b",
   "sourceHashes": {
     "Cargo.lock": "6ac5b7841cd975ae2c50058a5fc6e2b7f8fc47f6c80dde8c8ec51c355ef20967",
     "Cargo.toml": "fd87675617bd5deda3fe4e5fb91d81b194a43536aed5a43234b68c7592778db9",
@@ -29,8 +29,9 @@
     "crates/store-api/tests/setup.rs": "10081a9c1fc7dbde080981726521952f49dcca73280754d0c14232218a7c36c1",
     "crates/store-api/tests/uploads.rs": "f25cacb548bf1fc264e159e5385f3a09c56bb2626df8d37de35be8509e4f720d",
     "crates/store-connector/Cargo.toml": "a7340cf89ae6016edbc1027e416943c5d6e3bfc7560e7baa3c4e273b4ee0a65f",
-    "crates/store-connector/examples/screenshot/connector.rs": "ad79a09685068a89db480e68b3cce2ced76fe62f7b8c2ca68c4dc0958fb47a3e",
-    "crates/store-connector/examples/screenshot/worker.rs": "3fa5562608dd40fcc9437b1f7e0470adcf69988c863a0ea7d29b9288a3ae3dce",
+    "crates/store-connector/examples/screenshot/connector.rs": "4df407d7030a810818c8dfd7f5d35cd807ba3283ea4260d07a8e88ff3febe664",
+    "crates/store-connector/examples/screenshot/diagnostic.rs": "ef916e1312de2e90c9b6a0ef766e0f1b81004640099aa34c14fcd0d83cc67ca4",
+    "crates/store-connector/examples/screenshot/worker.rs": "0e02c9e1d1b266d95908186bb52248e27d33e3af63a1e082b3b7106b5c0b0560",
     "crates/store-connector/examples/screenshot-connector.rs": "8ca9480c603296c5ad138a9a66293ad71b29dfe7ce9ce5dc6f835a72f95eb066",
     "crates/store-connector/src/lib.rs": "e9c7b5112294d36d75e383aceb6273c01f4a1555b56439bc51a8a4ce431b46b8",
     "crates/store-connector/src/main.rs": "c057270334ff482a9e3ad9d4338e43011a23b10b519587ee4968fd823307e18b",
@@ -54,7 +55,7 @@
     "packaging/connector/install.sh": "74a96b17fb8c878583d58d47e37a09105bd870c96782252b30a84c6e7bdaf064",
     "packaging/connector/start.cmd": "ecc92264b3fd9d4adc9612a3f68cf29da362af32d26b9a822a4fc5aaf80ad5aa",
     "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
-    "packaging/screenshot-connector/README.md": "f18e8c25573f197dd1831b082e975f89701e60715396825a05428d3bfc41b73f",
+    "packaging/screenshot-connector/README.md": "f27cb319604933f42a96bbad40bc296e27d5c567c219a37f419cfca7afb39043",
     "packaging/screenshot-connector/install.sh": "29a7aafc094792165ccb41fefdb8c715045ed8bcabe80af3bf0b415cd2d6f726",
     "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7",
     "scripts/managed_workspace.py": "840a77c1c75de77372bacfcbd5049179340a5e910923f30b4a7ed0828a37e203",
@@ -64,13 +65,13 @@
   "toolchain": "Rust 1.94.0 / cargo-zigbuild 0.20.1 / Zig 0.14.1",
   "outputs": {
     "releases/linux-amd64/store-api": {
-      "sha256": "2d5057423e52da2d6855eeba330c1caa3d89000e503eae057bcba2918e5a07e0",
+      "sha256": "1f580af9f143dfdfab13c6716f4100eaf9e2cb29babbd88424f04446a4b0e43f",
       "bytes": 7988312,
       "format": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped"
     },
     "releases/darwin-arm64/screenshot-connector": {
-      "sha256": "ac665349a7f6e72b656164cc11e9025a00de32381dd74948263f4217f68f7b4c",
-      "bytes": 5330224,
+      "sha256": "6143ff3c8a4b2076b8d856eeacd8f78ea0d4ca7ed478399de334253bf911e249",
+      "bytes": 5440816,
       "format": "Mach-O 64-bit executable arm64"
     }
   },
