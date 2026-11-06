@@ -5,17 +5,19 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import socket
 import ssl
 import stat
 import subprocess
 import sys
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
 
-from managed_workspace import managed_root
+from managed_workspace import PROJECT, managed_root
 
 PNG = b"\x89PNG\r\n\x1a\n"
 MAX_IMAGE = 16 * 1024 * 1024
@@ -27,6 +29,10 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class JobFailure(Exception):
+    pass
+
+
+class StopRequested(Exception):
     pass
 
 
@@ -186,11 +192,8 @@ def capture(root: Path, config: dict, job: dict) -> bytes:
         raise JobFailure("capture_failed") from None
 
 
-def run_once(root: Path, config: dict) -> None:
+def execute_job(root: Path, config: dict, job: dict) -> None:
     center = Center(config)
-    job = center.request("POST", "claim")
-    if job is None:
-        return
     job_id = str(uuid.UUID(job["jobId"]))
     lease = str(uuid.UUID(job["lease"]))
     try:
@@ -202,6 +205,47 @@ def run_once(root: Path, config: dict) -> None:
         return
     center.request("PUT", job_id + "/image", image, content_type="image/png", lease=lease)
     print("Screenshot delivered")
+
+
+def run_once(root: Path, config: dict) -> None:
+    job = Center(config).request("POST", "claim")
+    if job is not None:
+        execute_job(root, config, job)
+
+
+def drain(config: dict, path: Path) -> None:
+    """Run under launchd. Start a managed run only when a job has been claimed."""
+    def stop(_signal, _frame):
+        raise StopRequested()
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+
+    def watch_parent():
+        # The native parent owns the only write end and closes it during shutdown.
+        sys.stdin.buffer.read(1)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=watch_parent, daemon=True).start()
+    tools = Path(os.environ["SCREENSHOT_CONNECTOR_LIFECYCLE_BIN"])
+    center = Center(config)
+    while (job := center.request("POST", "claim")) is not None:
+        with subprocess.Popen(
+            [str(tools / "artifact-run"), "--adapter", "generic", "--project", str(PROJECT),
+             "--", sys.executable, "-B", str(Path(__file__).resolve()), "--execute-claimed", str(path)],
+            stdin=subprocess.PIPE,
+        ) as process:
+            try:
+                process.communicate(json.dumps(job).encode())
+            except StopRequested:
+                # SIGINT follows artifact-run's normal interrupt and recovery path.
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+                process.send_signal(signal.SIGINT)
+                process.wait()
+                raise
+            if process.returncode:
+                raise RuntimeError("Managed screenshot execution failed")
 
 
 def self_test(root: Path) -> None:
@@ -242,14 +286,28 @@ def self_test(root: Path) -> None:
 
 def main() -> int:
     try:
-        root = managed_root()
-        if sys.argv[1:] == ["--self-test"]:
-            self_test(root)
+        args = sys.argv[1:]
+        if args == ["--self-test"]:
+            self_test(managed_root())
             return 0
-        if sys.platform != "darwin" or len(sys.argv) != 2:
+        if sys.platform != "darwin" or not (
+            len(args) == 1 or (len(args) == 2 and args[0] in ("--drain", "--execute-claimed"))
+        ):
             raise ValueError("Use a private Screenshot Connector config on macOS")
-        config = json.loads(bounded_read(Path(sys.argv[1]), 64 * 1024, private=True))
-        run_once(root, config)
+        path = Path(args[-1])
+        config = json.loads(bounded_read(path, 64 * 1024, private=True))
+        if args[0] == "--drain":
+            drain(config, path)
+        elif args[0] == "--execute-claimed":
+            root = managed_root()
+            body = sys.stdin.buffer.read(128 * 1024 + 1)
+            if len(body) > 128 * 1024:
+                raise ValueError("Claimed screenshot job is too large")
+            execute_job(root, config, json.loads(body))
+        else:
+            run_once(managed_root(), config)
+        return 0
+    except StopRequested:
         return 0
     except urllib.error.HTTPError as error:
         print(f"Screenshot Connector center request failed ({error.code})", file=sys.stderr)

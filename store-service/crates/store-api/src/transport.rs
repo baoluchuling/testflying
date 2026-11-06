@@ -17,6 +17,7 @@ struct Connection {
     generation: Uuid,
     sender: mpsc::Sender<StoreRequest>,
     close: watch::Sender<bool>,
+    screenshot_wake: watch::Sender<()>,
     pending: Pending,
 }
 
@@ -65,6 +66,12 @@ impl Transport {
             for (_, sender) in connection.pending.lock().unwrap().drain() {
                 let _ = sender.send(Err(disconnected()));
             }
+        }
+    }
+
+    pub(crate) fn notify_screenshot(&self, id: &str) {
+        if let Some(connection) = self.connections.lock().unwrap().get(id) {
+            connection.screenshot_wake.send_replace(());
         }
     }
 
@@ -186,6 +193,7 @@ impl Transport {
         id: String,
         mut socket: WebSocket,
         key: String,
+        screenshot: bool,
         register: impl FnOnce(Option<String>) -> Result<()> + Send,
     ) {
         let authenticated = tokio::time::timeout(Duration::from_secs(10), async {
@@ -231,6 +239,10 @@ impl Transport {
         };
         let (sender, mut requests) = mpsc::channel(1);
         let (close, mut closed) = watch::channel(false);
+        let (screenshot_wake, mut screenshot_ready) = watch::channel(());
+        if screenshot {
+            screenshot_ready.mark_changed();
+        }
         let pending: Pending = Arc::default();
         let generation = Uuid::new_v4();
         {
@@ -247,6 +259,7 @@ impl Transport {
                     generation,
                     sender,
                     close,
+                    screenshot_wake,
                     pending: pending.clone(),
                 },
             );
@@ -270,6 +283,15 @@ impl Transport {
                 _ = heartbeat.tick() => {
                     if last_seen.elapsed() > Duration::from_secs(35) || !bounded_send(&mut write,Message::Ping(Vec::new().into())).await {break;}
                 }
+                changed = screenshot_ready.changed(), if screenshot => {
+                    if changed.is_err() {break;}
+                    let Ok(records) = channel.encrypt(b"screenshot_job_available") else {break;};
+                    let mut sent = true;
+                    for record in records {
+                        if !bounded_send(&mut write, Message::Binary(record.into())).await {sent=false;break;}
+                    }
+                    if !sent {break;}
+                }
                 request = requests.recv() => {
                     let Some(request) = request else {break;};
                     // A canceled HTTP caller must not cause a command to be sent later.
@@ -285,6 +307,7 @@ impl Transport {
                     last_seen = tokio::time::Instant::now();
                     match message {
                         Message::Binary(bytes) => {
+                            if screenshot {break;}
                             let plain=match channel.decrypt(&bytes) {Ok(Some(plain))=>plain,Ok(None)=>continue,Err(_)=>break};
                             let Ok(reply) = serde_json::from_slice::<StoreReply>(&plain) else {break;};
                             if !(200..=599).contains(&reply.status) {break;}

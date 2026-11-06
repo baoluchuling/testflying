@@ -3,9 +3,12 @@ use axum::{extract::Request, routing::delete};
 use registry::{Integration, IntegrationInput};
 
 pub(super) fn require_https(request: &Request) -> Result<()> {
+    require_https_headers(request.headers())
+}
+
+pub(super) fn require_https_headers(headers: &HeaderMap) -> Result<()> {
     // The production TLS and plain HTTP proxy blocks overwrite this header.
-    if request
-        .headers()
+    if headers
         .get("x-forwarded-proto")
         .is_some_and(|v| v == "https")
     {

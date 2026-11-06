@@ -277,7 +277,8 @@ async fn rotate_token(
 fn config(state: &ApiState, node: &Connector) -> Value {
     if node.kind == ConnectorKind::Screenshot {
         return json!({"kind":"screenshot","connectorId":node.connector_id,
-            "token":state.registry.token(node),"serverUrl":state.public_url});
+            "token":state.registry.token(node),"serverUrl":state.public_url,
+            "messageKey":state.registry.purpose_key(node,"message")});
     }
     json!({"connectorId":node.connector_id,"token":state.registry.token(node),"serverUrl":state.public_url,
         "messageKey":state.registry.purpose_key(node,"message"),"uploadKey":state.registry.purpose_key(node,"upload"),
@@ -340,10 +341,9 @@ async fn connect_ws(
 ) -> Result<Response> {
     let token = bearer(&headers).to_owned();
     let node = state.registry.authenticate(&id, &token)?;
-    if node.kind != ConnectorKind::Store {
-        return Err(
-            StoreError::new(403, "invalid_connector_kind", "Store Connector required").into(),
-        );
+    let screenshot = node.kind == ConnectorKind::Screenshot;
+    if screenshot {
+        integrations::require_https_headers(&headers)?;
     }
     if !headers
         .get_all(header::SEC_WEBSOCKET_PROTOCOL)
@@ -376,7 +376,10 @@ async fn connect_ws(
                 let (transport, registration_state, registration_id) =
                     (state.transport.clone(), state.clone(), id.clone());
                 transport
-                    .serve(id, socket, key, move |endpoint| {
+                    .serve(id, socket, key, screenshot, move |endpoint| {
+                        if screenshot && endpoint.is_some() {
+                            return Err(store_protocol::crypto::error());
+                        }
                         registration_state.registry.register_endpoint(
                             &registration_id,
                             &token,

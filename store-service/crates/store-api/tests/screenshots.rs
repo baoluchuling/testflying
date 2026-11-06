@@ -5,6 +5,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use futures_util::{SinkExt, StreamExt};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::{
@@ -17,22 +18,102 @@ use std::{
     time::Duration,
 };
 use store_api::{registry::Registry, ApiState, ScreenshotUploader};
+use store_protocol::crypto;
 use tokio::sync::mpsc;
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::{client::IntoClientRequest, Message},
+    MaybeTlsStream, WebSocketStream,
+};
 use tower::ServiceExt;
 
 const ADMIN: &str = "test-screenshot-admin-token";
 const BUSINESS: &str = "test-screenshot-business-token";
 
 fn state() -> Arc<ApiState> {
+    state_with_releases(PathBuf::from("unused-releases"))
+}
+
+fn state_with_releases(release_root: PathBuf) -> Arc<ApiState> {
     ApiState::new(
         Registry::open(":memory:", "test-screenshot-signing-key-0123456789").unwrap(),
         ADMIN.into(),
         BUSINESS.into(),
         "https://center.example.invalid/store-api".into(),
-        PathBuf::from("unused-releases"),
+        release_root,
         Duration::from_secs(1),
     )
     .unwrap()
+}
+
+type Socket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+
+async fn screenshot_socket(
+    addr: std::net::SocketAddr,
+    id: &str,
+    token: &str,
+    key: &str,
+) -> (Socket, crypto::Channel) {
+    let mut request = format!("ws://{addr}/v1/connectors/{id}/ws")
+        .into_client_request()
+        .unwrap();
+    request
+        .headers_mut()
+        .insert("authorization", format!("Bearer {token}").parse().unwrap());
+    request
+        .headers_mut()
+        .insert("x-forwarded-proto", "https".parse().unwrap());
+    request.headers_mut().insert(
+        "sec-websocket-protocol",
+        crypto::SUBPROTOCOL.parse().unwrap(),
+    );
+    let mut socket = connect_async(request).await.unwrap().0;
+    let mut handshake = crypto::handshake(key, id, true).unwrap();
+    let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];
+    let registration = json!({"connectorId":id}).to_string();
+    let size = handshake
+        .write_message(registration.as_bytes(), &mut buffer)
+        .unwrap();
+    socket
+        .send(Message::Binary(buffer[..size].to_vec().into()))
+        .await
+        .unwrap();
+    let Message::Binary(reply) = socket.next().await.unwrap().unwrap() else {
+        panic!("missing handshake")
+    };
+    handshake.read_message(&reply, &mut buffer).unwrap();
+    let mut channel = crypto::Channel::new(handshake).unwrap();
+    for record in channel.encrypt(b"confirm").unwrap() {
+        socket.send(Message::Binary(record.into())).await.unwrap();
+    }
+    let Message::Binary(reply) = socket.next().await.unwrap().unwrap() else {
+        panic!("missing ready")
+    };
+    assert_eq!(
+        channel.decrypt(&reply).unwrap().as_deref(),
+        Some(b"ready".as_slice())
+    );
+    (socket, channel)
+}
+
+async fn wait_for_screenshot_wake(socket: &mut Socket, channel: &mut crypto::Channel) {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            match socket.next().await.unwrap().unwrap() {
+                Message::Binary(bytes) => {
+                    assert_eq!(
+                        channel.decrypt(&bytes).unwrap().as_deref(),
+                        Some(b"screenshot_job_available".as_slice())
+                    );
+                    break;
+                }
+                Message::Ping(bytes) => socket.send(Message::Pong(bytes)).await.unwrap(),
+                other => panic!("Unexpected screenshot frame: {other:?}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
 }
 
 async fn send(app: &Router, method: &str, path: &str, token: &str, body: Value) -> Response {
@@ -111,11 +192,31 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
         }),
     );
     let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
+    let state = state();
     let app = store_api::router_with_screenshots(
-        state(),
+        state.clone(),
         Some(ScreenshotUploader::new(&url, Some("upstream-only-test-token")).unwrap()),
     );
     let (mac, mac_token) = node(&app, "Screenshot Mac", "screenshot").await;
+    let installation = value(
+        send(
+            &app,
+            "GET",
+            &format!("/v1/connectors/{mac}/installation"),
+            ADMIN,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    let message_key = installation["messageKey"].as_str().unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let center_app = app.clone();
+    let center = tokio::spawn(async move { axum::serve(listener, center_app).await.unwrap() });
+    let (mut socket, mut channel) = screenshot_socket(addr, &mac, &mac_token, message_key).await;
+    wait_for_screenshot_wake(&mut socket, &mut channel).await;
+    assert!(state.transport.connected(&mac));
     let (store, store_token) = node(&app, "Store Connector", "store").await;
     let client = integration(&app, "screenshots", &[&store]).await;
     let peer = integration(&app, "same Mac, different integration", &[&mac]).await;
@@ -166,6 +267,7 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     assert_eq!(store_list["connectors"].as_array().unwrap().len(), 1);
     let response = send(&app, "POST", submit, &client, payload.clone()).await;
     assert_eq!(response.status(), 202);
+    wait_for_screenshot_wake(&mut socket, &mut channel).await;
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
     let job = value(response).await;
     let id = job["jobId"].as_str().unwrap();
@@ -247,7 +349,17 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     assert!(status.get("prompt").is_none() && status.get("lease").is_none());
     assert!(status["result"].get("imageData").is_none());
 
+    socket.close(None).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while state.transport.connected(&mac) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
     let failed_job = value(send(&app, "POST", submit, &client, payload).await).await;
+    let (mut socket, mut channel) = screenshot_socket(addr, &mac, &mac_token, message_key).await;
+    wait_for_screenshot_wake(&mut socket, &mut channel).await;
     let failed_id = failed_job["jobId"].as_str().unwrap();
     let claimed = value(send(&app, "POST", &claim, &mac_token, Value::Null).await).await;
     assert_eq!(
@@ -269,11 +381,21 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     );
     server.abort();
     let _ = server.await;
+    center.abort();
+    let _ = center.await;
 }
 
 #[tokio::test]
 async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
-    let app = store_api::router(state());
+    let releases = tempfile::tempdir().unwrap();
+    let mac_release = releases.path().join("darwin-universal");
+    std::fs::create_dir(&mac_release).unwrap();
+    std::fs::write(
+        mac_release.join("screenshot-connector"),
+        b"macOS release fixture",
+    )
+    .unwrap();
+    let app = store_api::router(state_with_releases(releases.path().into()));
     let (mac, token) = node(&app, "Mac", "screenshot").await;
     let (store, _) = node(&app, "Store", "store").await;
     let client = integration(&app, "external", &[&mac]).await;
@@ -316,7 +438,7 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
     assert_eq!(response.headers()[header::CONTENT_TYPE], "application/zip");
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-    assert_eq!(zip.len(), 7);
+    assert_eq!(zip.len(), 9);
     {
         let config = zip.by_name("connector.json").unwrap();
         assert_eq!(config.unix_mode().unwrap() & 0o777, 0o600);
@@ -324,6 +446,7 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
         assert_eq!(config["kind"], "screenshot");
         assert_eq!(config["connectorId"], mac);
         assert_eq!(config["token"], token);
+        assert_eq!(config["messageKey"].as_str().unwrap().len(), 64);
         assert_eq!(
             config["serverUrl"],
             "https://center.example.invalid/store-api"
@@ -332,6 +455,8 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
     }
     for name in [
         "run.sh",
+        "install.sh",
+        "screenshot-connector",
         "README.md",
         ".codex/artifacts.toml",
         "testflying-prod-ca.crt",

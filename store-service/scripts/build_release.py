@@ -17,10 +17,11 @@ from verify_store_refactor import PROJECT, managed_root, source_hashes
 
 def main() -> None:
     root = managed_root()
-    if sys.argv[1:] not in ([], ["windows"], ["api"]) or platform.system() != "Darwin" or platform.machine() != "arm64":
+    if sys.argv[1:] not in ([], ["windows"], ["api"], ["api-screenshots"]) or platform.system() != "Darwin" or platform.machine() != "arm64":
         raise RuntimeError("This release workflow requires an Apple Silicon macOS host")
     windows = sys.argv[1:] == ["windows"]
-    api_only = sys.argv[1:] == ["api"]
+    screenshots = sys.argv[1:] == ["api-screenshots"]
+    api_only = sys.argv[1:] == ["api"] or screenshots
     target_triple = "x86_64-pc-windows-gnu" if windows else "x86_64-unknown-linux-musl"
     tmp = root / "tmp"
     tmp.mkdir(exist_ok=True)
@@ -70,6 +71,16 @@ def main() -> None:
              "--package", "store-api", "--package", "store-connector"],
             ["cargo", "build", "--locked", "--release", "--package", "store-connector"],
         ])
+    if screenshots:
+        commands.append(["rustup", "target", "add", "x86_64-apple-darwin"])
+        for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"):
+            commands.append(["cargo", "build", "--locked", "--release", "--target", target,
+                             "--package", "store-connector", "--example", "screenshot-connector"])
+        commands.append(["/usr/bin/lipo", "-create", "-output", str(tmp / "screenshot-connector"),
+                         *(str(tmp / "target" / target / "release/examples/screenshot-connector")
+                           for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"))])
+        commands.append(["/usr/bin/lipo", "-verify_arch", "arm64", "x86_64",
+                         str(tmp / "screenshot-connector")])
     for command in commands:
         print("Running: " + " ".join(command), flush=True)
         # Resume transient official-toolchain download failures within the same owned cache.
@@ -95,11 +106,14 @@ def main() -> None:
                    tmp / "target/x86_64-pc-windows-gnu/release/store-connector.exe"}
     elif api_only:
         outputs = {"releases/linux-amd64/store-api": tmp / "target/x86_64-unknown-linux-musl/release/store-api"}
+        if screenshots:
+            outputs["releases/darwin-universal/screenshot-connector"] = tmp / "screenshot-connector"
     hashes = {}
     for relative, binary in outputs.items():
         description = subprocess.check_output(["file", str(binary)], text=True).strip()
         if ("linux-amd64" in relative and "ELF 64-bit" not in description
                 or "darwin-arm64" in relative and "Mach-O 64-bit executable arm64" not in description
+                or "darwin-universal" in relative and "Mach-O universal binary" not in description
                 or "windows-amd64" in relative and ("PE32+ executable" not in description or "x86-64" not in description)):
             raise RuntimeError("Unexpected release architecture: " + description)
         imports = []

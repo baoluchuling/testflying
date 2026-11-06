@@ -46,11 +46,13 @@ def main() -> int:
         [sys.executable, "-B", "scripts/verify_connector_install.py"],
         [sys.executable, "-B", "scripts/screenshot_connector.py", "--self-test"],
         ["/bin/sh", "-n", "packaging/screenshot-connector/run.sh"],
+        ["/bin/sh", "-n", "packaging/screenshot-connector/install.sh"],
         ["cargo", "fmt", "--all", "--", "--check"],
         ["cargo", "test", "--locked", "--workspace"],
         ["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"],
         ["cargo", "build", "--locked", "--release", "--package", "store-api"],
         ["cargo", "build", "--locked", "--release", "--package", "store-connector"],
+        ["cargo", "build", "--locked", "--release", "--package", "store-connector", "--example", "screenshot-connector"],
     ]
     checks = []
     passed = 0

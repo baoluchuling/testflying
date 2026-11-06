@@ -208,7 +208,19 @@ async fn screenshot_installer(
     config["codexPermissionProfile"] = json!("screenshot-worker");
     config["profiles"] = json!({});
     let config = serde_json::to_vec_pretty(&config).expect("Connector config serialization");
-    let bytes = installer_archive(&config).map_err(|_| {
+    let executable = state
+        .release_root
+        .join("darwin-universal/screenshot-connector");
+    let metadata = tokio::fs::metadata(&executable)
+        .await
+        .map_err(|_| release_unavailable())?;
+    if !metadata.is_file() || metadata.len() > 64 * 1024 * 1024 {
+        return Err(release_unavailable().into());
+    }
+    let executable = tokio::fs::read(executable)
+        .await
+        .map_err(|_| release_unavailable())?;
+    let bytes = installer_archive(&config, &executable).map_err(|_| {
         StoreError::new(
             500,
             "installer_error",
@@ -226,10 +238,24 @@ async fn screenshot_installer(
     Ok((headers, bytes).into_response())
 }
 
-fn installer_archive(config: &[u8]) -> zip::result::ZipResult<Vec<u8>> {
+fn release_unavailable() -> StoreError {
+    StoreError::new(
+        503,
+        "release_unavailable",
+        "macOS Screenshot Connector has not been published",
+    )
+}
+
+fn installer_archive(config: &[u8], executable: &[u8]) -> zip::result::ZipResult<Vec<u8>> {
     let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
-    let files: [(&str, &[u8], u32); 7] = [
+    let files: [(&str, &[u8], u32); 9] = [
         ("connector.json", config, 0o600),
+        ("screenshot-connector", executable, 0o700),
+        (
+            "install.sh",
+            include_bytes!("../../../packaging/screenshot-connector/install.sh"),
+            0o700,
+        ),
         (
             "run.sh",
             include_bytes!("../../../packaging/screenshot-connector/run.sh"),
@@ -317,6 +343,7 @@ async fn submit(
         &input.profile,
         &input.prompt,
     )?;
+    state.transport.notify_screenshot(&input.connector_id);
     Ok((StatusCode::ACCEPTED, Json(job)))
 }
 

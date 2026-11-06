@@ -97,6 +97,8 @@ if (!production) {
         const zip = new JSZip();
         zip.file("connector.json", JSON.stringify({ kind: "screenshot", connectorId: screenshot[1], token: "fixture-node-token" }));
         zip.file("run.sh", fs.readFileSync(path.join(project, "packaging/screenshot-connector/run.sh")));
+        zip.file("install.sh", fs.readFileSync(path.join(project, "packaging/screenshot-connector/install.sh")));
+        zip.file("screenshot-connector", "mock macOS executable");
         zip.file("scripts/screenshot_connector.py", fs.readFileSync(path.join(project, "scripts/screenshot_connector.py")));
         res.setHeader("Content-Type", "application/zip");
         res.end(await zip.generateAsync({ type: "nodebuffer" }));
@@ -369,7 +371,7 @@ try {
     await page.getByText("接入凭据", { exact: true }).click();
     assert.equal(await page.locator(`#connector option[value="${screenshotNode.connectorId}"]`).count(), 0);
     assert.equal(await page.locator(`#screenshotNode option[value="${screenshotNode.connectorId}"]`).textContent(),
-      "Fixture Screenshot Mac");
+      "Fixture Screenshot Mac · 未连接");
     checks.push("screenshot node is available in its own deployment panel and excluded from Store Connector downloads");
     await page.getByRole("button", { name: "取回 Token", exact: true }).click();
     await page.getByText("可以复制这枚接入 Token。", { exact: true }).waitFor();
@@ -381,6 +383,11 @@ try {
     assert.equal(integrationFixtures.length, 0);
     checks.push("admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it");
     await page.getByText("截图 Connector 部署", { exact: true }).click();
+    screenshotNode.connected = true;
+    await page.getByRole("button", { name: "刷新连接状态", exact: true }).click();
+    await page.getByText("连接状态已刷新。", { exact: true }).waitFor();
+    assert.equal(await page.locator(`#screenshotNode option[value="${screenshotNode.connectorId}"]`).textContent(),
+      "Fixture Screenshot Mac · 已连接");
     await page.locator("#screenshotName").fill("New Screenshot Mac");
     await page.getByRole("button", { name: "新建截图节点", exact: true }).click();
     await page.getByText("截图节点已创建，可以下载部署包。", { exact: true }).waitFor();
@@ -397,7 +404,8 @@ try {
     const nodeConfig = JSON.parse(await deployment.file("connector.json").async("string"));
     assert.equal(nodeConfig.connectorId, nodeId);
     assert.equal(nodeConfig.kind, "screenshot");
-    assert(deployment.file("run.sh") && deployment.file("scripts/screenshot_connector.py"));
+    assert(deployment.file("install.sh") && deployment.file("screenshot-connector") &&
+      deployment.file("run.sh") && deployment.file("scripts/screenshot_connector.py"));
     await page.locator("#adminLock").click();
     assert.equal(await page.locator("#screenshotWorkspace").isVisible(), false);
     assert.equal(await page.locator("#screenshotNode").inputValue(), "");

@@ -53,6 +53,10 @@ def main() -> None:
     expected_api = build["outputs"]["releases/linux-amd64/store-api"]["sha256"]
     if hashlib.sha256(api.read_bytes()).hexdigest() != expected_api:
         raise RuntimeError("Linux API checksum mismatch")
+    worker_relative = "releases/darwin-universal/screenshot-connector"
+    worker = build["outputs"].get(worker_relative)
+    if worker and hashlib.sha256((PROJECT / worker_relative).read_bytes()).hexdigest() != worker["sha256"]:
+        raise RuntimeError("macOS Screenshot Connector checksum mismatch")
     snapshot = json.loads(remote("""
 import os,json,hashlib,subprocess
 e=open('/etc/testflying-store-api/service.env','rb').read()
@@ -92,6 +96,12 @@ print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdig
         member.size, member.mode = api.stat().st_size, 0o755
         with api.open("rb") as stream:
             output.addfile(member, stream)
+        if worker:
+            executable = PROJECT / worker_relative
+            member = tarfile.TarInfo("bin/screenshot-connector")
+            member.size, member.mode = executable.stat().st_size, 0o755
+            with executable.open("rb") as stream:
+                output.addfile(member, stream)
     payload = archive.getvalue()
     if len(payload) > 64 * 1024 * 1024:
         raise RuntimeError("Deployment archive exceeds the reviewed upload budget")
@@ -111,7 +121,15 @@ with tarfile.open(fileobj=io.BytesIO(sys.stdin.buffer.read()),mode='r:')as t:
   assert (m.isfile()or m.isdir())and not m.name.startswith('/')and '..'not in m.name.split('/')
  t.extractall(p)
 shutil.copytree(os.path.join(old,'releases'),os.path.join(p,'releases'),symlinks=True)
-assert hashlib.sha256(open(os.path.join(p,'bin/store-api'),'rb').read()).hexdigest()==""" + repr(expected_api), payload)
+assert hashlib.sha256(open(os.path.join(p,'bin/store-api'),'rb').read()).hexdigest()==""" + repr(expected_api) + """
+worker_sha=""" + repr(worker["sha256"] if worker else None) + """
+if worker_sha:
+ staged=os.path.join(p,'bin/screenshot-connector')
+ assert hashlib.sha256(open(staged,'rb').read()).hexdigest()==worker_sha
+ target=os.path.join(p,'releases/darwin-universal')
+ os.makedirs(target,exist_ok=True)
+ os.replace(staged,os.path.join(target,'screenshot-connector'))
+""", payload)
     checks = []
     connections = {}
     public = urllib.parse.urlsplit(snapshot["url"])
@@ -211,8 +229,9 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             business_nodes = {row["connectorId"] for row in json.loads(body)["connectors"]}
             connector_id = next(iter(business_nodes))
             status, body = request("/connector-setup/")
-            check(status == 200 and b'id="screenshotWorkspace"' in body and b'id="integrationNodes"' not in body,
-                  "deployed setup includes screenshot download panel and issues tokens without a node picker")
+            check(status == 200 and b'id="screenshotWorkspace"' in body and b'id="screenshotRefresh"' in body
+                  and b'id="integrationNodes"' not in body,
+                  "deployed setup includes screenshot download and connection status and issues global tokens")
             installer = "/v1/connectors/" + connector_id + "/screenshot-installer"
             check(request(installer)[0] == 401 and request(installer, snapshot["admin"])[0] == 422,
                   "screenshot installer route is administrator-only and rejects a store node")
@@ -262,12 +281,18 @@ print(json.dumps({'environmentSha256':hashlib.sha256(open('/etc/testflying-store
             check(after["current"] == release, "new API release selected")
             check(after["environmentSha256"] == snapshot["environmentSha256"], "persistent API configuration unchanged")
             check(after["proxySha256"] == snapshot["proxySha256"], "HTTP and HTTPS proxy configuration unchanged")
+            if worker:
+                check(remote("""
+import hashlib
+print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-universal/screenshot-connector','rb').read()).hexdigest())
+""").decode().strip() == worker["sha256"], "published universal macOS Screenshot Connector checksum")
             report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
                       "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                       "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],
                       "apiSha256": expected_api, "connectorBinarySha256": snapshot["binaries"],
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
                       "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
+                      "screenshotConnectorSha256": worker["sha256"] if worker else None,
                       "temporaryIntegrationRevoked": True, "cleanup": "See the supervisor cleanup report for this runId"}
             report_path.write_text(json.dumps(report, indent=2) + "\n")
             success = True

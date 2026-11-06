@@ -72,7 +72,8 @@ function downloadFile(bytes, type, name) {
 function renderScreenshotNodes(selected = "") {
   const select = $("screenshotNode");
   const choices = nodes.filter((node) => node.kind === "screenshot" && node.enabled);
-  select.replaceChildren(...choices.map((node) => new Option(node.name, node.connectorId)));
+  select.replaceChildren(...choices.map((node) =>
+    new Option(`${node.name} · ${node.connected ? "已连接" : "未连接"}`, node.connectorId)));
   if (!choices.length) select.add(new Option("暂无可用的截图节点", ""));
   if (choices.some((node) => node.connectorId === selected)) select.value = selected;
   $("screenshotDownload").disabled = !select.value;
@@ -111,6 +112,14 @@ $("screenshotDownload").addEventListener("click", () => {
     const bytes = await request(active, `v1/connectors/${id}/screenshot-installer`, { binary: true });
     downloadFile(bytes, "application/zip", `screenshot-connector-macos-${id.slice(0, 8)}.zip`);
     $("screenshotStatus").textContent = "部署包已下载，请在对应 Mac 上解压并配置。";
+  });
+});
+$("screenshotRefresh").addEventListener("click", () => {
+  screenshotAction($("screenshotRefresh"), async (active) => {
+    const selected = $("screenshotNode").value;
+    nodes = (await request(active, setupPath)).connectors;
+    renderScreenshotNodes(selected);
+    $("screenshotStatus").textContent = "连接状态已刷新。";
   });
 });
 
@@ -173,6 +182,7 @@ function lock() {
   $("screenshotStatus").textContent = "";
   $("screenshotProvision").reset();
   $("screenshotCreate").disabled = false;
+  $("screenshotRefresh").disabled = false;
   renderScreenshotNodes();
 }
 
