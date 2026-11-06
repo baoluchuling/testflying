@@ -1,11 +1,11 @@
 {
-  "runId": "8f04d7096b6b46c68294ce060da768b9",
+  "runId": "d818a4e41fa441dab2e7377bdea5ddd1",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-06T06:45:27.284273+00:00",
-  "deploymentCommit": "b0b437dabe29ce1ac30dfb45da60201ee2b2dd89",
-  "binarySourceCommit": "988a09d2acaff3edb313a395dba8ce777b2576d8",
-  "apiSha256": "9887aa6c3995a5a34d1f9cfc48d0e96f859741fa61cf9114cb68a11706dbd472",
+  "finishedAt": "2026-11-06T07:10:17.763638+00:00",
+  "deploymentCommit": "6085ba817e7924f99c7967360aaf7b6f8c2d129c",
+  "binarySourceCommit": "9b126ab20ba32be7db97162e1822e26c368aa125",
+  "apiSha256": "934c91f64c8e4de81df46a8386132cbd2c628a74021e212330cfdacb789ce390",
   "connectorBinarySha256": {
     "linux-amd64": "9027c88c561a898de08d4efe2569f3525033c3c323c836a418152143fb9d5590",
     "darwin-arm64": "0bee2286f60390f8df4900c811b64aed2e90324a018d15dbf9dabb9fa4157b73",
@@ -58,7 +58,7 @@
     "administrator can retrieve the same credential",
     "integration cannot retrieve admin credentials",
     "new integration lists all enabled store nodes",
-    "screenshot job route applies the production destination and node type checks",
+    "screenshot job route accepts a profile-free request and applies destination and node type checks",
     "temporary integration cleanup listing available",
     "temporary integration credential revoked",
     "revoked integration credential rejected",
@@ -69,12 +69,13 @@
     "administrator can download an existing screenshot node installer",
     "screenshot package contains the native worker and its installation files",
     "download contains the current LaunchDaemon installer script",
+    "download supports machine-local discovery without predefined projects or profiles",
     "download contains the node's WSS configuration, installer and verified macOS worker"
   ],
   "testNodesCreated": 0,
   "appBindingsWritten": 0,
   "screenshotUploadConfigured": false,
-  "screenshotConnectorSha256": "3b47121f6231825ce77113196ce65db4665d8473c2e207ca59a61d8684100b09",
+  "screenshotConnectorSha256": "d5477e3231c55360539ce89ebdf45c462ad6e91c4206942639894fe47f137fc6",
   "temporaryIntegrationRevoked": true,
   "cleanup": "See the supervisor cleanup report for this runId"
 }
