@@ -249,10 +249,11 @@ impl<'a> Worker<'a> {
         let prompt = self.session_prompt(job, adb.as_deref());
         let mut command = Command::new(codex);
         command
-            .args(["--ask-for-approval", "never", "--ignore-user-config", "-c"])
+            .args(["--ask-for-approval", "never", "-c"])
             .arg(format!("default_permissions={}", json!(permission)))
             .args([
                 "exec",
+                "--ignore-user-config",
                 "--ephemeral",
                 "--skip-git-repo-check",
                 "--output-schema",
@@ -736,7 +737,11 @@ printf '%s\n' '{"ready":true,"projectRoot":"/","platform":"android","deviceId":"
             Err("selection_invalid")
         );
         let args = fs::read_to_string(root.join("args")).unwrap();
-        assert!(args.contains("exec\n--ephemeral\n"));
+        assert!(args.starts_with(concat!(
+            "--ask-for-approval\nnever\n-c\n",
+            "default_permissions=\"screenshot-worker\"\n",
+            "exec\n--ignore-user-config\n--ephemeral\n",
+        )));
         assert!(!args.contains("resume") && !args.contains(&job.prompt));
         let stdin = fs::read_to_string(root.join("input")).unwrap();
         let (_, context) = stdin.split_once("Task context (JSON):\n").unwrap();
