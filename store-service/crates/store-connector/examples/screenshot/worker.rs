@@ -48,8 +48,6 @@ pub(super) struct Config {
     codex_path: PathBuf,
     #[serde(default)]
     codex_home: PathBuf,
-    #[serde(default)]
-    codex_permission_profile: String,
     adb_path: Option<PathBuf>,
     ca_file: Option<PathBuf>,
 }
@@ -237,10 +235,6 @@ impl<'a> Worker<'a> {
         let unavailable = |_| "profile_unavailable";
         let codex = local_path(&self.config.codex_path, false).map_err(unavailable)?;
         let codex_home = local_path(&self.config.codex_home, true).map_err(unavailable)?;
-        let permission = &self.config.codex_permission_profile;
-        if !valid_permission(permission) {
-            return Err("profile_unavailable");
-        }
         let adb = self.config.adb();
 
         let schema = root.join("codex-result-schema.json");
@@ -249,11 +243,12 @@ impl<'a> Worker<'a> {
         let prompt = self.session_prompt(job, adb.as_deref());
         let mut command = Command::new(codex);
         command
-            .args(["--ask-for-approval", "never", "-c"])
-            .arg(format!("default_permissions={}", json!(permission)))
+            .args(["--ask-for-approval", "never"])
             .args([
                 "exec",
                 "--ignore-user-config",
+                "--sandbox",
+                "workspace-write",
                 "--ephemeral",
                 "--skip-git-repo-check",
                 "--output-schema",
@@ -474,15 +469,6 @@ fn adb_command(adb: Option<&Path>) -> io::Result<Command> {
     let mut command = Command::new(adb);
     command.args(["-H", "127.0.0.1", "-P", "5037"]);
     Ok(command)
-}
-
-fn valid_permission(permission: &str) -> bool {
-    let mut bytes = permission.bytes();
-    permission.len() <= 64
-        && bytes
-            .next()
-            .is_some_and(|first| first.is_ascii_alphabetic())
-        && bytes.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
 }
 
 fn job_environment(command: &mut Command, root: &Path, codex_home: &Path) {
@@ -721,7 +707,7 @@ printf '%s\n' '{"ready":true,"projectRoot":"/","platform":"android","deviceId":"
         let config: Config = serde_json::from_value(json!({
             "kind":"screenshot","connectorId":node,"token":token,
             "serverUrl":"https://example.invalid","messageKey":"fixture-key",
-            "codexPath":codex,"codexHome":root,"codexPermissionProfile":"screenshot-worker",
+            "codexPath":codex,"codexHome":root,
         }))
         .unwrap();
         let worker = Worker::new(&config, &root.join("connector.json")).unwrap();
@@ -738,9 +724,8 @@ printf '%s\n' '{"ready":true,"projectRoot":"/","platform":"android","deviceId":"
         );
         let args = fs::read_to_string(root.join("args")).unwrap();
         assert!(args.starts_with(concat!(
-            "--ask-for-approval\nnever\n-c\n",
-            "default_permissions=\"screenshot-worker\"\n",
-            "exec\n--ignore-user-config\n--ephemeral\n",
+            "--ask-for-approval\nnever\nexec\n--ignore-user-config\n",
+            "--sandbox\nworkspace-write\n--ephemeral\n",
         )));
         assert!(!args.contains("resume") && !args.contains(&job.prompt));
         let stdin = fs::read_to_string(root.join("input")).unwrap();

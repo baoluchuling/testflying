@@ -4,7 +4,7 @@ This ZIP contains the Apple Silicon (arm64) Rust worker and the credentials for 
 
 1. Set owner-only permissions with `chmod 700 . && chmod 600 connector.json`.
 2. Sign in to Codex with the dedicated macOS account.
-3. Edit `connector.json` on this Mac. Set the absolute paths for `codexPath` and `codexHome`. Define the named `codexPermissionProfile` in the machine's Codex configuration. Grant read access to the configured project and SDK, write access to the worker's private temporary directory, and only the simulator access this account needs.
+3. Edit `connector.json` on this Mac. Set the absolute paths for `codexPath` and `codexHome`. The worker starts Codex with the built-in `workspace-write` sandbox and uses a private directory for task artifacts.
 4. Prepare the local projects and simulators. Codex finds the project on this Mac using its local permissions. Android uses a local ADB server and an ADB binary from the optional `adbPath` or the Android SDK.
 5. Run `sh ./install.sh` as the screenshot account and approve the administrator prompt. The script starts a system LaunchDaemon that runs as the screenshot account, reconnects to the center after network interruption, and starts at macOS boot. Keep the extracted directory in place.
 6. Open the admin page and refresh the screenshot node connection status. The installer also prints the exact `sudo launchctl print system/…` command for local status.

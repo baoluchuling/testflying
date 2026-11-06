@@ -509,6 +509,7 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
             "https://center.example.invalid/store-api"
         );
         assert!(config.get("profiles").is_none() && config.get("projectRoots").is_none());
+        assert!(config.get("codexPermissionProfile").is_none());
     }
     for name in [
         "run.sh",

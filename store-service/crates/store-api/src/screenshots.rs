@@ -197,7 +197,6 @@ pub(super) async fn screenshot_installer(
     let mut config = super::config(&state, &node);
     config["codexPath"] = json!("");
     config["codexHome"] = json!("");
-    config["codexPermissionProfile"] = json!("screenshot-worker");
     let config = serde_json::to_vec_pretty(&config).expect("Connector config serialization");
     let executable = state.release_root.join("darwin-arm64/screenshot-connector");
     let metadata = tokio::fs::metadata(&executable)

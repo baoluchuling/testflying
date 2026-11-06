@@ -45,12 +45,11 @@ Content-Type: application/json
   "messageKey": "MESSAGE_KEY_FROM_INSTALLATION",
   "serverUrl": "https://store-api.example.com/store-api",
   "codexPath": "/absolute/path/to/codex",
-  "codexHome": "/absolute/path/to/dedicated/codex-home",
-  "codexPermissionProfile": "screenshot-worker"
+  "codexHome": "/absolute/path/to/dedicated/codex-home"
 }
 ```
 
-使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 直接运行 Codex 和模拟器命令。每个任务使用 Connector 创建的私有临时目录，完成、失败或正常停止时由 Connector 清理。Codex 使用本机定义的命名权限配置，该配置需允许读取预配项目和 SDK、写入本轮工作目录及访问所需模拟器工具。启动时跳过 Codex 用户配置并禁止自动化过程申请权限提升。 [OpenAI Docs](https://learn.chatgpt.com/docs/permissions)
+使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 直接运行 Codex 和模拟器命令。Codex 使用内置 `workspace-write`，按本机权限查找项目。任务的工作区设为 Connector 创建的私有临时目录，用于存放任务产物，完成、失败或正常停止时由 Connector 清理。Codex 启动时跳过用户配置，并以 `never` 审批模式运行。 [OpenAI Docs](https://learn.chatgpt.com/docs/sandboxing)
 
 Codex 在独立会话中接收 `jobId`、`connectorId`、`profile` 和 `prompt`，以 JSON 返回 `ready`、`projectRoot`、`platform` 和 `deviceId`。Connector 检查返回的绝对路径确实指向本机目录，并确认设备列表中有已启动的 iOS Simulator UUID 或在线的 Android Emulator serial。结构或选择校验失败时返回 `selection_invalid`。[OpenAI Docs](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
 
