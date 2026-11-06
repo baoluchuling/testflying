@@ -10,7 +10,9 @@ config.json
 .codex
 docs
 examples
-scripts
+scripts/*
+!scripts/screenshot_connector.py
+!scripts/managed_workspace.py
 *.p8
 *.pem
 *-service-account.json

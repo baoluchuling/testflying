@@ -1,12 +1,17 @@
-# 商店业务与图片上传接口
+# 商店业务与节点接入接口
 
-版本 0.1.0，对应独立 Rust Store API 当前实现。本文涵盖外部后台的节点选择和应用绑定流程，以及 9 个商店业务接口和 2 个图片上传接口。线上版本见 [生产部署记录](production-deployment.md)。
+外部后台用同一枚接入 Token 查询可用节点、绑定应用，再调用商店查询、同步和图片上传接口。管理员可单独查询节点详情与应用的当前绑定。 [生产部署记录](production-deployment.md)
 
 ## 通用约定
 
-基础地址示例：`http://store-api.example.com/store-api`。部署已支持 HTTP 和 HTTPS；本文域名均为占位，真实地址由部署方私下提供。本地默认地址：`http://127.0.0.1:8200`。下文路径均追加在基础地址后。
+中心提供 HTTP 和 HTTPS 两个入口。使用部署方提供的实际地址，保留其路径前缀。下文接口路径均追加在基础地址后。
 
-HTTP 调用不涉及证书验证，但 Token 和请求正文会明文传输。使用 HTTPS 时仍正常验证证书；当前私有 CA 部署可通过 `--cacert` 指定 [公开 CA 证书](../deploy/testflying-prod-ca.crt)，该文件不含私钥。调用方无需提供 Apple/Google 私钥，商店凭据只配置在 Connector。
+| 入口 | 基础地址示例 | 证书 |
+|---|---|---|
+| HTTP | `http://store-api.example.com/store-api` | 无需 CA 参数，Token 和正文以明文传输 |
+| HTTPS | `https://store-api.example.com/store-api` | 验证服务器证书，使用私有 CA 时可传 `--cacert` |
+
+Apple 和 Google 商店凭据由 Connector 持有。 [公开 CA 证书](../deploy/testflying-prod-ca.crt)
 
 按应用调用的商店业务和图片上传接口使用以下路径前缀。
 
@@ -27,22 +32,37 @@ JSON 字段为 camelCase，最大请求体 2 MiB。以下响应均为格式示�
 
 ## 对接凭据
 
-| 操作 | 凭据 |
-|---|---|
-| 获取节点列表 | 接入 Token |
-| 保存应用与节点的绑定 | 同一枚接入 Token |
-| 调用商店业务和申请上传 | 同一枚接入 Token |
+| 凭据 | 支持入口 | 用途 |
+|---|---|---|
+| 接入 Token | HTTPS | 查全部启用的商店节点、绑定或换绑应用、调用商店业务、申请上传 |
+| 业务 API Token（`STORE_API_TOKEN`） | HTTP、HTTPS | 查启用的商店节点、调用已绑定应用的商店接口、申请上传 |
+| 管理 Token | HTTP、HTTPS | 查询节点详情、读取当前绑定、绑定或换绑应用 |
+| 短时 `uploadToken` | 使用返回的 `uploadUrl` | 上传图片文件字节 |
 
-中心管理员在 [Connector 下载页](connector-setup.md) 打开「接入凭据」，在 HTTPS 页面用管理员 Token 解锁，填写系统名称、选择授权节点并发放。每套内部系统配置一枚接入 Token，调用时用 HTTPS 和 `Authorization: Bearer <接入 Token>`。
+中心管理员在 HTTPS 配置页打开「接入凭据」，用管理 Token 解锁，填写系统名称并发放。每套内部系统配置一枚接入 Token，调用时使用 `Authorization: Bearer INTEGRATION_TOKEN`。 [Connector 配置页说明](connector-setup.md)
 
-接入 Token 的范围由授权节点决定。多个系统共享同一节点时，共享该节点下已绑定的应用范围。应用管理后端持有 Token，并负责校验当前用户对应用的权限。中心管理员可在同一管理区撤销 Token。
+已有和新发放的接入 Token 均覆盖全部节点，包括后续新增的节点。应用管理后端持有 Token，并负责校验当前用户对应用的权限。中心管理员可在同一管理区撤销 Token。
+
+### HTTP 商店调用示例
+
+应用已绑定节点后，使用业务 API Token 调用 HTTP 入口。
+
+```sh
+curl --fail 'http://store-api.example.com/store-api/v1/store-management/apps/ios/com.example.reader/store-listings?version=1.2.0' \
+  -H "Authorization: Bearer $STORE_API_TOKEN"
+```
+
+HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功后直接对返回的 HTTP `uploadUrl` 发送 PUT。接入 Token 发往 HTTP 入口会返回 `403 https_required`。
 
 ## 接口列表
 
 | 序号 | 方法 | 路径 | 用途 |
 |---|---|---|---|
-| — | GET | /v1/store-management/connectors | 读取获授权的启用节点 |
+| — | GET | /v1/store-management/connectors | 读取全部启用的商店节点 |
 | — | PUT | /v1/apps/{platform}/{bundleIdentifier}/connector | 设置或更换应用绑定 |
+| — | GET | /v1/apps/{platform}/{bundleIdentifier}/connector | 用管理 Token 查询应用当前绑定 |
+| — | GET | /v1/connectors | 用管理 Token 查询节点列表 |
+| — | GET | /v1/connectors/{connectorId} | 用管理 Token 查询节点详情 |
 | 1 | GET | {APP}/supported-locales | 查询现有商店语言 |
 | 2 | GET | {APP}/store-listings | 查询商店文案 |
 | 3 | GET | {APP}/store-images | 查询图片和截图 |
@@ -57,20 +77,73 @@ JSON 字段为 camelCase，最大请求体 2 MiB。以下响应均为格式示�
 
 ## 列出节点和绑定应用
 
-外部后台可在应用管理页让用户选择节点。以下路径直接追加在中心基础地址后。
+### 查询可选节点
 
-1. 带接入 Token 调用 `GET /v1/store-management/connectors`。响应中的 `connectors` 是该系统获授权且启用的节点数组。下拉框用 `connectorId` 作为选项值，显示 `name`，用 `connected` 标注当前 WSS 在线状态。
-2. 应用管理后端核验用户权限，再用同一枚 Token 调用绑定接口。iOS 路径用 Bundle ID，Android 路径用包名。
+```http
+GET /v1/store-management/connectors
+Authorization: Bearer INTEGRATION_TOKEN
+```
 
-   ```http
-   PUT /v1/apps/ios/com.example.reader/connector
-   Authorization: Bearer INTEGRATION_TOKEN
-   Content-Type: application/json
+成功返回 `200`。接入 Token 和业务 API Token 均可查询全部启用的商店节点。无可选节点时返回 `{"connectors":[]}`。
 
-   {"connectorId":"636b5d86-4e1b-4f88-aeb9-a1abdf0cdd33"}
-   ```
+```json
+{
+  "connectors": [
+    {
+      "connectorId": "636b5d86-4e1b-4f88-aeb9-a1abdf0cdd33",
+      "name": "商店节点 A",
+      "enabled": true,
+      "connected": true
+    }
+  ]
+}
+```
 
-绑定成功后，用同一枚 Token 按应用路径调用商店业务接口。接入系统可以绑定尚未关联的应用，或在自己的授权节点之间换绑。越权节点返回 `403 connector_not_allowed`。 [绑定接口详情](api-reference.md#8-应用与-connector-映射)
+应用管理页可以显示 `name`，保存 `connectorId`，并用 `connected` 标注 WSS 在线状态。WSS 未连接时，中心仍可尝试通过节点已登记的 HTTP 入口执行商店请求。
+
+### 绑定或更换应用节点
+
+应用管理后端核验当前用户对应用的操作权限后，用同一枚接入 Token 发起绑定。iOS 路径传 Bundle ID，Android 路径传包名。
+
+```http
+PUT /v1/apps/ios/com.example.reader/connector
+Authorization: Bearer INTEGRATION_TOKEN
+Content-Type: application/json
+
+{"connectorId":"636b5d86-4e1b-4f88-aeb9-a1abdf0cdd33"}
+```
+
+成功返回 `200` 和绑定后的节点对象，其中包含 `connectorId`、`name`、`enabled`、`connected` 和 `appCount`。
+
+绑定键是 `platform + bundleIdentifier`。对同一个应用再次 PUT 会替换原绑定，多个应用可绑定同一个节点。绑定或换绑的目标须为已启用的商店节点。
+
+| HTTP | 错误码 | 触发条件 |
+|---|---|---|
+| 401 | `unauthorized` | Token 缺失、无效或已撤销 |
+| 403 | `https_required` | 通过 HTTP 使用接入 Token |
+| 404 | `connector_not_found` | 目标节点不存在 |
+| 409 | `connector_disabled` | 目标节点已停用 |
+| 422 | `invalid_app_identifier` | 应用标识不合法 |
+| 422 | `invalid_connector_kind` | 目标节点不是商店节点 |
+
+绑定成功后，商店业务仍使用同一枚接入 Token，中心根据平台和应用标识选择节点。
+
+```http
+GET /v1/store-management/apps/ios/com.example.reader/store-listings?version=1.2.0
+Authorization: Bearer INTEGRATION_TOKEN
+```
+
+### 管理员查询节点或当前绑定
+
+以下 GET 接口使用 `Authorization: Bearer ADMIN_TOKEN`。
+
+| 路径 | 用途 |
+|---|---|
+| `/v1/connectors` | 查询中心节点列表 |
+| `/v1/connectors/{connectorId}` | 查询指定节点详情 |
+| `/v1/apps/{platform}/{bundleIdentifier}/connector` | 查询应用当前绑定的节点 |
+
+查应用绑定时，未绑定返回 `404 app_not_found`，绑定的节点已停用返回 `503 connector_disabled`。使用接入 Token 的后台可根据 PUT 成功响应记录所选节点。
 
 ## 1. 查询语言
 
@@ -434,7 +507,7 @@ CPP 成功时 storeState 包含 applePageId、created；Android 版本说明成�
 ```json
 {
   "assetId": "8fd33c58-36ce-4b26-9e54-52450c79a175",
-  "uploadUrl": "http://store-api.example.com/store-api/v1/store-management/apps/ios/com.example.reader/uploads/8fd33c58-36ce-4b26-9e54-52450c79a175",
+  "uploadUrl": "https://store-api.example.com/store-api/v1/store-management/apps/ios/com.example.reader/uploads/8fd33c58-36ce-4b26-9e54-52450c79a175",
   "uploadToken": "短时签名凭据",
   "expiresAt": 1793769999,
   "method": "PUT"
@@ -445,7 +518,7 @@ uploadUrl 始终是中心地址：HTTP 入口申请返回 HTTP 上传地址，HT
 
 ## 11. 上传图片文件字节
 
-向接口 10 返回的 uploadUrl 发 PUT。Content-Type 应与申请时一致，JPEG 使用 image/jpeg；UPLOAD_URL 和 UPLOAD_TOKEN 为申请响应中的对应值。以下为 HTTP 调用，不需要 CA 参数：
+向接口 10 返回的 `uploadUrl` 发 PUT。`Content-Type` 应与申请时一致，JPEG 使用 `image/jpeg`。`UPLOAD_URL` 和 `UPLOAD_TOKEN` 取自申请响应。
 
 ```sh
 curl --fail \
@@ -462,7 +535,7 @@ curl --fail \
 
 ### 11.1 同步时引用已上传图片
 
-调用接口 9（sync）时仍使用应用 API Token。下例更新指定语言的手机截图槽位：
+调用接口 9（sync）时，继续使用提交上传申请时的接入 Token 或业务 API Token。下例更新指定语言的手机截图槽位。
 
 ```json
 {
@@ -497,17 +570,18 @@ curl --fail \
 在 store-service 目录可直接使用仅依赖 Python 标准库的 [外部调用示例](../examples/upload-image.py)：
 
 ```sh
-# 调用环境先配置 STORE_API_TOKEN；不要写进源码或日志。
-python3 examples/upload-image.py \
-  --base-url http://store-api.example.com/store-api \
+STORE_API_TOKEN="$INTEGRATION_TOKEN" python3 examples/upload-image.py \
+  --base-url https://store-api.example.com/store-api \
   --platform ios --bundle-id com.example.reader \
   --file ./screen.png
 ```
 
 该示例计算文件大小和 SHA-256、申请凭据并流式上传，只输出资产信息，不自动写入商店。拿到 assetId 后按第 11.1 节调用 sync。
 
+使用 HTTP 时，将 `--base-url` 改为 HTTP 地址，并让 `STORE_API_TOKEN` 使用业务 API Token。
+
 1. 本地读取文件大小并计算 SHA-256。
-2. 用商店 API Token POST 申请，短暂持有返回值即可，不要求持久化上传凭据。
+2. 用接入 Token POST 申请上传凭据。
 3. curl --upload-file 或 SDK 文件流 PUT 到中心返回的 uploadUrl。
 4. 等待 201 后，把 assetId 放进 sync。
 5. 清除调用端持有的 uploadToken；失败时重新触发，不自动重放商店写入。

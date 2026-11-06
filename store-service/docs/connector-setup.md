@@ -1,10 +1,10 @@
 # Connector 下载配置页
 
-入口：`http://store-api.example.com/store-api/connector-setup/`。域名为占位，使用部署方提供的实际中心地址；HTTPS 入口也可使用。该页面属于独立 Store API，不依赖旧 Testflying 管理后台。
+入口为 `https://store-api.example.com/store-api/connector-setup/`。域名为占位，使用部署方提供的实际中心地址。该页面由独立 Store API 提供。
 
 ## 下载步骤
 
-1. 打开页面后会自动加载节点，无需登录。公网访客可查看、新建节点并下载启用节点的安装包，包内含该节点的连接凭据。
+1. 在 HTTPS 页面输入 Store API 管理员 Token 解锁。解锁后可查看节点、新建节点、下载安装包和管理接入 Token。安装包内含该节点的连接凭据。
 2. 选择已有节点，或填写名称新建节点。默认下载 Windows x64，也支持 Linux x64、macOS Apple Silicon。
 3. 选择需要启用的平台，可同时启用 iOS 和 Android。
 4. iOS 填写团队 API Key 的 Issuer ID、Key ID，选择 Apple `.p8` 文件。文件名为 `AuthKey_XXX.p8` 时自动填写 Key ID；也可手动修改。
@@ -45,9 +45,9 @@ connector-windows-amd64-xxxxxxxx.zip
 
 凭据文件在浏览器本地合并进 ZIP，不发送给中心、不进入中心数据库、日志或 GitHub Release。每个凭据文件最大 256 KiB。先检查选中的账号文件，再创建节点；下载失败后重试复用已创建的节点。
 
-中心只接收节点名称，返回已发布程序和节点运行配置。网页的 ZIP 库随服务本地分发，不加载外部 CDN。页面设置 CSP、禁止嵌入、no-store 和 no-referrer。`/connector-setup/api/` 下的公开接口仅提供列表、创建和下载安装包。停用节点、轮换凭据和应用映射仍须通过需要管理员 Token 的管理接口。
+中心接收节点名称，返回已发布程序和节点运行配置。网页从本地加载 ZIP 库，并设置 CSP、禁止嵌入、no-store 和 no-referrer。页面和静态资源可公开访问，`/connector-setup/api/` 下的列表、创建和安装包下载接口均要求 HTTPS 与管理员 Token。管理员 Token 只保存在当前页面内存，锁定或离开页面时清除表单和已显示的凭据。停用节点、轮换凭据和应用映射使用管理 API。
 
-文件格式检查不等于商店权限验证，商店 API Key／服务账号仍需具有对应应用权限。HTTP 页不提供传输加密，请使用可信网络；HTTPS 证书验证保持启用。下载后的 ZIP 含节点凭据及商店私钥，请私下保管，不要公开分享。
+商店 API Key／服务账号需具有对应应用权限。保持 HTTPS 证书验证启用。下载后的 ZIP 含节点凭据及商店私钥，请私下保管。
 
 ## 验证范围
 

@@ -8,7 +8,6 @@
   <link rel="stylesheet" href="./style.css">
   <script src="./jszip.min.js" defer></script>
   <script type="module" src="./app.mjs"></script>
-  <script type="module" src="./integrations.mjs"></script>
 </head>
 <body>
   <main class="shell">
@@ -16,12 +15,19 @@
       <div class="brand"><span class="mark">C</span> STORE CONNECTOR</div>
       <h1>填好账号，<br>下载就能启动。</h1>
       <p>一个节点，同时连接 iOS 和 Android。中心地址、节点身份、文件路径和启动脚本自动准备好。</p>
-      <ol class="steps"><li>选择或新建节点</li><li>填写商店账号并选择文件</li><li>下载、解压、启动</li></ol>
+      <ol class="steps"><li>验证管理员 Token</li><li>选择节点并配置商店账号</li><li>下载、解压、启动</li></ol>
       <div class="privacy"><strong>凭据留在你手中</strong><p>账号文件在当前浏览器内合并，不上传或保存在中心。应用映射由中心维护，不写入安装包。</p></div>
-      <p class="transport">HTTP 页面没有传输加密，请在可信网络使用；HTTPS 入口同样可用。</p>
     </aside>
     <section class="workspace">
-      <header><div><span class="eyebrow">安装配置</span><h2>生成专属安装包</h2></div><button id="retryConnection" class="quiet" type="button" hidden>重试连接</button></header>
+      <header><div><span class="eyebrow">安装配置</span><h2>生成专属安装包</h2></div><button id="adminLock" class="quiet" type="button" hidden>锁定管理</button></header>
+      <p id="adminHttps" class="card" hidden>管理操作需要 HTTPS。<a id="adminHttpsLink">打开 HTTPS 配置页</a></p>
+      <form id="adminUnlock" class="card" autocomplete="off" hidden>
+        <label for="adminCredential">管理员 Token</label>
+        <input id="adminCredential" type="password" autocomplete="off" spellcheck="false" required>
+        <p class="hint">解锁后可以安装节点和管理接入凭据。锁定或离开页面时会清除表单内容。</p>
+        <button id="loginButton" type="submit">解锁管理</button>
+      </form>
+      <div id="status" role="status" aria-live="polite" hidden></div>
       <form id="setupForm" hidden>
         <section class="card">
           <div class="section-title"><span class="number">01</span><div><h3>节点与系统</h3><p class="muted">同一个节点可保存两套账号凭据，服务多个应用。</p></div></div>
@@ -49,24 +55,13 @@
         </section>
         <div class="download-bar"><p>生成的 ZIP 含私钥与节点凭据，请勿公开分享。</p><button id="downloadButton" type="submit">生成并下载 Windows 安装包</button></div>
       </form>
-      <div id="status" role="status" aria-live="polite" hidden></div>
-      <details class="card">
+      <details id="integrationWorkspace" class="card" hidden>
         <summary>接入凭据</summary>
-        <p class="muted">为公司内部系统发放 Token，并选择它可以使用的节点。</p>
-        <p id="integrationHttps" hidden><a id="integrationHttpsLink">在 HTTPS 页面管理接入凭据</a></p>
-        <form id="integrationUnlock" autocomplete="off" hidden>
-          <label for="integrationAdmin">管理员 Token</label>
-          <input id="integrationAdmin" type="password" autocomplete="off" required>
-          <button type="submit">解锁凭据管理</button>
-        </form>
-        <section id="integrationPanel" hidden>
-          <button id="integrationLock" type="button" class="quiet">锁定凭据管理</button>
+        <p class="muted">接入 Token 授权全部节点，包括以后新增的节点。</p>
+        <section>
           <form id="integrationIssue">
             <label for="integrationName">系统名称</label>
             <input id="integrationName" maxlength="160" required>
-            <label for="integrationNodes">授权节点</label>
-            <select id="integrationNodes" multiple size="4" required></select>
-            <p class="hint">按住 Ctrl 或 ⌘ 可以选择多个节点。</p>
             <button type="submit">发放 Token</button>
           </form>
           <div id="integrationSecret" hidden>
@@ -77,6 +72,19 @@
           <ul id="integrationList"></ul>
         </section>
         <p id="integrationStatus" role="status" aria-live="polite"></p>
+      </details>
+      <details id="screenshotWorkspace" class="card" hidden>
+        <summary>截图 Connector 部署</summary>
+        <p class="muted">下载绑定截图节点的 macOS 部署包。项目与模拟器在对应 Mac 上配置。</p>
+        <form id="screenshotProvision">
+          <label for="screenshotName">新截图节点名称</label>
+          <input id="screenshotName" maxlength="160" placeholder="例如 截图 Mac" required autocomplete="off">
+          <button id="screenshotCreate" type="submit" class="quiet">新建截图节点</button>
+        </form>
+        <label for="screenshotNode">截图节点</label>
+        <select id="screenshotNode"></select>
+        <button id="screenshotDownload" type="button" disabled>下载 macOS 部署包</button>
+        <p id="screenshotStatus" role="status" aria-live="polite"></p>
       </details>
       <footer>Windows 和 macOS 的安装脚本会设置开机启动。新增应用只需更新中心映射，无需重新打包。<a href="./license.txt" target="_blank" rel="noopener noreferrer">开源许可证</a></footer>
     </section>

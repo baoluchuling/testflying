@@ -1,10 +1,13 @@
 import { CREDENTIAL_LIMIT, validateAccount, buildInstaller, installationFiles } from "./packager.mjs";
+import { bindIntegrations } from "./integrations.mjs";
 
 const $ = (id) => document.getElementById(id);
-const apiBase = new URL("./api/", window.location.href);
-let busy = false;
+const center = new URL("../", window.location.href);
+const setupPath = "connector-setup/api/connectors";
+let session;
 let nodes = [];
 let automaticKeyId = "";
+const integrations = bindIntegrations(request, () => $("setupForm").hidden ? undefined : session);
 
 function status(message, kind = "info") {
   $("status").hidden = false;
@@ -12,31 +15,110 @@ function status(message, kind = "info") {
   $("status").dataset.kind = kind;
 }
 
-async function request(path, { method = "GET", body, binary = false } = {}) {
-  const response = await fetch(new URL(path, apiBase), {
+async function request(active, path, { method = "GET", body, binary = false } = {}) {
+  active.signal.throwIfAborted();
+  const response = await fetch(new URL(path, center), {
     method,
     cache: "no-store",
     credentials: "omit",
+    mode: "same-origin",
+    redirect: "error",
     referrerPolicy: "no-referrer",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
+    headers: {
+      Authorization: `Bearer ${active.token}`,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: active.signal,
   });
+  active.signal.throwIfAborted();
   if (!response.ok) {
+    if (response.status === 401) {
+      const message = "管理员 Token 无效";
+      if (!$("setupForm").hidden) {
+        lock();
+        status(message, "error");
+      }
+      throw new Error(message);
+    }
+    if (response.status === 409 && path === "v1/integrations") throw new Error("这个系统名称已有 Token");
     if (binary && response.status === 503) throw new Error("所选系统的程序尚未发布，请选择其他系统");
     throw new Error(`中心请求失败（${response.status}），请检查节点状态后重试`);
   }
+  if (response.status === 204) return;
+  let result;
   if (binary) {
     const size = Number(response.headers.get("content-length"));
     if (size > 160 * 1024 * 1024) throw new Error("中心安装包超过大小限制");
-    return new Uint8Array(await response.arrayBuffer());
+    result = new Uint8Array(await response.arrayBuffer());
+  } else {
+    result = await response.json();
   }
-  return response.json();
+  active.signal.throwIfAborted();
+  return result;
 }
+
+function downloadFile(bytes, type, name) {
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function renderScreenshotNodes(selected = "") {
+  const select = $("screenshotNode");
+  const choices = nodes.filter((node) => node.kind === "screenshot" && node.enabled);
+  select.replaceChildren(...choices.map((node) => new Option(node.name, node.connectorId)));
+  if (!choices.length) select.add(new Option("暂无可用的截图节点", ""));
+  if (choices.some((node) => node.connectorId === selected)) select.value = selected;
+  $("screenshotDownload").disabled = !select.value;
+}
+
+async function screenshotAction(button, action) {
+  const active = session;
+  if (!active || $("screenshotWorkspace").hidden || button.disabled) return;
+  const message = $("screenshotStatus");
+  button.disabled = true;
+  message.textContent = "";
+  try {
+    await action(active);
+  } catch (error) {
+    if (!active.signal.aborted) message.textContent = error.message || "截图 Connector 操作失败";
+  } finally {
+    if (session === active) button.disabled = button.id === "screenshotDownload" && !$("screenshotNode").value;
+  }
+}
+
+$("screenshotProvision").addEventListener("submit", (event) => {
+  event.preventDefault();
+  screenshotAction($("screenshotCreate"), async (active) => {
+    const name = $("screenshotName").value.trim();
+    if (!name || new TextEncoder().encode(name).length > 160) throw new Error("请填写简短的截图节点名称");
+    const result = await request(active, setupPath, { method: "POST", body: { name, kind: "screenshot" } });
+    nodes.push(result.connector);
+    renderScreenshotNodes(result.connector.connectorId);
+    $("screenshotProvision").reset();
+    $("screenshotStatus").textContent = "截图节点已创建，可以下载部署包。";
+  });
+});
+$("screenshotDownload").addEventListener("click", () => {
+  screenshotAction($("screenshotDownload"), async (active) => {
+    const id = encodeURIComponent($("screenshotNode").value);
+    const bytes = await request(active, `v1/connectors/${id}/screenshot-installer`, { binary: true });
+    downloadFile(bytes, "application/zip", `screenshot-connector-macos-${id.slice(0, 8)}.zip`);
+    $("screenshotStatus").textContent = "部署包已下载，请在对应 Mac 上解压并配置。";
+  });
+});
 
 function renderNodes(selected = "new") {
   const select = $("connector");
   select.replaceChildren(new Option("＋ 新建节点", "new"));
   for (const node of nodes) {
+    if (node.kind === "screenshot") continue;
     const option = new Option(`${node.name} · ${node.enabled ? (node.connected ? "已连接" : "未连接") : "已停用"}`, node.connectorId);
     option.disabled = !node.enabled;
     select.add(option);
@@ -67,22 +149,81 @@ async function fileBytes(id, label) {
   return new Uint8Array(await file.arrayBuffer());
 }
 
-async function loadNodes() {
-  $("retryConnection").hidden = true;
+function lock() {
+  if (session) {
+    session.token = "";
+    session.controller.abort();
+    session = undefined;
+  }
+  nodes = [];
+  automaticKeyId = "";
+  $("adminCredential").value = "";
+  $("setupForm").reset();
+  renderNodes();
+  $("setupForm").hidden = true;
+  $("status").textContent = "";
+  $("status").hidden = true;
+  $("adminLock").hidden = true;
+  $("loginButton").disabled = false;
+  $("downloadButton").disabled = false;
+  $("adminUnlock").hidden = !securePage;
+  integrations.reset();
+  $("screenshotWorkspace").open = false;
+  $("screenshotWorkspace").hidden = true;
+  $("screenshotStatus").textContent = "";
+  $("screenshotProvision").reset();
+  $("screenshotCreate").disabled = false;
+  renderScreenshotNodes();
+}
+
+async function unlock(event) {
+  event.preventDefault();
+  if (session) return;
+  const controller = new AbortController();
+  const active = { token: $("adminCredential").value.trim(), controller, signal: controller.signal };
+  $("adminCredential").value = "";
+  if (!active.token) {
+    status("请输入管理员 Token", "error");
+    return;
+  }
+  session = active;
+  $("loginButton").disabled = true;
+  $("adminLock").hidden = false;
   try {
-    status("正在连接中心…");
-    const result = await request("connectors");
+    status("正在验证管理员 Token…");
+    const result = await request(active, setupPath);
     nodes = result.connectors;
     renderNodes();
+    integrations.show();
+    renderScreenshotNodes();
+    $("screenshotWorkspace").hidden = false;
+    $("adminUnlock").hidden = true;
     $("setupForm").hidden = false;
     $("status").hidden = true;
   } catch (error) {
-    status(error.message || "无法连接中心", "error");
-    $("retryConnection").hidden = false;
+    if (!active.signal.aborted) {
+      lock();
+      status(error.message || "无法连接中心", "error");
+    }
   }
 }
 
-$("retryConnection").addEventListener("click", loadNodes);
+// Local loopback is a secure context in Chrome, but credential entry still requires TLS.
+const securePage = window.isSecureContext && window.location.protocol === "https:";
+if (securePage) {
+  $("adminUnlock").hidden = false;
+  $("adminUnlock").addEventListener("submit", unlock);
+  $("adminLock").addEventListener("click", () => {
+    lock();
+    $("adminCredential").focus();
+  });
+  window.addEventListener("pagehide", lock);
+} else {
+  const https = new URL(window.location.href);
+  https.protocol = "https:";
+  $("adminHttpsLink").href = https;
+  $("adminHttps").hidden = false;
+}
 
 for (const id of ["connector", "installTarget", "appleEnabled", "googleEnabled", "upgrade"]) $(id).addEventListener("change", updateFields);
 $("appleFile").addEventListener("change", () => {
@@ -94,8 +235,8 @@ $("appleFile").addEventListener("change", () => {
 
 $("setupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (busy) return;
-  busy = true;
+  const active = session;
+  if (!active || $("setupForm").hidden || $("downloadButton").disabled) return;
   $("downloadButton").disabled = true;
   try {
     const upgrade = $("upgrade").checked;
@@ -117,7 +258,9 @@ $("setupForm").addEventListener("submit", async (event) => {
     const installFiles = installationFiles(target);
     const names = [launcher, ...installFiles];
     const [caResponse, ...scriptResponses] = await Promise.all(["ca.crt", ...names].map(
-      (name) => fetch(new URL(name, window.location.href), { cache: "no-store" }),
+      (name) => fetch(new URL(name, window.location.href), {
+        cache: "no-store", credentials: "omit", mode: "same-origin", redirect: "error", signal: active.signal,
+      }),
     ));
     if (![caResponse, ...scriptResponses].every((response) => response.ok)) throw new Error("无法读取中心安装文件");
     const scriptTexts = await Promise.all(scriptResponses.map((response) => response.text()));
@@ -125,32 +268,23 @@ $("setupForm").addEventListener("submit", async (event) => {
     let id = $("connector").value;
     if (id === "new") {
       status("正在创建节点身份…");
-      const result = await request("connectors", { method: "POST", body: { name } });
+      const result = await request(active, setupPath, { method: "POST", body: { name } });
       id = result.connector.connectorId;
       nodes.push(result.connector);
       renderNodes(id); // Retain this identity on a failed download/retry.
     }
     status("正在获取节点程序…");
-    const installer = await request(`connectors/${encodeURIComponent(id)}/installer/${target}`, { binary: true });
+    const installer = await request(active, `${setupPath}/${encodeURIComponent(id)}/installer/${target}`, { binary: true });
     status(upgrade ? "正在生成仅含程序的升级包…" : "正在浏览器内合并配置与账号文件…");
     const result = await buildInstaller(installer, { target, account, upgrade }, assets, globalThis.JSZip);
-    const url = URL.createObjectURL(new Blob([result.bytes], { type: "application/zip" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = result.fileName;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    active.signal.throwIfAborted();
+    downloadFile(result.bytes, "application/zip", result.fileName);
     const entry = installFiles[0] ?? launcher;
     const details = upgrade ? "升级会保留本机配置和商店凭据。" : installFiles.length ? "安装会立即启动并设置开机启动。" : "请保持启动进程运行。";
     status(`ZIP 已生成。完整解压后运行 ${entry}。${details}\n节点：${id}`, "success");
   } catch (error) {
-    status(error.message || "生成失败，请检查信息后重试", "error");
+    if (!active.signal.aborted) status(error.message || "生成失败，请检查信息后重试", "error");
   } finally {
-    busy = false;
-    $("downloadButton").disabled = false;
+    if (session === active) $("downloadButton").disabled = false;
   }
 });
-
-loadNodes();

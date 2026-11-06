@@ -2,36 +2,18 @@ use super::*;
 
 pub(crate) const TOKEN_PREFIX: &str = "tf_int_";
 
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone)]
 pub(crate) struct Integration {
     pub id: String,
     pub name: String,
-    pub connector_ids: Vec<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct IntegrationInput {
     name: String,
-    connector_ids: Vec<String>,
-}
-
-impl Integration {
-    pub fn allows(&self, id: &str) -> bool {
-        self.connector_ids.iter().any(|connector| connector == id)
-    }
-
-    pub fn require_connector(&self, id: &str) -> Result<()> {
-        if !self.allows(id) {
-            return Err(StoreError::new(
-                403,
-                "connector_not_allowed",
-                "Connector is outside this integration's grants",
-            ));
-        }
-        Ok(())
-    }
+    #[serde(default, rename = "connectorIds")]
+    _legacy_connector_ids: Vec<String>,
 }
 
 fn not_found() -> StoreError {
@@ -40,17 +22,6 @@ fn not_found() -> StoreError {
 
 fn unauthorized() -> StoreError {
     StoreError::new(401, "unauthorized", "Invalid integration token")
-}
-
-fn grants(db: &Connection, id: &str) -> Result<Vec<String>> {
-    let mut statement = db.prepare(
-        "SELECT connector_id FROM integration_connectors WHERE integration_id=?1 ORDER BY connector_id",
-    ).map_err(database_error)?;
-    let rows = statement
-        .query_map([id], |row| row.get(0))
-        .map_err(database_error)?;
-    rows.collect::<rusqlite::Result<_>>()
-        .map_err(database_error)
 }
 
 impl Registry {
@@ -64,30 +35,18 @@ impl Registry {
             .map_err(database_error)?;
         rows.map(|row| {
             let (id, name) = row.map_err(database_error)?;
-            let connector_ids = grants(&db, &id)?;
-            Ok(Integration {
-                id,
-                name,
-                connector_ids,
-            })
+            Ok(Integration { id, name })
         })
         .collect()
     }
 
     pub(crate) fn issue_integration(&self, input: IntegrationInput) -> Result<Integration> {
         let name = input.name.trim();
-        let mut connector_ids = input.connector_ids;
-        connector_ids.sort();
-        connector_ids.dedup();
-        if name.is_empty()
-            || name.len() > 160
-            || connector_ids.is_empty()
-            || connector_ids.len() > 100
-        {
+        if name.is_empty() || name.len() > 160 {
             return Err(StoreError::new(
                 422,
                 "invalid_integration",
-                "Provide a system name and 1–100 Connectors",
+                "Provide a system name of 1–160 bytes",
             ));
         }
         let id = Uuid::new_v4().to_string();
@@ -108,24 +67,10 @@ impl Registry {
                 "A token already exists for this system name",
             ));
         }
-        for connector in &connector_ids {
-            let inserted = transaction.execute(
-                "INSERT INTO integration_connectors SELECT ?1,id FROM connectors WHERE id=?2 AND enabled=1",
-                params![id, connector],
-            ).map_err(database_error)?;
-            if inserted == 0 {
-                return Err(StoreError::new(
-                    422,
-                    "invalid_integration_connector",
-                    "Select enabled Connectors",
-                ));
-            }
-        }
         transaction.commit().map_err(database_error)?;
         Ok(Integration {
             id,
             name: name.to_owned(),
-            connector_ids,
         })
     }
 
@@ -137,14 +82,10 @@ impl Registry {
             })
             .optional()
             .map_err(database_error)?;
-        name.map(|name| {
-            Ok(Integration {
-                id: id.into(),
-                name,
-                connector_ids: grants(&db, id)?,
-            })
-        })
-        .transpose()
+        Ok(name.map(|name| Integration {
+            id: id.into(),
+            name,
+        }))
     }
 
     fn derive_integration_token(&self, id: &str) -> String {

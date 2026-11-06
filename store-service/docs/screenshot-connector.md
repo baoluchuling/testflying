@@ -1,0 +1,80 @@
+# macOS 截图 Connector
+
+外部系统提交提示词和截图配置名。中心将任务交给指定 Mac，Mac 上的 Codex 根据提示词决定是否构建、安装和操作 App。Codex 确认画面就绪后，worker 从指定模拟器截取一张 PNG，交回中心，由中心转发到外部上传服务。
+
+## 创建节点
+
+管理员在 HTTPS 配置页解锁，打开「截图 Connector 部署」，可新建或选择截图节点并下载该节点的 macOS 部署 ZIP。也可通过现有接口创建，省略 `kind` 时仍创建商店 Connector。
+
+```http
+POST /v1/connectors
+Authorization: Bearer ADMIN_TOKEN
+Content-Type: application/json
+
+{"name":"截图 Mac","kind":"screenshot"}
+```
+
+管理员也可通过 HTTPS 调用 `GET /v1/connectors/{connectorId}/screenshot-installer` 下载部署 ZIP。ZIP 内包含 worker、启动脚本、公开 CA、说明和带当前节点 Token 的 `connector.json`，请私下交给对应的 Mac。
+
+已有和新发放的接入 Token 均可调用全部启用的截图节点。接入系统用同一枚 Token 调用商店和截图接口，并用发起任务的 Token 查询任务状态。通用商店 Token 无法派截图任务。 [接入凭据管理](connector-setup.md)
+
+## 外部系统
+
+```http
+POST /v1/screenshot-jobs
+Authorization: Bearer INTEGRATION_TOKEN
+Content-Type: application/json
+
+{
+  "connectorId":"11111111-1111-4111-8111-111111111111",
+  "profile":"iphone",
+  "prompt":"打开设置，切换到深色模式，保留设置首页。"
+}
+```
+
+成功返回 `202` 和 `{"jobId":"…","status":"queued"}`。`profile` 是 Mac 上已配置的名称，允许 1–64 个 ASCII 字母、数字、下划线或短横线。提示词不能为空，上限为 16 KiB。发起任务的系统用同一枚 Token 请求 `GET /v1/screenshot-jobs/{jobId}`。状态为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。成功时 `result` 可包含外部服务返回的 HTTPS `imageUrl`，失败时 `error` 为中心错误代码。每个 Mac 同时处理一个任务，最多排队 20 个，任务记录保留约七天。
+
+## 在实体 Mac 上运行
+
+将部署 ZIP 解压到 Mac 的私密目录并限制目录访问，将 `connector.json` 设为 `0600`。在这台 Mac 上提前准备专用账号、项目、Codex 登录和已启动的专用模拟器。每个配置指向本地项目及一台模拟器，iPhone 和 iPad 使用各自的 Simulator UUID，Android 手机和平板使用各自的 `emulator-NNNN` serial。Android 的 ADB 服务使用默认本地端口，由部署方启动。
+
+```json
+{
+  "kind": "screenshot",
+  "connectorId": "11111111-1111-4111-8111-111111111111",
+  "token": "NODE_TOKEN_FROM_INSTALLATION",
+  "serverUrl": "https://store-api.example.com/store-api",
+  "codexPath": "/absolute/path/to/codex",
+  "codexHome": "/absolute/path/to/dedicated/codex-home",
+  "codexPermissionProfile": "screenshot-worker",
+  "profiles": {
+    "iphone": {
+      "platform": "ios",
+      "projectRoot": "/absolute/path/to/ios-project",
+      "deviceId": "22222222-2222-4222-8222-222222222222"
+    },
+    "android-tablet": {
+      "platform": "android",
+      "projectRoot": "/absolute/path/to/android-project",
+      "deviceId": "emulator-5556",
+      "adbPath": "/absolute/path/to/adb"
+    }
+  }
+}
+```
+
+使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Codex 从受管临时目录工作，使用本机受管配置定义的命名权限配置。该配置需允许读取对应的预配项目和 SDK，写入本轮工作目录，以及访问所需模拟器工具。限制模型生成的命令对本地凭据、个人目录和网络的访问。启动时跳过 Codex 用户配置并禁止自动化过程申请权限提升。上线前应在专用账号上验证实际权限配置。 [OpenAI Docs](https://learn.chatgpt.com/docs/permissions)
+
+填好配置后，在解压目录启动。每轮最多领一个任务，可由这台 Mac 的调度器定期调用同一脚本。启动前会验证机器上的 artifact lifecycle 集成状态。
+
+```sh
+sh ./run.sh
+```
+
+worker 通过 `POST /v1/connectors/{id}/screenshot-jobs/claim` 领取任务，空队列返回 204。执行失败通过 `POST /v1/connectors/{id}/screenshot-jobs/{jobId}/failure` 报告。成功后通过 `PUT /v1/connectors/{id}/screenshot-jobs/{jobId}/image` 上传 PNG 原始字节，最大 16 MiB。两条任务结果接口都要求节点 Bearer Token 和领单返回的 `X-Screenshot-Lease`。任务超时后需要重新提交。
+
+## 外部上传占位协议
+
+在中心设置 `STORE_API_SCREENSHOT_UPLOAD_URL`。真实服务可选设置 `STORE_API_SCREENSHOT_UPLOAD_TOKEN` 用于下游 Bearer 鉴权，节点或外部系统的 Token 不随转发发送。URL 必须是固定 HTTPS 地址，本地联调可用回环 HTTP。未设置上传地址时，中心已暴露任务接口，提交请求返回 `503 screenshot_upload_unconfigured`。
+
+中心在内存中接收并验证 PNG，随后向该地址 POST `multipart/form-data`。图片字段名为 `file`，文件名为 `screenshot.png`，并发送值为 jobId 的 `Idempotency-Key`。中心只持久化任务状态和可选的 HTTPS `imageUrl`。外部正式协议明确后可单独更换这一层。中心拒绝跳转和重复交图，上传超时记录为 `delivery_unknown`，避免重试导致重复上传。

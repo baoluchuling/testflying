@@ -1,5 +1,6 @@
 mod integrations;
 pub mod registry;
+mod screenshots;
 mod setup;
 pub mod transport;
 mod uploads;
@@ -10,9 +11,10 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post, put},
-    Extension, Json, Router,
+    Json, Router,
 };
-use registry::{Connector, ConnectorInput, Integration, Registry};
+use registry::{Connector, ConnectorInput, ConnectorKind, Registry};
+pub use screenshots::ScreenshotUploader;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
@@ -137,6 +139,13 @@ async fn authorize_client(
 }
 
 pub fn router(state: Arc<ApiState>) -> Router {
+    router_with_screenshots(state, None)
+}
+
+pub fn router_with_screenshots(
+    state: Arc<ApiState>,
+    uploader: Option<ScreenshotUploader>,
+) -> Router {
     let management = Router::new()
         .route(
             "/v1/connectors",
@@ -193,7 +202,8 @@ pub fn router(state: Arc<ApiState>) -> Router {
         .merge(management)
         .merge(public)
         .merge(integrations::admin_routes(state.clone()))
-        .merge(setup::routes())
+        .merge(setup::routes(state.clone()))
+        .merge(screenshots::routes(state.clone(), uploader))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(state)
 }
@@ -216,11 +226,21 @@ async fn get_connector(
 ) -> Result<Json<Value>> {
     Ok(Json(node_view(&state, state.registry.get(&id)?)))
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateConnector {
+    name: String,
+    #[serde(default)]
+    kind: ConnectorKind,
+}
+
 async fn create_connector(
     State(state): State<Arc<ApiState>>,
-    Json(input): Json<ConnectorInput>,
+    Json(input): Json<CreateConnector>,
 ) -> Result<(StatusCode, Json<Value>)> {
-    let node = state.registry.create(input)?;
+    let node = state
+        .registry
+        .create_with_kind(ConnectorInput { name: input.name }, input.kind)?;
     Ok((
         StatusCode::CREATED,
         Json(
@@ -255,6 +275,10 @@ async fn rotate_token(
 }
 
 fn config(state: &ApiState, node: &Connector) -> Value {
+    if node.kind == ConnectorKind::Screenshot {
+        return json!({"kind":"screenshot","connectorId":node.connector_id,
+            "token":state.registry.token(node),"serverUrl":state.public_url});
+    }
     json!({"connectorId":node.connector_id,"token":state.registry.token(node),"serverUrl":state.public_url,
         "messageKey":state.registry.purpose_key(node,"message"),"uploadKey":state.registry.purpose_key(node,"upload"),
         "baseUrl":node.base_url,"listenAddr":"0.0.0.0:8100","requestTimeoutSeconds":60,"provider":{"mode":"live"}})
@@ -282,17 +306,13 @@ struct BindInput {
 async fn bind_connector(
     State(state): State<Arc<ApiState>>,
     Path((platform, identifier)): Path<(Platform, String)>,
-    integration: Option<Extension<Integration>>,
     Json(input): Json<BindInput>,
 ) -> Result<Json<Value>> {
     Ok(Json(node_view(
         &state,
-        state.registry.bind_scoped(
-            platform,
-            &identifier,
-            &input.connector_id,
-            integration.as_deref(),
-        )?,
+        state
+            .registry
+            .bind(platform, &identifier, &input.connector_id)?,
     )))
 }
 async fn unbind_connector(
@@ -319,7 +339,12 @@ async fn connect_ws(
     ws: WebSocketUpgrade,
 ) -> Result<Response> {
     let token = bearer(&headers).to_owned();
-    state.registry.authenticate(&id, &token)?;
+    let node = state.registry.authenticate(&id, &token)?;
+    if node.kind != ConnectorKind::Store {
+        return Err(
+            StoreError::new(403, "invalid_connector_kind", "Store Connector required").into(),
+        );
+    }
     if !headers
         .get_all(header::SEC_WEBSOCKET_PROTOCOL)
         .iter()
@@ -366,15 +391,12 @@ async fn connect_ws(
 
 async fn execute(
     state: Arc<ApiState>,
-    integration: Option<&Integration>,
     platform: Platform,
     identifier: String,
     operation: Operation,
     payload: Value,
 ) -> Result<Response> {
-    let node = state
-        .registry
-        .resolve_scoped(platform, &identifier, integration)?;
+    let node = state.registry.resolve(platform, &identifier)?;
     let request = StoreRequest {
         request_id: Uuid::new_v4().to_string(),
         platform,
@@ -397,7 +419,6 @@ async fn read_store(
     State(state): State<Arc<ApiState>>,
     Path((platform, identifier, resource)): Path<(Platform, String, String)>,
     Query(query): Query<HashMap<String, String>>,
-    integration: Option<Extension<Integration>>,
 ) -> Result<Response> {
     let operation = match resource.as_str() {
         "supported-locales" => Operation::SupportedLocales,
@@ -423,20 +444,11 @@ async fn read_store(
             })
             .collect(),
     );
-    execute(
-        state,
-        integration.as_deref(),
-        platform,
-        identifier,
-        operation,
-        payload,
-    )
-    .await
+    execute(state, platform, identifier, operation, payload).await
 }
 async fn write_store(
     State(state): State<Arc<ApiState>>,
     Path((platform, identifier, resource)): Path<(Platform, String, String)>,
-    integration: Option<Extension<Integration>>,
     Json(payload): Json<Value>,
 ) -> Result<Response> {
     let operation = match resource.as_str() {
@@ -445,15 +457,7 @@ async fn write_store(
         "product-page-optimizations" => Operation::CreateProductPageOptimization,
         _ => return Err(StoreError::new(404, "not_found", "Unknown store resource").into()),
     };
-    execute(
-        state,
-        integration.as_deref(),
-        platform,
-        identifier,
-        operation,
-        payload,
-    )
-    .await
+    execute(state, platform, identifier, operation, payload).await
 }
 
 async fn installer(
@@ -470,6 +474,14 @@ async fn installer(
         }
     };
     let node = state.registry.get(&id)?;
+    if node.kind != ConnectorKind::Store {
+        return Err(StoreError::new(
+            422,
+            "invalid_connector_kind",
+            "Screenshot Connectors use the macOS worker",
+        )
+        .into());
+    }
     if !node.enabled {
         return Err(StoreError::new(409, "connector_disabled", "Connector is disabled").into());
     }

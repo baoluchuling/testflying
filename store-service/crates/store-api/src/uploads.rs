@@ -10,13 +10,10 @@ use store_protocol::{
 pub(super) async fn prepare(
     State(state): State<Arc<ApiState>>,
     Path((platform, app)): Path<(Platform, String)>,
-    integration: Option<Extension<Integration>>,
     Json(file): Json<UploadInput>,
 ) -> Result<(StatusCode, Json<Value>)> {
     file.validate()?;
-    let node = state
-        .registry
-        .resolve_scoped(platform, &app, integration.as_deref())?;
+    let node = state.registry.resolve(platform, &app)?;
     if !state.transport.connected(&node.connector_id) && node.base_url.is_none() {
         return Err(
             StoreError::new(503, "connector_disconnected", "Connector is not reachable").into(),

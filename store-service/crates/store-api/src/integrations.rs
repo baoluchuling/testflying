@@ -1,6 +1,6 @@
 use super::*;
 use axum::{extract::Request, routing::delete};
-use registry::IntegrationInput;
+use registry::{Integration, IntegrationInput};
 
 pub(super) fn require_https(request: &Request) -> Result<()> {
     // The production TLS and plain HTTP proxy blocks overwrite this header.
@@ -22,9 +22,14 @@ pub(super) fn no_store(mut response: Response) -> Response {
     response
 }
 
+pub(super) async fn authorize_https(request: Request, next: Next) -> Result<Response> {
+    require_https(&request)?;
+    Ok(next.run(request).await)
+}
+
 pub(super) async fn authorize_binding(
     State(state): State<Arc<ApiState>>,
-    mut request: Request,
+    request: Request,
     next: Next,
 ) -> Result<Response> {
     let token = bearer(request.headers());
@@ -38,26 +43,17 @@ pub(super) async fn authorize_binding(
             .into());
         }
         require_https(&request)?;
-        let access = state.registry.authenticate_integration(token)?;
-        request.extensions_mut().insert(access);
+        state.registry.authenticate_integration(token)?;
     }
     Ok(no_store(next.run(request).await))
 }
 
-pub(super) async fn list_nodes(
-    State(state): State<Arc<ApiState>>,
-    integration: Option<Extension<Integration>>,
-) -> Result<Json<Value>> {
+pub(super) async fn list_nodes(State(state): State<Arc<ApiState>>) -> Result<Json<Value>> {
     let nodes: Vec<_> = state
         .registry
         .list()?
         .into_iter()
-        .filter(|node| {
-            node.enabled
-                && integration
-                    .as_ref()
-                    .is_none_or(|access| access.allows(&node.connector_id))
-        })
+        .filter(|node| node.enabled && node.kind == ConnectorKind::Store)
         .map(|node| {
             json!({"connectorId":node.connector_id,"name":node.name,
             "connected":state.transport.connected(&node.connector_id),"enabled":node.enabled})
@@ -72,16 +68,26 @@ pub(super) fn admin_routes(state: Arc<ApiState>) -> Router<Arc<ApiState>> {
         .route("/v1/integrations/{id}", delete(revoke))
         .route("/v1/integrations/{id}/token", get(reveal))
         .route_layer(middleware::from_fn_with_state(state, authorize_admin))
-        .route_layer(middleware::from_fn(
-            |request: Request, next: Next| async move {
-                require_https(&request)?;
-                Ok::<_, ApiError>(no_store(next.run(request).await))
-            },
-        ))
+        .route_layer(middleware::from_fn(authorize_https))
+        .route_layer(middleware::map_response(no_store_response))
+}
+
+async fn no_store_response(response: Response) -> Response {
+    no_store(response)
+}
+
+fn integration_view(integration: Integration) -> Value {
+    json!({"id":integration.id,"name":integration.name,"allConnectors":true})
 }
 
 async fn list(State(state): State<Arc<ApiState>>) -> Result<Json<Value>> {
-    Ok(Json(json!({"integrations":state.registry.integrations()?})))
+    let integrations: Vec<_> = state
+        .registry
+        .integrations()?
+        .into_iter()
+        .map(integration_view)
+        .collect();
+    Ok(Json(json!({"integrations":integrations})))
 }
 
 async fn issue(
@@ -92,7 +98,7 @@ async fn issue(
     let token = state.registry.integration_token(&integration.id)?;
     Ok((
         StatusCode::CREATED,
-        Json(json!({"integration":integration,"token":token})),
+        Json(json!({"integration":integration_view(integration),"token":token})),
     ))
 }
 

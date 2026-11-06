@@ -33,7 +33,7 @@ def main() -> None:
                                  "python3 -c " + shlex.quote(code)], stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, check=True, timeout=45)
         private = json.loads(result.stdout)
-        env["SETUP_BASE_URL"] = private["url"].replace("https://", "http://", 1)
+        env["SETUP_BASE_URL"] = private["url"].replace("http://", "https://", 1)
         env["SETUP_ADMIN_TOKEN"] = private["token"]
         env["NODE_EXTRA_CA_CERTS"] = str(PROJECT / "deploy/testflying-prod-ca.crt")
     profile = tmp / "chrome-profile"

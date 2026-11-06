@@ -1,0 +1,465 @@
+use super::*;
+use axum::{extract::Request, Extension};
+use futures_util::StreamExt;
+use registry::Integration;
+use reqwest::{multipart, Client, Url};
+use std::io::{Cursor, Write};
+use tokio::sync::Semaphore;
+use zip::{write::SimpleFileOptions, ZipWriter};
+
+const MAX_IMAGE: usize = 16 * 1024 * 1024;
+const MAX_REPLY: usize = 64 * 1024;
+const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+
+pub struct ScreenshotUploader {
+    url: Url,
+    token: Option<header::HeaderValue>,
+    client: Client,
+    transfers: Semaphore,
+}
+
+impl ScreenshotUploader {
+    pub fn from_environment() -> std::result::Result<Option<Self>, StoreError> {
+        let Some(url) = std::env::var_os("STORE_API_SCREENSHOT_UPLOAD_URL") else {
+            return Ok(None);
+        };
+        let url = url.into_string().map_err(|_| invalid_upstream())?;
+        let token = std::env::var_os("STORE_API_SCREENSHOT_UPLOAD_TOKEN")
+            .map(|token| token.into_string().map_err(|_| invalid_upstream()))
+            .transpose()?;
+        Self::new(&url, token.as_deref()).map(Some)
+    }
+
+    pub fn new(url: &str, token: Option<&str>) -> std::result::Result<Self, StoreError> {
+        let url = Url::parse(url).map_err(|_| invalid_upstream())?;
+        let host = url.host_str().ok_or_else(invalid_upstream)?;
+        let local = matches!(host, "localhost" | "127.0.0.1" | "[::1]");
+        if !(url.scheme() == "https" || (url.scheme() == "http" && local))
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err(invalid_upstream());
+        }
+        let token = token
+            .map(|token| {
+                if token.is_empty() || !token.bytes().all(|byte| byte.is_ascii_graphic()) {
+                    return Err(invalid_upstream());
+                }
+                let mut header = header::HeaderValue::from_str(&format!("Bearer {token}"))
+                    .map_err(|_| invalid_upstream())?;
+                header.set_sensitive(true);
+                Ok(header)
+            })
+            .transpose()?;
+        let client = Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
+            .timeout(Duration::from_secs(45))
+            .build()
+            .map_err(|_| invalid_upstream())?;
+        Ok(Self {
+            url,
+            token,
+            client,
+            transfers: Semaphore::new(4),
+        })
+    }
+
+    async fn send(&self, job: &str, bytes: Vec<u8>) -> std::result::Result<Value, StoreError> {
+        let file = multipart::Part::bytes(bytes)
+            .file_name("screenshot.png")
+            .mime_str("image/png")
+            .expect("valid media type");
+        let mut request = self
+            .client
+            .post(self.url.clone())
+            .header("Idempotency-Key", job)
+            .multipart(multipart::Form::new().part("file", file));
+        if let Some(token) = &self.token {
+            request = request.header(header::AUTHORIZATION, token);
+        }
+        let mut response = request.send().await.map_err(delivery_error)?;
+        if !response.status().is_success() {
+            return Err(StoreError::new(
+                502,
+                "upstream_rejected",
+                "Screenshot upload was rejected",
+            ));
+        }
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(delivery_error)? {
+            if chunk.len() > MAX_REPLY - body.len() {
+                return Err(StoreError::new(
+                    502,
+                    "invalid_upstream_reply",
+                    "Screenshot upload reply is too large",
+                ));
+            }
+            body.extend_from_slice(&chunk);
+        }
+        if body.is_empty() {
+            return Ok(Value::Null);
+        }
+        let reply: Value = serde_json::from_slice(&body).map_err(|_| {
+            StoreError::new(
+                502,
+                "invalid_upstream_reply",
+                "Screenshot upload reply must be JSON",
+            )
+        })?;
+        let image_url = reply
+            .get("imageUrl")
+            .and_then(Value::as_str)
+            .filter(|value| {
+                value.len() <= 2048
+                    && Url::parse(value).is_ok_and(|url| {
+                        url.scheme() == "https"
+                            && url.host_str().is_some()
+                            && url.username().is_empty()
+                            && url.password().is_none()
+                    })
+            });
+        Ok(image_url.map_or(Value::Null, |url| json!({"imageUrl":url})))
+    }
+}
+
+fn invalid_upstream() -> StoreError {
+    StoreError::new(
+        500,
+        "invalid_screenshot_upload_config",
+        "Invalid screenshot upload destination or credentials",
+    )
+}
+
+fn delivery_error(error: reqwest::Error) -> StoreError {
+    let status = if error.is_timeout() { 504 } else { 502 };
+    StoreError::new(
+        status,
+        "delivery_unknown",
+        "Screenshot delivery could not be confirmed",
+    )
+}
+
+fn configured(uploader: &Option<Arc<ScreenshotUploader>>) -> Result<&ScreenshotUploader> {
+    uploader.as_deref().ok_or_else(|| {
+        StoreError::new(
+            503,
+            "screenshot_upload_unconfigured",
+            "Screenshot upload destination is not configured",
+        )
+        .into()
+    })
+}
+
+pub(super) fn routes(
+    state: Arc<ApiState>,
+    uploader: Option<ScreenshotUploader>,
+) -> Router<Arc<ApiState>> {
+    let external = Router::new()
+        .route("/v1/screenshot-jobs", post(submit))
+        .route("/v1/screenshot-jobs/{job}", get(status))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            authorize_client,
+        ));
+    let admin = Router::new()
+        .route(
+            "/v1/connectors/{id}/screenshot-installer",
+            get(screenshot_installer),
+        )
+        .route_layer(middleware::from_fn_with_state(state, authorize_admin));
+    external
+        .merge(admin)
+        .route("/v1/connectors/{id}/screenshot-jobs/claim", post(claim))
+        .route(
+            "/v1/connectors/{id}/screenshot-jobs/{job}/failure",
+            post(fail),
+        )
+        .route(
+            "/v1/connectors/{id}/screenshot-jobs/{job}/image",
+            put(image),
+        )
+        .route_layer(middleware::from_fn(integrations::authorize_https))
+        .route_layer(middleware::map_response(|response| async {
+            integrations::no_store(response)
+        }))
+        .layer(Extension(uploader.map(Arc::new)))
+}
+
+async fn screenshot_installer(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+) -> Result<Response> {
+    let node = state.registry.get(&id)?;
+    if node.kind != ConnectorKind::Screenshot || !node.enabled {
+        return Err(StoreError::new(
+            422,
+            "invalid_screenshot_connector",
+            "Select an enabled Screenshot Connector",
+        )
+        .into());
+    }
+    let mut config = super::config(&state, &node);
+    config["codexPath"] = json!("");
+    config["codexHome"] = json!("");
+    config["codexPermissionProfile"] = json!("screenshot-worker");
+    config["profiles"] = json!({});
+    let config = serde_json::to_vec_pretty(&config).expect("Connector config serialization");
+    let bytes = installer_archive(&config).map_err(|_| {
+        StoreError::new(
+            500,
+            "installer_error",
+            "Cannot package Screenshot Connector",
+        )
+    })?;
+    let headers = [
+        (header::CONTENT_TYPE, "application/zip"),
+        (
+            header::CONTENT_DISPOSITION,
+            "attachment; filename=\"screenshot-connector-macos.zip\"",
+        ),
+        (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+    ];
+    Ok((headers, bytes).into_response())
+}
+
+fn installer_archive(config: &[u8]) -> zip::result::ZipResult<Vec<u8>> {
+    let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
+    let files: [(&str, &[u8], u32); 7] = [
+        ("connector.json", config, 0o600),
+        (
+            "run.sh",
+            include_bytes!("../../../packaging/screenshot-connector/run.sh"),
+            0o700,
+        ),
+        (
+            "README.md",
+            include_bytes!("../../../packaging/screenshot-connector/README.md"),
+            0o600,
+        ),
+        (
+            ".codex/artifacts.toml",
+            include_bytes!("../../../packaging/screenshot-connector/artifacts.toml"),
+            0o600,
+        ),
+        (
+            "scripts/screenshot_connector.py",
+            include_bytes!("../../../scripts/screenshot_connector.py"),
+            0o600,
+        ),
+        (
+            "scripts/managed_workspace.py",
+            include_bytes!("../../../scripts/managed_workspace.py"),
+            0o600,
+        ),
+        (
+            "testflying-prod-ca.crt",
+            include_bytes!("../../../deploy/testflying-prod-ca.crt"),
+            0o644,
+        ),
+    ];
+    for (name, data, mode) in files {
+        archive.start_file(name, SimpleFileOptions::default().unix_permissions(mode))?;
+        archive.write_all(data)?;
+    }
+    Ok(archive.finish()?.into_inner())
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Submit {
+    connector_id: String,
+    profile: String,
+    prompt: String,
+}
+
+fn require_integration(access: Option<Extension<Integration>>) -> Result<Integration> {
+    access.map(|Extension(access)| access).ok_or_else(|| {
+        StoreError::new(
+            403,
+            "integration_token_required",
+            "Screenshot jobs require an integration token",
+        )
+        .into()
+    })
+}
+
+async fn submit(
+    State(state): State<Arc<ApiState>>,
+    access: Option<Extension<Integration>>,
+    Extension(uploader): Extension<Option<Arc<ScreenshotUploader>>>,
+    Json(input): Json<Submit>,
+) -> Result<(StatusCode, Json<Value>)> {
+    let access = require_integration(access)?;
+    configured(&uploader)?;
+    if input.profile.is_empty()
+        || input.profile.len() > 64
+        || !input
+            .profile
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_')
+        || input.prompt.trim().is_empty()
+        || input.prompt.len() > 16 * 1024
+    {
+        return Err(StoreError::new(
+            422,
+            "invalid_screenshot_job",
+            "Provide a profile and a prompt of at most 16 KiB",
+        )
+        .into());
+    }
+    let job = state.registry.enqueue_screenshot(
+        &access,
+        &input.connector_id,
+        &input.profile,
+        &input.prompt,
+    )?;
+    Ok((StatusCode::ACCEPTED, Json(job)))
+}
+
+async fn status(
+    State(state): State<Arc<ApiState>>,
+    access: Option<Extension<Integration>>,
+    Path(job): Path<String>,
+) -> Result<Json<Value>> {
+    Ok(Json(
+        state
+            .registry
+            .screenshot_status(&require_integration(access)?, &job)?,
+    ))
+}
+
+fn authorize_worker(state: &ApiState, id: &str, headers: &HeaderMap) -> Result<()> {
+    let node = state.registry.authenticate(id, bearer(headers))?;
+    if node.kind != registry::ConnectorKind::Screenshot {
+        return Err(StoreError::new(
+            403,
+            "invalid_connector_kind",
+            "Screenshot Connector required",
+        )
+        .into());
+    }
+    Ok(())
+}
+
+async fn claim(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    Extension(uploader): Extension<Option<Arc<ScreenshotUploader>>>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    authorize_worker(&state, &id, &headers)?;
+    configured(&uploader)?;
+    Ok(match state.registry.claim_screenshot(&id)? {
+        Some(job) => Json(job).into_response(),
+        None => StatusCode::NO_CONTENT.into_response(),
+    })
+}
+
+fn lease(headers: &HeaderMap) -> Result<&str> {
+    headers
+        .get("x-screenshot-lease")
+        .and_then(|v| v.to_str().ok())
+        .filter(|v| v.len() == 36 && Uuid::parse_str(v).is_ok())
+        .ok_or_else(|| {
+            StoreError::new(
+                422,
+                "invalid_job_lease",
+                "A valid screenshot job lease is required",
+            )
+            .into()
+        })
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Failure {
+    code: String,
+}
+
+async fn fail(
+    State(state): State<Arc<ApiState>>,
+    Path((id, job)): Path<(String, String)>,
+    headers: HeaderMap,
+    Json(failure): Json<Failure>,
+) -> Result<StatusCode> {
+    authorize_worker(&state, &id, &headers)?;
+    if !matches!(
+        failure.code.as_str(),
+        "profile_unavailable" | "codex_failed" | "capture_failed"
+    ) {
+        return Err(
+            StoreError::new(422, "invalid_failure", "Unknown screenshot failure code").into(),
+        );
+    }
+    state
+        .registry
+        .finish_screenshot(&id, &job, lease(&headers)?, Err(&failure.code), "running")?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+async fn image(
+    State(state): State<Arc<ApiState>>,
+    Path((id, job)): Path<(String, String)>,
+    Extension(uploader): Extension<Option<Arc<ScreenshotUploader>>>,
+    request: Request,
+) -> Result<StatusCode> {
+    authorize_worker(&state, &id, request.headers())?;
+    let uploader = configured(&uploader)?;
+    let lease = lease(request.headers())?.to_owned();
+    if request
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .is_none_or(|v| v != "image/png")
+    {
+        return Err(StoreError::new(415, "invalid_image_type", "Send a PNG image").into());
+    }
+    let _slot = uploader.transfers.try_acquire().map_err(|_| {
+        StoreError::new(
+            503,
+            "screenshot_upload_busy",
+            "Screenshot upload capacity reached",
+        )
+    })?;
+    let mut stream = request.into_body().into_data_stream();
+    let bytes = tokio::time::timeout(Duration::from_secs(45), async {
+        let mut bytes = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|_| {
+                StoreError::new(400, "invalid_image", "Screenshot upload was interrupted")
+            })?;
+            if chunk.len() > MAX_IMAGE - bytes.len() {
+                return Err(StoreError::new(
+                    413,
+                    "image_too_large",
+                    "Screenshot exceeds 16 MiB",
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if !bytes.starts_with(PNG) || bytes.len() < 33 {
+            return Err(StoreError::new(
+                422,
+                "invalid_image",
+                "Invalid PNG screenshot",
+            ));
+        }
+        Ok(bytes)
+    })
+    .await
+    .map_err(|_| StoreError::new(408, "image_timeout", "Screenshot upload timed out"))??;
+    state.registry.begin_screenshot_upload(&id, &job, &lease)?;
+    let result = uploader.send(&job, bytes).await;
+    state.registry.finish_screenshot(
+        &id,
+        &job,
+        &lease,
+        result.as_ref().map_err(|error| error.code.as_str()),
+        "uploading",
+    )?;
+    result?;
+    Ok(StatusCode::NO_CONTENT)
+}

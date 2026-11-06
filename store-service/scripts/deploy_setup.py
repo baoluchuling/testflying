@@ -160,6 +160,19 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
     mapped = []
     report_path = PROJECT / "docs/setup-deployment-verification.json"
     try:
+        management = "/v1/integrations"
+        existing_token = None
+        if integrations_only:
+            status, body = request(management, snapshot["admin"])
+            check(status == 200, "existing integration inventory readable before rollout")
+            existing = json.loads(body)["integrations"]
+            if existing:
+                status, body = request(management + "/" + existing[0]["id"] + "/token", snapshot["admin"])
+                check(status == 200, "existing credential retrieved for continuity check")
+                existing_token = json.loads(body)["token"]
+            for connection in connections.values():
+                connection.close()
+            connections.clear()
         changed = True
         select(release, previous)
         healthy = False
@@ -179,32 +192,52 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                        "install.cmd", "install.ps1", "install.sh"):
             check(request("/connector-setup/" + suffix)[0] == 200, "setup asset " + (suffix or "index"))
         check(request("/v1/connectors")[0] == 401, "administrator authentication still required")
+        setup = "/connector-setup/api/connectors"
+        check(request(setup, scheme="http")[0] == 403, "node setup requires HTTPS")
+        check(request(setup)[0] == 401, "anonymous node listing rejected")
+        check(request(setup, method="POST", data={"name": ""})[0] == 401, "anonymous node creation rejected")
+        check(request(setup + "/not-a-node/installer/windows-amd64")[0] == 401,
+              "anonymous installer download rejected before lookup")
+        check(request(setup, snapshot["token"])[0] == 401, "business token cannot access node setup")
+        check(request(setup, snapshot["admin"])[0] == 200, "administrator can access node setup")
         if integrations_only:
-            management = "/v1/integrations"
             discovery = "/v1/store-management/connectors"
             check(request(management, scheme="http")[0] == 403, "credential management requires HTTPS")
             check(request(management)[0] == 401, "anonymous credential management rejected")
             check(request(management, snapshot["token"])[0] == 401, "legacy business token cannot manage credentials")
             status, body = request(discovery, snapshot["token"])
             check(status == 200 and bool(json.loads(body)["connectors"]), "legacy business token can list enabled nodes")
-            connector_id = json.loads(body)["connectors"][0]["connectorId"]
+            business_nodes = {row["connectorId"] for row in json.loads(body)["connectors"]}
+            connector_id = next(iter(business_nodes))
+            status, body = request("/connector-setup/")
+            check(status == 200 and b'id="screenshotWorkspace"' in body and b'id="integrationNodes"' not in body,
+                  "deployed setup includes screenshot download panel and issues tokens without a node picker")
+            installer = "/v1/connectors/" + connector_id + "/screenshot-installer"
+            check(request(installer)[0] == 401 and request(installer, snapshot["admin"])[0] == 422,
+                  "screenshot installer route is administrator-only and rejects a store node")
             status, body = request(management, snapshot["admin"])
-            check(status == 200 and all("token" not in row for row in json.loads(body)["integrations"]),
-                  "admin integration listing omits token values")
+            check(status == 200 and all(row.get("allConnectors") is True and "token" not in row
+                                        for row in json.loads(body)["integrations"]),
+                  "all existing integrations report full node access without exposing token values")
+            if existing_token:
+                status, body = request(discovery, existing_token)
+                check(status == 200 and {row["connectorId"] for row in json.loads(body)["connectors"]} == business_nodes,
+                      "original existing token can access all enabled store nodes")
             name = "Integration verification " + root.name
             token = None
             try:
-                status, body = request(management, snapshot["admin"], "POST", {"name": name, "connectorIds": [connector_id]})
+                status, body = request(management, snapshot["admin"], "POST", {"name": name})
                 check(status == 201, "temporary integration credential issued")
                 created = json.loads(body)
+                check(created["integration"]["allConnectors"] is True, "new integration grants all nodes")
                 integration = management + "/" + created["integration"]["id"]
                 token = created["token"]
                 status, body = request(integration + "/token", snapshot["admin"])
                 check(status == 200 and json.loads(body)["token"] == token, "administrator can retrieve the same credential")
                 check(request(integration + "/token", token)[0] == 401, "integration cannot retrieve admin credentials")
                 status, body = request(discovery, token)
-                check(status == 200 and [row["connectorId"] for row in json.loads(body)["connectors"]] == [connector_id],
-                      "integration lists only its granted node")
+                check(status == 200 and {row["connectorId"] for row in json.loads(body)["connectors"]} == business_nodes,
+                      "new integration lists all enabled store nodes")
             finally:
                 status, body = request(management, snapshot["admin"])
                 check(status == 200, "temporary integration cleanup listing available")
@@ -222,14 +255,14 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             report_path.write_text(json.dumps(report, indent=2) + "\n")
             success = True
             return
-        setup = "/connector-setup/api/connectors"
-        status, body = request(setup, method="POST", data={"name": "Setup deployment verification (mock only)"})
+        status, body = request(setup, snapshot["admin"], method="POST",
+                               data={"name": "Setup deployment verification (mock only)"})
         check(status == 201, "temporary verification node created")
         created = json.loads(body)
         node = created["connector"]["connectorId"]
-        status, body = request(setup)
+        status, body = request(setup, snapshot["admin"])
         check(status == 200 and any(item["connectorId"] == node for item in json.loads(body)["connectors"]),
-              "public list includes the verification node")
+              "administrator list includes the verification node")
         config = created["installation"]
         config.update({"provider": {"mode": "mock"}, "listenAddr": "127.0.0.1:0"})
         private = tmp / "connector.json"
@@ -268,7 +301,7 @@ print(json.dumps({'environmentSha256':hashlib.sha256(open('/etc/testflying-store
         check(after["current"] == release, "new API release selected")
         report = {"runId": root.name, "stage": "api-deployed", "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                   "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"], "checks": checks,
-                  "baseUrl": "http://store-api.example.com/store-api", "addressRedacted": True,
+                  "baseUrl": "https://store-api.example.com/store-api", "addressRedacted": True,
                   "apiSha256": expected_api, "connectorBinarySha256": snapshot["binaries"],
                   "actualStoreAccountsUsed": False, "cleanup": "See the supervisor cleanup report for this runId"}
         report_path.write_text(json.dumps(report, indent=2) + "\n")

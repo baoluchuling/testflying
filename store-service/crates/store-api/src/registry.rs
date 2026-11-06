@@ -8,6 +8,7 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 mod integrations;
+pub(crate) mod screenshots;
 pub(crate) use integrations::{Integration, IntegrationInput, TOKEN_PREFIX};
 
 pub type Result<T> = std::result::Result<T, StoreError>;
@@ -26,11 +27,20 @@ pub struct ConnectorInput {
     pub name: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConnectorKind {
+    #[default]
+    Store,
+    Screenshot,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Connector {
     pub connector_id: String,
     pub name: String,
+    pub kind: ConnectorKind,
     pub base_url: Option<String>,
     pub enabled: bool,
     pub app_count: u64,
@@ -57,6 +67,7 @@ impl Registry {
             .map_err(database_error)?;
         db.busy_timeout(std::time::Duration::from_secs(5))
             .map_err(database_error)?;
+        // Keep the old grant table so an older binary can still read existing credentials.
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS connectors (
             id TEXT PRIMARY KEY, name TEXT NOT NULL, mode TEXT NOT NULL,
@@ -74,6 +85,7 @@ impl Registry {
             PRIMARY KEY(integration_id,connector_id));",
         )
         .map_err(database_error)?;
+        screenshots::create_schema(&db)?;
         Ok(Self {
             db: Mutex::new(db),
             signing_key: signing_key.as_bytes().to_vec(),
@@ -81,6 +93,14 @@ impl Registry {
     }
 
     pub fn create(&self, input: ConnectorInput) -> Result<Connector> {
+        self.create_with_kind(input, ConnectorKind::Store)
+    }
+
+    pub fn create_with_kind(
+        &self,
+        input: ConnectorInput,
+        kind: ConnectorKind,
+    ) -> Result<Connector> {
         if input.name.trim().is_empty() || input.name.len() > 160 {
             return Err(StoreError::new(
                 422,
@@ -90,12 +110,16 @@ impl Registry {
         }
         let id = Uuid::new_v4().to_string();
         let nonce = Uuid::new_v4().to_string();
+        let mode = match kind {
+            ConnectorKind::Store => "auto",
+            ConnectorKind::Screenshot => "screenshot",
+        };
         self.db
             .lock()
             .unwrap()
             .execute(
                 "INSERT INTO connectors(id,name,mode,base_url,nonce) VALUES(?1,?2,?3,?4,?5)",
-                params![id, input.name.trim(), "auto", Option::<String>::None, nonce],
+                params![id, input.name.trim(), mode, Option::<String>::None, nonce],
             )
             .map_err(database_error)?;
         self.get(&id)
@@ -103,7 +127,9 @@ impl Registry {
 
     pub fn get(&self, id: &str) -> Result<Connector> {
         self.db.lock().unwrap().query_row("SELECT c.id,c.name,c.mode,c.base_url,c.enabled,c.nonce,(SELECT count(*) FROM app_bindings a WHERE a.connector_id=c.id) FROM connectors c WHERE c.id=?1", [id], |row| Ok(Connector {
-            connector_id: row.get(0)?, name: row.get(1)?, base_url: row.get(3)?, enabled: row.get(4)?, nonce: row.get(5)?, app_count: row.get::<_, i64>(6)? as u64,
+            connector_id: row.get(0)?, name: row.get(1)?,
+            kind: if row.get::<_, String>(2)? == "screenshot" { ConnectorKind::Screenshot } else { ConnectorKind::Store },
+            base_url: row.get(3)?, enabled: row.get(4)?, nonce: row.get(5)?, app_count: row.get::<_, i64>(6)? as u64,
         })).optional().map_err(database_error)?.ok_or_else(|| StoreError::new(404, "connector_not_found", "Connector not found"))
     }
 
@@ -220,35 +246,21 @@ impl Registry {
     }
 
     pub fn bind(&self, platform: Platform, identifier: &str, id: &str) -> Result<Connector> {
-        self.bind_scoped(platform, identifier, id, None)
-    }
-
-    pub(crate) fn bind_scoped(
-        &self,
-        platform: Platform,
-        identifier: &str,
-        id: &str,
-        integration: Option<&Integration>,
-    ) -> Result<Connector> {
         validate_identifier(identifier)?;
         {
             let mut db = self.db.lock().unwrap();
             let transaction = db
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(database_error)?;
-            if let Some(integration) = integration {
-                integration.require_connector(id)?;
-                if let Some(previous) = binding(&transaction, platform, identifier)? {
-                    integration.require_connector(&previous)?;
-                }
-            }
-            let enabled: Option<bool> = transaction
-                .query_row("SELECT enabled FROM connectors WHERE id=?1", [id], |row| {
-                    row.get(0)
-                })
+            let node: Option<(bool, String)> = transaction
+                .query_row(
+                    "SELECT enabled,mode FROM connectors WHERE id=?1",
+                    [id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
                 .optional()
                 .map_err(database_error)?;
-            match enabled {
+            match node {
                 None => {
                     return Err(StoreError::new(
                         404,
@@ -256,14 +268,21 @@ impl Registry {
                         "Connector not found",
                     ))
                 }
-                Some(false) => {
+                Some((false, _)) => {
                     return Err(StoreError::new(
                         409,
                         "connector_disabled",
                         "Connector is disabled",
                     ))
                 }
-                Some(true) => {}
+                Some((true, mode)) if mode == "screenshot" => {
+                    return Err(StoreError::new(
+                        422,
+                        "invalid_connector_kind",
+                        "App bindings require a Store Connector",
+                    ))
+                }
+                Some((true, _)) => {}
             }
             transaction.execute("INSERT INTO app_bindings(platform,bundle_identifier,connector_id) VALUES(?1,?2,?3) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET connector_id=excluded.connector_id", params![platform.to_string(),identifier,id]).map_err(database_error)?;
             transaction.commit().map_err(database_error)?;
@@ -285,15 +304,6 @@ impl Registry {
     }
 
     pub fn resolve(&self, platform: Platform, identifier: &str) -> Result<Connector> {
-        self.resolve_scoped(platform, identifier, None)
-    }
-
-    pub(crate) fn resolve_scoped(
-        &self,
-        platform: Platform,
-        identifier: &str,
-        integration: Option<&Integration>,
-    ) -> Result<Connector> {
         validate_identifier(identifier)?;
         let id = binding(&self.db.lock().unwrap(), platform, identifier)?.ok_or_else(|| {
             StoreError::new(
@@ -302,9 +312,6 @@ impl Registry {
                 "No Connector is assigned to this application",
             )
         })?;
-        if let Some(integration) = integration {
-            integration.require_connector(&id)?;
-        }
         let node = self.get(&id)?;
         if !node.enabled {
             return Err(StoreError::new(

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
+import https from "node:https";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { generateKeyPairSync, createHash, randomUUID } from "node:crypto";
@@ -35,14 +37,19 @@ const nodes = [];
 const integrationFixtures = [];
 const fixtureAdminToken = "fixture-admin-token";
 const fixtureIntegrationToken = "fixture-integration-token";
+const screenshotInstallerPath = /^\/store-api\/v1\/connectors\/([^/]+)\/screenshot-installer$/;
 const created = new Set();
 const posts = [];
 const violations = [];
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 let server;
+let insecureServer;
 let base = process.env.SETUP_BASE_URL;
 let downloadAttempts = 0;
 let listAttempts = 0;
+let heldReveal;
+let revealStarted;
+let releaseReveal;
 const executable = fs.readFileSync(path.join(project, "releases/windows-amd64/store-connector.exe"));
 
 if (!production) {
@@ -62,7 +69,7 @@ if (!production) {
     "install.sh": [path.join(project, "packaging/connector/install.sh"), "text/plain"],
   };
   const csp = fs.readFileSync(path.join(project, "crates/store-api/src/setup.rs"), "utf8").match(/const CSP: &str = "([^"]+)"/)[1];
-  server = http.createServer(async (req, res) => {
+  const handler = async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost");
       res.setHeader("Cache-Control", "no-store");
@@ -76,18 +83,42 @@ if (!production) {
       }
       if (url.pathname === "/favicon.ico") { res.writeHead(204).end(); return; }
       res.setHeader("Content-Type", "application/json");
-      if (url.pathname.startsWith("/store-api/v1/integrations")) {
+      if (relative.startsWith("api/") || url.pathname.startsWith("/store-api/v1/integrations") ||
+          screenshotInstallerPath.test(url.pathname)) {
+        if (!req.socket.encrypted) { res.writeHead(403).end("{}"); return; }
         if (req.headers.authorization !== `Bearer ${fixtureAdminToken}`) { res.writeHead(401).end("{}"); return; }
+      }
+      const screenshot = screenshotInstallerPath.exec(url.pathname);
+      if (screenshot) {
+        if (!nodes.some((node) => node.kind === "screenshot" && node.connectorId === screenshot[1])) {
+          res.writeHead(422).end("{}");
+          return;
+        }
+        const zip = new JSZip();
+        zip.file("connector.json", JSON.stringify({ kind: "screenshot", connectorId: screenshot[1], token: "fixture-node-token" }));
+        zip.file("run.sh", fs.readFileSync(path.join(project, "packaging/screenshot-connector/run.sh")));
+        zip.file("scripts/screenshot_connector.py", fs.readFileSync(path.join(project, "scripts/screenshot_connector.py")));
+        res.setHeader("Content-Type", "application/zip");
+        res.end(await zip.generateAsync({ type: "nodebuffer" }));
+        return;
+      }
+      if (url.pathname.startsWith("/store-api/v1/integrations")) {
         if (req.method === "POST") {
           let body = "";
           for await (const chunk of req) body += chunk;
-          const integration = { id: randomUUID(), ...JSON.parse(body) };
+          const input = JSON.parse(body);
+          assert.deepEqual(Object.keys(input), ["name"]);
+          const integration = { id: randomUUID(), ...input, allConnectors: true };
           integrationFixtures.push(integration);
           res.writeHead(201).end(JSON.stringify({ integration, token: fixtureIntegrationToken }));
         } else if (req.method === "DELETE") {
           integrationFixtures.pop();
           res.writeHead(204).end();
         } else if (url.pathname.endsWith("/token")) {
+          if (heldReveal) {
+            revealStarted();
+            await heldReveal;
+          }
           res.end(JSON.stringify({ token: fixtureIntegrationToken }));
         } else {
           res.end(JSON.stringify({ integrations: integrationFixtures }));
@@ -103,7 +134,7 @@ if (!production) {
         for await (const chunk of req) body += chunk;
         const data = JSON.parse(body);
         posts.push(data);
-        const node = { connectorId: randomUUID(), name: data.name, enabled: true, connected: false, appCount: 0 };
+        const node = { connectorId: randomUUID(), name: data.name, kind: data.kind ?? "store", enabled: true, connected: false, appCount: 0 };
         nodes.push(node);
         res.writeHead(201).end(JSON.stringify({ connector: node })); return;
       }
@@ -122,15 +153,20 @@ if (!production) {
       }
       res.writeHead(404).end("{}");
     } catch { res.writeHead(500).end("{}"); }
-  });
+  };
+  const key = path.join(tmp, "fixture-https.key");
+  const cert = path.join(tmp, "fixture-https.crt");
+  execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
+    "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", key, "-out", cert],
+  { stdio: "ignore" });
+  server = https.createServer({ key: fs.readFileSync(key), cert: fs.readFileSync(cert) }, handler);
+  insecureServer = http.createServer(handler);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  base = `http://127.0.0.1:${server.address().port}/store-api`;
+  await new Promise((resolve) => insecureServer.listen(0, "127.0.0.1", resolve));
+  base = `https://127.0.0.1:${server.address().port}/store-api`;
 }
 
 const origin = new URL(base).origin;
-const navigation = new URL(base + "/connector-setup/");
-let credentialsEntered = false;
-let secureNavigationProbes = 0;
 const privateKey = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ type: "pkcs8", format: "pem" });
 const rsa = generateKeyPairSync("rsa", { modulusLength: 2048 }).privateKey.export({ type: "pkcs8", format: "pem" });
 const appleFile = path.join(tmp, "AuthKey_TESTKEY123.p8");
@@ -142,7 +178,21 @@ let browser;
 let reportPath;
 try {
   browser = await chromium.connectOverCDP(process.env.SETUP_CDP_ENDPOINT);
-  const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1440, height: 1100 } });
+  const context = await browser.newContext({ acceptDownloads: true, ignoreHTTPSErrors: !production, viewport: { width: 1440, height: 1100 } });
+  if (!production) {
+    const insecure = await context.newPage();
+    const insecureApi = [];
+    insecure.on("request", (request) => {
+      if (new URL(request.url()).pathname.includes("/api/")) insecureApi.push(request.method());
+    });
+    await insecure.goto(`http://127.0.0.1:${insecureServer.address().port}/store-api/connector-setup/`);
+    await insecure.locator("#adminHttps").waitFor();
+    assert.equal(await insecure.locator("#adminCredential").isVisible(), false);
+    assert.match(await insecure.locator("#adminHttpsLink").getAttribute("href"), /^https:/);
+    assert.deepEqual(insecureApi, []);
+    await insecure.close();
+    checks.push("HTTP displays the HTTPS link without prompting for credentials or contacting the node API");
+  }
   const page = await context.newPage();
   if (!production) {
     await page.addInitScript(() => {
@@ -177,24 +227,16 @@ try {
     const url = new URL(request.url());
     const body = request.postData() || "";
     const authenticated = !!request.headers().authorization;
-    const fixtureAdminRequest = !production && url.origin === origin && url.pathname.startsWith("/store-api/v1/integrations");
-    if (authenticated && !fixtureAdminRequest) {
-      violations.push("browser sent an Authorization header");
+    const adminRequest = url.origin === origin && url.protocol === "https:" &&
+      (/^\/store-api\/connector-setup\/api\/connectors(?:\/|$)/.test(url.pathname) ||
+       /^\/store-api\/v1\/integrations(?:\/|$)/.test(url.pathname) || screenshotInstallerPath.test(url.pathname));
+    if (authenticated !== adminRequest) {
+      violations.push("incorrect authorization header boundary");
       return route.abort();
     }
     if (["http:", "https:"].includes(url.protocol) && url.origin !== origin) {
-      // Chrome can probe HTTPS before falling back to the requested HTTP page.
-      // This is permitted only for a credential-free initial navigation to this exact center page.
-      if (production && !credentialsEntered && !authenticated && !body && request.isNavigationRequest() &&
-          request.method() === "GET" && url.protocol === "https:" && url.hostname === navigation.hostname &&
-          !url.port && url.pathname === navigation.pathname && !url.search) {
-        secureNavigationProbes++;
-      } else {
-        violations.push({ kind: "blocked cross-origin request", sameHost: url.hostname === navigation.hostname,
-          scheme: url.protocol, method: request.method(), type: request.resourceType(),
-          setupPath: url.pathname === navigation.pathname, authenticated, hasBody: !!body });
-        return route.abort();
-      }
+      violations.push("blocked cross-origin request");
+      return route.abort();
     }
     if (body.includes("BEGIN PRIVATE KEY") || body.includes("private_key") || body.includes("test-issuer")) {
       violations.push("blocked credential file transmission");
@@ -210,20 +252,32 @@ try {
   });
   await page.goto(base + "/connector-setup/", { waitUntil: "domcontentloaded" });
   assert.equal(new URL(page.url()).origin === origin, true, "page opened on the requested origin");
-  if (!production) {
-    await page.locator("#status[data-kind=error]").waitFor();
-    await page.locator("#retryConnection").click();
-    checks.push("retry connects after an initial request failure");
+  await page.locator("#adminUnlock").waitFor();
+  assert.equal(await page.locator("#setupForm").isVisible(), false);
+  assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);
+  assert.equal(await page.locator("#screenshotWorkspace").isVisible(), false);
+  assert.equal(listAttempts, 0);
+  async function unlock(admin = production ? token : fixtureAdminToken) {
+    await page.locator("#adminCredential").fill(admin);
+    await page.locator("#loginButton").click();
   }
+  if (!production) {
+    await unlock("wrong-fixture");
+    await page.getByText("管理员 Token 无效", { exact: true }).waitFor();
+    assert.equal(await page.locator("#setupForm").isVisible(), false);
+    await unlock();
+    await page.locator("#status[data-kind=error]").waitFor();
+    checks.push("wrong Token stays locked and transient unlock failure can be retried");
+  }
+  await unlock();
   await page.locator("#setupForm").waitFor({ state: "visible" });
   assert.equal(await page.locator("#setupForm input[type=password]").count(), 0);
   assert.deepEqual(await page.evaluate(() => {
     const form = document.getElementById("setupForm");
     return [typeof form.nodeName, typeof form.target];
   }), ["string", "string"]);
-  checks.push("setup form loads without a login or Authorization header");
+  checks.push("node setup and integration management appear only after shared HTTPS administrator unlock");
   if (!production) await page.screenshot({ path: path.join(tmp, "setup-preview.png"), fullPage: true });
-  credentialsEntered = true;
   await page.locator("#connectorName").fill("Browser verification · dual platform");
   await page.locator("#issuerId").fill("test-issuer");
   await page.locator("#appleFile").setInputFiles(appleFile);
@@ -281,27 +335,42 @@ try {
   if (!production) assert.equal(nodes.length, 1);
   checks.push("program-only upgrade preserves node identity without including local configuration");
   if (!production) {
-    await page.getByText("接入凭据", { exact: true }).click();
-    await page.locator("#integrationAdmin").fill("wrong-fixture");
-    await page.locator("#integrationUnlock button").click();
-    await page.getByText("管理员 Token 无效", { exact: true }).waitFor();
-    assert.equal(await page.locator("#integrationPanel").isVisible(), false);
-    await page.locator("#integrationAdmin").fill(fixtureAdminToken);
-    await page.locator("#integrationUnlock button").click();
-    await page.locator("#integrationPanel").waitFor();
+    await Promise.all([
+      page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/v1/integrations")),
+      page.getByText("接入凭据", { exact: true }).click(),
+    ]);
     await page.locator("#integrationName").fill("Fixture System");
-    await page.locator("#integrationNodes").selectOption(firstId);
+    assert.equal(await page.locator("#integrationIssue select").count(), 0);
     await page.locator("#integrationIssue button").click();
     await page.getByText("Token 已发放，可复制到该系统的后端。", { exact: true }).waitFor();
     assert.equal(await page.locator("#integrationToken").inputValue(), fixtureIntegrationToken);
-    assert.deepEqual(integrationFixtures[0].connectorIds, [firstId]);
+    assert.equal(integrationFixtures[0].allConnectors, true);
+    assert.match(await page.locator("#integrationList").textContent(), /全部节点/);
     await page.locator("#integrationCopy").click();
     await page.waitForFunction((expected) => window.fixtureCopiedToken === expected, fixtureIntegrationToken);
     await page.getByText("Token 已复制。", { exact: true }).waitFor();
-    await page.locator("#integrationLock").click();
+    heldReveal = new Promise((resolve) => { releaseReveal = resolve; });
+    const started = new Promise((resolve) => { revealStarted = resolve; });
+    const aborted = page.waitForEvent("requestfailed", (request) => new URL(request.url()).pathname.endsWith("/token"));
+    await page.getByRole("button", { name: "取回 Token", exact: true }).click();
+    await started;
+    await page.locator("#adminLock").click();
+    await aborted;
+    releaseReveal();
+    heldReveal = undefined;
     assert.equal(await page.locator("#integrationToken").inputValue(), "");
-    await page.locator("#integrationAdmin").fill(fixtureAdminToken);
-    await page.locator("#integrationUnlock button").click();
+    assert.equal(await page.locator("#appleFile").inputValue(), "");
+    assert.equal(await page.locator("#googleFile").inputValue(), "");
+    assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);
+    checks.push("locking cancels a pending credential reveal and clears local files and secrets");
+    const screenshotNode = { connectorId: randomUUID(), kind: "screenshot", name: "Fixture Screenshot Mac", enabled: true, connected: false };
+    nodes.push(screenshotNode);
+    await unlock();
+    await page.getByText("接入凭据", { exact: true }).click();
+    assert.equal(await page.locator(`#connector option[value="${screenshotNode.connectorId}"]`).count(), 0);
+    assert.equal(await page.locator(`#screenshotNode option[value="${screenshotNode.connectorId}"]`).textContent(),
+      "Fixture Screenshot Mac");
+    checks.push("screenshot node is available in its own deployment panel and excluded from Store Connector downloads");
     await page.getByRole("button", { name: "取回 Token", exact: true }).click();
     await page.getByText("可以复制这枚接入 Token。", { exact: true }).waitFor();
     assert.equal(await page.locator("#integrationToken").inputValue(), fixtureIntegrationToken);
@@ -310,11 +379,34 @@ try {
     await page.getByText("Token 已撤销。", { exact: true }).waitFor();
     assert.equal(await page.locator("#integrationToken").inputValue(), "");
     assert.equal(integrationFixtures.length, 0);
-    checks.push("admin can issue, copy, retrieve, and revoke the scoped integration token in the setup page");
+    checks.push("admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it");
+    await page.getByText("截图 Connector 部署", { exact: true }).click();
+    await page.locator("#screenshotName").fill("New Screenshot Mac");
+    await page.getByRole("button", { name: "新建截图节点", exact: true }).click();
+    await page.getByText("截图节点已创建，可以下载部署包。", { exact: true }).waitFor();
+    const nodeId = await page.locator("#screenshotNode").inputValue();
+    assert.notEqual(nodeId, screenshotNode.connectorId);
+    const [installerDownload] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "下载 macOS 部署包", exact: true }).click(),
+    ]);
+    assert.equal(installerDownload.suggestedFilename(), `screenshot-connector-macos-${nodeId.slice(0, 8)}.zip`);
+    const installerFile = path.join(tmp, "fixture-screenshot-connector.zip");
+    await installerDownload.saveAs(installerFile);
+    const deployment = await JSZip.loadAsync(fs.readFileSync(installerFile), { checkCRC32: true });
+    const nodeConfig = JSON.parse(await deployment.file("connector.json").async("string"));
+    assert.equal(nodeConfig.connectorId, nodeId);
+    assert.equal(nodeConfig.kind, "screenshot");
+    assert(deployment.file("run.sh") && deployment.file("scripts/screenshot_connector.py"));
+    await page.locator("#adminLock").click();
+    assert.equal(await page.locator("#screenshotWorkspace").isVisible(), false);
+    assert.equal(await page.locator("#screenshotNode").inputValue(), "");
+    checks.push("unlocked admin can provision a screenshot node and download its macOS deployment ZIP");
   }
-  credentialsEntered = false;
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.locator("#setupForm").waitFor({ state: "visible" });
+  await page.locator("#adminUnlock").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#setupForm").isVisible(), false);
+  assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);
   assert.equal(await page.locator("#appleFile").inputValue(), "");
   assert.equal(await page.locator("#googleFile").inputValue(), "");
   assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
@@ -323,7 +415,9 @@ try {
   assert(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth));
   checks.push("mobile layout has no horizontal overflow");
   assert.deepEqual(violations, []);
-  if (!production) for (const post of posts) assert.deepEqual(Object.keys(post), ["name"]);
+  if (!production) for (const post of posts) {
+    assert.deepEqual(Object.keys(post), post.kind === "screenshot" ? ["name", "kind"] : ["name"]);
+  }
   checks.push("no credential file or account fields are uploaded and CSP passes");
   reportPath = path.join(project, "docs", production ? "setup-deployment-verification.json" : "setup-ui-verification.json");
   const report = fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, "utf8")) : {};
@@ -333,11 +427,12 @@ try {
   }
   Object.assign(report, { runId: path.basename(root), stage: "browser-tests-passed", browserVerified: false, production,
     checks, windowsExecutableSha256: hash(executable), credentialFilesUploaded: false,
-    verificationNodeIds: [...created], secureNavigationProbes,
+    verificationNodeIds: [...created],
     remainingTemporaryProcesses: [], cleanup: "See the supervisor cleanup report for this runId" });
   fs.writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
   await context.close();
 } finally {
+  releaseReveal?.();
   let cleanupFailed = false;
   try {
     if (production) for (const id of created) {
@@ -350,6 +445,7 @@ try {
   } finally {
     if (browser) await browser.close();
     if (server) await new Promise((resolve) => server.close(resolve));
+    if (insecureServer) await new Promise((resolve) => insecureServer.close(resolve));
   }
   if (cleanupFailed) throw new Error("Verification node cleanup incomplete; inspect the report");
 }

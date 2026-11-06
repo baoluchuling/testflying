@@ -1,4 +1,5 @@
 use axum::{body::Body, http::Request};
+use hmac::{Hmac, Mac};
 use http_body_util::BodyExt;
 use serde_json::Value;
 use std::{fs, io::Cursor, path::PathBuf, time::Duration};
@@ -10,9 +11,18 @@ fn app() -> axum::Router {
 }
 
 fn app_with_release_root(release_root: PathBuf) -> axum::Router {
+    app_with_registry(
+        Registry::open(":memory:", SIGNING_KEY).unwrap(),
+        release_root,
+    )
+}
+
+const SIGNING_KEY: &str = "setup-signing-test-01234567890123456789";
+
+fn app_with_registry(registry: Registry, release_root: PathBuf) -> axum::Router {
     store_api::router(
         ApiState::new(
-            Registry::open(":memory:", "setup-signing-test-01234567890123456789").unwrap(),
+            registry,
             "setup-admin-test-0123456789".into(),
             "tf_int_legacy-client-test-0123456789".into(),
             "https://store.example.invalid/store-api".into(),
@@ -63,7 +73,7 @@ async fn setup_page_is_public_without_exposing_authentication_or_external_script
 }
 
 #[tokio::test]
-async fn setup_api_creates_and_downloads_nodes_without_exposing_other_management_operations() {
+async fn setup_api_requires_https_and_administrator_before_accessing_nodes() {
     let releases = tempfile::tempdir().unwrap();
     fs::create_dir(releases.path().join("windows-amd64")).unwrap();
     fs::write(
@@ -72,20 +82,39 @@ async fn setup_api_creates_and_downloads_nodes_without_exposing_other_management
     )
     .unwrap();
     let app = app_with_release_root(releases.path().to_path_buf());
-    let send = |method: &'static str, path: String, body: &'static str| {
-        app.clone().oneshot(
-            Request::builder()
-                .method(method)
-                .uri(path)
-                .header("content-type", "application/json")
-                .body(Body::from(body))
-                .unwrap(),
-        )
+    let request = |method: &'static str, path: String, body, scheme, token| {
+        let mut request = Request::builder()
+            .method(method)
+            .uri(path)
+            .header("content-type", "application/json");
+        if let Some(scheme) = scheme {
+            request = request.header("x-forwarded-proto", scheme);
+        }
+        if let Some(token) = token {
+            request = request.header("authorization", format!("Bearer {token}"));
+        }
+        app.clone().oneshot(request.body(Body::from(body)).unwrap())
     };
+    let admin = "setup-admin-test-0123456789";
+    let client = "tf_int_legacy-client-test-0123456789";
+    let send = |method, path, body| request(method, path, body, Some("https"), Some(admin));
     let setup = "/connector-setup/api/connectors";
-    let response = send("POST", setup.into(), r#"{"name":"Setup test node"}"#)
-        .await
-        .unwrap();
+    let input = r#"{"name":"Setup test node"}"#;
+    for (scheme, token, expected) in [
+        (Some("https"), None, 401),
+        (Some("https"), Some(client), 401),
+        (Some("http"), Some(admin), 403),
+        (None, Some(admin), 403),
+    ] {
+        for (method, body) in [("GET", ""), ("POST", input)] {
+            let response = request(method, setup.into(), body, scheme, token)
+                .await
+                .unwrap();
+            assert_eq!(response.status(), expected);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+        }
+    }
+    let response = send("POST", setup.into(), input).await.unwrap();
     assert_eq!(response.status(), 201);
     assert_eq!(response.headers()["cache-control"], "no-store");
     let created: Value =
@@ -97,12 +126,24 @@ async fn setup_api_creates_and_downloads_nodes_without_exposing_other_management
     assert_eq!(response.headers()["cache-control"], "no-store");
     let listed: Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(listed["connectors"].as_array().unwrap().len(), 1);
     assert_eq!(listed["connectors"][0]["connectorId"], id);
 
     let installer = format!("{id}/installer/windows-amd64");
-    let response = send("GET", format!("{setup}/{installer}"), "")
-        .await
-        .unwrap();
+    let download = format!("{setup}/{installer}");
+    for (scheme, token, expected) in [
+        ("https", None, 401),
+        ("https", Some(client), 401),
+        ("http", Some(admin), 403),
+    ] {
+        let response = request("GET", download.clone(), "", Some(scheme), token)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        assert_ne!(response.headers()["content-type"], "application/zip");
+    }
+    let response = send("GET", download, "").await.unwrap();
     assert_eq!(response.status(), 200);
     assert_eq!(response.headers()["cache-control"], "no-store");
     let mut zip = zip::ZipArchive::new(Cursor::new(
@@ -119,7 +160,13 @@ async fn setup_api_creates_and_downloads_nodes_without_exposing_other_management
         ("PATCH", format!("/v1/connectors/{id}"), 401),
         ("PATCH", format!("{setup}/{id}"), 404),
     ] {
-        assert_eq!(send(method, path, "").await.unwrap().status(), expected);
+        assert_eq!(
+            request(method, path, "", Some("https"), None)
+                .await
+                .unwrap()
+                .status(),
+            expected
+        );
     }
 }
 
@@ -177,8 +224,13 @@ async fn setup_assets_have_explicit_types_and_cannot_read_arbitrary_files() {
 }
 
 #[tokio::test]
-async fn integration_token_lists_granted_nodes_and_checks_bindings_business_and_revocation() {
-    let app = app();
+async fn new_and_existing_integration_tokens_access_all_nodes_without_reissuing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("registry.sqlite");
+    let app = app_with_registry(
+        Registry::open(&path, SIGNING_KEY).unwrap(),
+        dir.path().into(),
+    );
     let send = |method: &'static str, path: &str, token: &str, scheme: &str, body: Value| {
         app.clone().oneshot(
             Request::builder()
@@ -198,7 +250,7 @@ async fn integration_token_lists_granted_nodes_and_checks_bindings_business_and_
     let admin = "setup-admin-test-0123456789";
     let client = "tf_int_legacy-client-test-0123456789";
     let mut ids = Vec::new();
-    for name in ["Allowed one", "Allowed two", "Other"] {
+    for name in ["First", "Second", "Third"] {
         let node = payload(
             send(
                 "POST",
@@ -218,8 +270,26 @@ async fn integration_token_lists_granted_nodes_and_checks_bindings_business_and_
                 .to_owned(),
         );
     }
+    let legacy_id = "11111111-1111-4111-8111-111111111111";
+    let db = rusqlite::Connection::open(path).unwrap();
+    db.execute(
+        "INSERT INTO integrations(id,name) VALUES(?1,'Previously issued')",
+        [legacy_id],
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO integration_connectors(integration_id,connector_id) VALUES(?1,?2)",
+        rusqlite::params![legacy_id, ids[0]],
+    )
+    .unwrap();
+    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(SIGNING_KEY.as_bytes()).unwrap();
+    mac.update(format!("testflying:integration:v1:{legacy_id}").as_bytes());
+    let old_token = format!(
+        "tf_int_{legacy_id}.{}",
+        hex::encode(mac.finalize().into_bytes())
+    );
     let endpoint = "/v1/integrations";
-    let creation = serde_json::json!({"name":"Internal system","connectorIds":[ids[0],ids[1]]});
+    let creation = serde_json::json!({"name":"Internal system"});
     for (token, scheme, status) in [
         (client, "https", 401),
         ("", "https", 401),
@@ -236,6 +306,7 @@ async fn integration_token_lists_granted_nodes_and_checks_bindings_business_and_
     assert_eq!(issued.status(), 201);
     assert_eq!(issued.headers()["cache-control"], "no-store");
     let issued = payload(issued).await;
+    assert_eq!(issued["integration"]["allConnectors"], true);
     let token = issued["token"].as_str().unwrap();
     let integration = format!(
         "{endpoint}/{}",
@@ -248,7 +319,11 @@ async fn integration_token_lists_granted_nodes_and_checks_bindings_business_and_
             .unwrap(),
     )
     .await;
-    assert!(listed["integrations"][0].get("token").is_none());
+    assert!(listed["integrations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|row| row.get("token").is_none() && row["allConnectors"] == true));
     assert_eq!(
         payload(
             send("GET", &reveal, admin, "https", Value::Null)
@@ -281,23 +356,36 @@ async fn integration_token_lists_granted_nodes_and_checks_bindings_business_and_
             .status(),
         403
     );
-    let nodes = payload(
-        send("GET", list, token, "https", Value::Null)
-            .await
-            .unwrap(),
+    let added = payload(
+        send(
+            "POST",
+            "/v1/connectors",
+            admin,
+            "https",
+            serde_json::json!({"name":"New after issuance"}),
+        )
+        .await
+        .unwrap(),
     )
     .await;
-    assert_eq!(nodes["connectors"].as_array().unwrap().len(), 2);
-    assert_eq!(nodes["connectors"][0]["connectorId"], ids[0]);
-    assert!(nodes["connectors"][0].get("baseUrl").is_none());
+    ids.push(added["connector"]["connectorId"].as_str().unwrap().into());
+    for key in [token, &old_token] {
+        let nodes = payload(send("GET", list, key, "https", Value::Null).await.unwrap()).await;
+        let rows = nodes["connectors"].as_array().unwrap();
+        assert_eq!(rows.len(), 4);
+        for id in &ids {
+            assert!(rows.iter().any(|row| row["connectorId"] == *id));
+        }
+        assert!(rows[0].get("baseUrl").is_none());
+    }
 
     let own = "/v1/apps/ios/com.example.allowed/connector";
     let other = "/v1/apps/ios/com.example.other/connector";
     let node = |index: usize| serde_json::json!({"connectorId":ids[index]});
     for (path, key, index, expected) in [
         (other, admin, 2, 200),
-        (other, token, 0, 403),
-        (own, token, 2, 403),
+        (other, &old_token, 3, 200),
+        (own, token, 2, 200),
         (own, token, 0, 200),
         (own, token, 1, 200),
     ] {
@@ -315,7 +403,7 @@ async fn integration_token_lists_granted_nodes_and_checks_bindings_business_and_
             .unwrap(),
     )
     .await;
-    assert_eq!(binding["connectorId"], ids[2]);
+    assert_eq!(binding["connectorId"], ids[3]);
     assert_eq!(
         send("DELETE", own, token, "https", Value::Null)
             .await
@@ -323,14 +411,17 @@ async fn integration_token_lists_granted_nodes_and_checks_bindings_business_and_
             .status(),
         401
     );
-    for (app_id, status) in [("com.example.other", 403), ("com.example.allowed", 503)] {
+    for (app_id, key) in [
+        ("com.example.other", old_token.as_str()),
+        ("com.example.allowed", token),
+    ] {
         let path = format!("/v1/store-management/apps/ios/{app_id}/store-images");
         assert_eq!(
-            send("GET", &path, token, "https", Value::Null)
+            send("GET", &path, key, "https", Value::Null)
                 .await
                 .unwrap()
                 .status(),
-            status
+            503
         );
     }
     let uploads = "/v1/store-management/apps/ios/com.example.other/uploads";
@@ -340,7 +431,28 @@ async fn integration_token_lists_granted_nodes_and_checks_bindings_business_and_
             .await
             .unwrap()
             .status(),
-        403
+        503
+    );
+    let disabled = format!("/v1/connectors/{}", ids[3]);
+    assert_eq!(
+        send(
+            "PATCH",
+            &disabled,
+            admin,
+            "https",
+            serde_json::json!({"enabled":false})
+        )
+        .await
+        .unwrap()
+        .status(),
+        200
+    );
+    assert_eq!(
+        send("PUT", own, &old_token, "https", node(3))
+            .await
+            .unwrap()
+            .status(),
+        409
     );
     assert_eq!(
         send("DELETE", &integration, admin, "https", Value::Null)

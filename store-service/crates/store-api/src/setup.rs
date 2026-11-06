@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 const CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'";
 
-pub(super) fn routes() -> Router<Arc<super::ApiState>> {
+pub(super) fn routes(state: Arc<super::ApiState>) -> Router<Arc<super::ApiState>> {
     let setup_api = Router::new()
         .route(
             "/connector-setup/api/connectors",
@@ -20,6 +20,11 @@ pub(super) fn routes() -> Router<Arc<super::ApiState>> {
             "/connector-setup/api/connectors/{id}/installer/{target}",
             get(super::installer),
         )
+        .route_layer(middleware::from_fn_with_state(
+            state,
+            super::authorize_admin,
+        ))
+        .route_layer(middleware::from_fn(super::integrations::authorize_https))
         .route_layer(middleware::map_response(|response| async {
             secure(response)
         }));

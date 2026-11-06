@@ -1,5 +1,5 @@
 {
-  "runId": "a4bd000776b6406c85ce5dced226a327",
+  "runId": "8afb9296dc5849c6a2c328fc5d4b2e3f",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -16,15 +16,19 @@
   "packageTestsPassed": 6,
   "production": false,
   "checks": [
-    "retry connects after an initial request failure",
-    "setup form loads without a login or Authorization header",
+    "HTTP displays the HTTPS link without prompting for credentials or contacting the node API",
+    "wrong Token stays locked and transient unlock failure can be retried",
+    "node setup and integration management appear only after shared HTTPS administrator unlock",
     "Apple Key ID recognized from the original filename",
     "failed download retains the newly created node",
     "real Windows executable preserved in a downloadable dual-platform private ZIP",
     "both credential paths are automatic and no application list is included",
     "repeat download reuses node identity and omits disabled-platform secrets",
     "program-only upgrade preserves node identity without including local configuration",
-    "admin can issue, copy, retrieve, and revoke the scoped integration token in the setup page",
+    "locking cancels a pending credential reveal and clears local files and secrets",
+    "screenshot node is available in its own deployment panel and excluded from Store Connector downloads",
+    "admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it",
+    "unlocked admin can provision a screenshot node and download its macOS deployment ZIP",
     "reload clears files and browser storage remains empty",
     "mobile layout has no horizontal overflow",
     "no credential file or account fields are uploaded and CSP passes"
@@ -34,7 +38,8 @@
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "237d0732-ba15-4641-bb2f-3bb7a4ad22a5"
+    "261f1681-a88a-405e-ab4e-3851e14bcb95",
+    "881cddee-a7ec-491f-bb9e-e52aef9bf4f8"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0

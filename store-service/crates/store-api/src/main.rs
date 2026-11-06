@@ -1,5 +1,5 @@
 use std::{env, path::PathBuf, time::Duration};
-use store_api::{registry::Registry, ApiState};
+use store_api::{registry::Registry, ApiState, ScreenshotUploader};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,12 +28,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     println!("Store API listening on {}", listener.local_addr()?);
     let shutdown = state.clone();
-    axum::serve(listener, store_api::router(state))
-        .with_graceful_shutdown(async move {
-            shutdown_signal().await;
-            shutdown.transport.close_all();
-        })
-        .await?;
+    let uploader = ScreenshotUploader::from_environment()?;
+    axum::serve(
+        listener,
+        store_api::router_with_screenshots(state, uploader),
+    )
+    .with_graceful_shutdown(async move {
+        shutdown_signal().await;
+        shutdown.transport.close_all();
+    })
+    .await?;
     Ok(())
 }
 
