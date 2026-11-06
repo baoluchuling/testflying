@@ -1,6 +1,6 @@
 # macOS 截图 Connector
 
-外部系统提交节点 ID 和提示词。Mac 上的 Connector 为每个任务开启独立 Codex 会话，由 Codex 发现项目、选择模拟器，并决定是否构建、安装和操作 App。Codex 返回项目路径、平台和设备标识。Connector 验证选择后截取 PNG，交回中心，由中心转发到外部上传服务。
+外部系统提交节点 ID 和截图要求。Mac 上的 Connector 为每个任务开启独立的 Codex Goal 会话。Codex 自行发现项目、准备模拟器和操作 App，并在同一会话中调用 Connector 提供的校验、截图和回传工具。中心将 PNG 转发给配置的外部服务。
 
 ## 创建节点
 
@@ -27,11 +27,11 @@ Content-Type: application/json
 
 {
   "connectorId":"11111111-1111-4111-8111-111111111111",
-  "prompt":"在 iPhone 模拟器打开示例 App 的设置页，切换到深色模式后截图。"
+  "prompt":"截 Amberia iOS 的 iPhone 首页，用于 App Store 商店页。竖屏，保留完整画面和原始分辨率。"
 }
 ```
 
-成功返回 `202` 和 `{"jobId":"…","status":"queued"}`。`profile` 是可选的任务提示，允许 1–64 个 ASCII 字母、数字、下划线或短横线。查询省略该字段的任务时返回 `"profile":null`。提示词不能为空，上限为 16 KiB。发起任务的系统用同一枚 Token 请求 `GET /v1/screenshot-jobs/{jobId}`。状态为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。成功时 `result` 可包含外部服务返回的 HTTPS `imageUrl`，失败时 `error` 为中心错误代码。每个 Mac 同时处理一个任务，最多排队 20 个，任务记录保留约七天。
+成功返回 `202` 和 `{"jobId":"…","status":"queued"}`。`prompt` 只需描述应用、页面、设备偏好和画面要求。Connector 将其原样作为首轮用户消息，工具和完成条件由 Connector 单独设置。提示词不能为空，上限为 16 KiB。`profile` 是可选的任务提示，允许 1–64 个 ASCII 字母、数字、下划线或短横线。查询省略该字段的任务时返回 `"profile":null`。发起任务的系统用同一枚 Token 请求 `GET /v1/screenshot-jobs/{jobId}`。状态为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。成功时 `result` 可包含外部服务返回的 HTTPS `imageUrl`，失败时 `error` 为中心错误代码。每个 Mac 同时处理一个任务，最多排队 20 个，任务记录保留约七天。
 
 ## 在实体 Mac 上运行
 
@@ -49,7 +49,7 @@ Content-Type: application/json
 
 使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 从安装账号的 `PATH` 找到 Codex CLI，沿用该账号的登录和用户配置，并以内置 `workspace-write` 沙盒和 `never` 审批模式启动。特殊安装可通过 `codexPath` 或 `codexHome` 指定绝对路径。Codex 按本机权限查找项目，任务的工作区设为 Connector 创建的私有临时目录，用于存放任务产物，完成、失败或正常停止时清理。[OpenAI Docs](https://learn.chatgpt.com/docs/sandboxing)
 
-Codex 在独立会话中接收 `jobId`、`connectorId`、`profile` 和 `prompt`，以 JSON 返回 `ready`、`projectRoot`、`platform`、`deviceId` 和可空的 `notReadyReason`。Connector 检查返回的绝对路径确实指向本机目录，并确认设备列表中有已启动的 iOS Simulator UUID 或在线的 Android Emulator serial。结构或选择校验失败时返回 `selection_invalid`。[OpenAI Docs](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
+需要支持 Goal 和 App Server 动态工具的 Codex CLI，已验证 0.139.0 的初始化协议。Connector 为该进程启用 Goal。Codex 自行决定复用、创建或启动模拟器，以及是否构建、安装和启动 App。会话内的 `validate_simulator` 检查所选设备，`capture_screenshot` 截取该设备并返回本任务的 `screenshotId`，`upload_screenshot` 通过中心交付这张图。可恢复的工具失败会返回给当前 Goal，Codex 可以修复后重试。中心确认上传后 Goal 才算完成。[OpenAI Docs](https://learn.chatgpt.com/docs/app-server)
 
 将解压目录移到截图账号的 `~/Library/Application Support/` 下，填好配置并设好文件权限后，在该目录执行安装。安装脚本会请求管理员授权，将节点注册为系统 LaunchDaemon，并以截图账号立即启动。开机后服务自动运行，无需保持终端打开。
 
@@ -63,7 +63,7 @@ sh ./install.sh
 
 升级已有节点时，把新版 ZIP 中的 `screenshot-connector`、`run.sh`、`install.sh` 和 `testflying-prod-ca.crt` 覆盖到原安装目录，保留原来的 `connector.json`，再运行 `sh ./install.sh` 重启服务。
 
-在安装目录执行 `tail -F connector.log` 即可查看后台日志。按任务 ID 查找 `job_claimed`、`codex_exit_failed`、`codex_not_ready`、`image_ready` 或 `result_rejected`，可定位失败阶段。完整提示词用 JSON 字符串保存在领单记录中。日志只保存在 Mac 上，文件权限为 `0600`。服务启动时和运行期间每分钟清理超过 24 小时的记录。
+在安装目录执行 `tail -F connector.log` 即可查看后台日志。按任务 ID 查找 `job_claimed`、`codex_goal_started`、`simulator_unavailable`、`image_ready` 或 `result_rejected`，可定位执行阶段。完整提示词用 JSON 字符串保存在领单记录中。日志只保存在 Mac 上，文件权限为 `0600`。服务启动时和运行期间每分钟清理超过 24 小时的记录。原生 Goal 会话历史由安装账号的 Codex 管理。
 
 节点收到通知后通过 `POST /v1/connectors/{id}/screenshot-jobs/claim` 领取任务，空队列返回 204。执行失败通过 `POST /v1/connectors/{id}/screenshot-jobs/{jobId}/failure` 报告。成功后通过 `PUT /v1/connectors/{id}/screenshot-jobs/{jobId}/image` 上传 PNG 原始字节，最大 16 MiB。两条任务结果接口都要求节点 Bearer Token 和领单返回的 `X-Screenshot-Lease`。任务超时后需要重新提交。
 
