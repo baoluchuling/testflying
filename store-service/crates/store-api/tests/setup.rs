@@ -19,6 +19,106 @@ fn app_with_release_root(release_root: PathBuf) -> axum::Router {
 
 const SIGNING_KEY: &str = "setup-signing-test-01234567890123456789";
 
+#[tokio::test(start_paused = true)]
+async fn setup_session_is_scoped_to_https_and_can_be_revoked_or_expire() {
+    let app = app();
+    let session = "/connector-setup/api/session";
+    let list = "/connector-setup/api/connectors";
+    let admin = "setup-admin-test-0123456789";
+    let send = |method: &str, uri: &str, scheme: &str, token: &str, cookie: &str, marked: bool| {
+        let mut request = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header("x-forwarded-proto", scheme);
+        if !token.is_empty() {
+            request = request.header("authorization", format!("Bearer {token}"));
+        }
+        if !cookie.is_empty() {
+            request = request.header("cookie", cookie);
+        }
+        if marked {
+            request = request.header("x-testflying-setup", "1");
+        }
+        app.clone().oneshot(request.body(Body::empty()).unwrap())
+    };
+    for (scheme, token, expected) in [
+        ("http", admin, 403),
+        ("https", "wrong-token", 401),
+        ("https", "", 401),
+    ] {
+        let response = send("POST", session, scheme, token, "", true)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+        assert!(!response.headers().contains_key("set-cookie"));
+    }
+    let login = send("POST", session, "https", admin, "", true)
+        .await
+        .unwrap();
+    assert_eq!(login.status(), 204);
+    assert_eq!(login.headers()["cache-control"], "no-store");
+    let set_cookie = login.headers()["set-cookie"].to_str().unwrap();
+    assert!(set_cookie.ends_with("; Secure; HttpOnly; SameSite=Strict"));
+    assert!(!set_cookie.contains(admin));
+    let cookie = set_cookie.split(';').next().unwrap();
+    for (route, scheme, marker, expected) in [
+        (list, "https", true, 200),
+        (list, "http", true, 403),
+        (list, "https", false, 401),
+        ("/connector-setup/api/integrations", "https", true, 200),
+        ("/v1/integrations", "https", true, 401),
+        ("/v1/connectors", "https", true, 401),
+    ] {
+        assert_eq!(
+            send("GET", route, scheme, "", cookie, marker)
+                .await
+                .unwrap()
+                .status(),
+            expected
+        );
+    }
+    assert_eq!(
+        send("DELETE", session, "https", "", cookie, false)
+            .await
+            .unwrap()
+            .status(),
+        403
+    );
+    let logout = send("DELETE", session, "https", "", cookie, true)
+        .await
+        .unwrap();
+    assert_eq!(logout.status(), 204);
+    assert!(logout.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .ends_with("; Max-Age=0"));
+    assert_eq!(
+        send("GET", list, "https", "", cookie, true)
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+
+    let login = send("POST", session, "https", admin, "", true)
+        .await
+        .unwrap();
+    let cookie = login.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+    tokio::time::advance(Duration::from_secs(8 * 60 * 60)).await;
+    assert_eq!(
+        send("GET", list, "https", "", cookie, true)
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+}
+
 fn app_with_registry(registry: Registry, release_root: PathBuf) -> axum::Router {
     store_api::router(
         ApiState::new(

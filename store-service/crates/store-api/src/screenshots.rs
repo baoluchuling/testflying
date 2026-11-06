@@ -189,7 +189,7 @@ pub(super) fn routes(
         .layer(Extension(uploader.map(Arc::new)))
 }
 
-async fn screenshot_installer(
+pub(super) async fn screenshot_installer(
     State(state): State<Arc<ApiState>>,
     Path(id): Path<String>,
 ) -> Result<Response> {

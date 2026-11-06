@@ -67,10 +67,12 @@ hashes={}
 for target,name in [('linux-amd64','store-connector'),('darwin-arm64','store-connector'),('windows-amd64','store-connector.exe')]:
  p=os.path.join(current,'releases',target,name)
  hashes[target]=hashlib.sha256(open(p,'rb').read()).hexdigest()
+worker=os.path.join(current,'releases/darwin-universal/screenshot-connector')
 print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdigest(),
  'proxySha256':hashlib.sha256(open('/etc/bugsmith/zentao-tls/nginx.conf','rb').read()).hexdigest(),
  'url':v['STORE_API_PUBLIC_URL'],'admin':v['STORE_API_ADMIN_TOKEN'],'token':v['STORE_API_TOKEN'],
  'screenshotUploadConfigured':bool(v.get('STORE_API_SCREENSHOT_UPLOAD_URL')),
+ 'screenshotConnectorSha256':hashlib.sha256(open(worker,'rb').read()).hexdigest() if os.path.isfile(worker) else None,
  'binaries':hashes,'available':int(subprocess.check_output(['df','--output=avail','-B1','/opt']).decode().splitlines()[-1])}))
 """))
     if snapshot["available"] <= 21474836480:
@@ -137,7 +139,8 @@ if worker_sha:
     ca = ssl.create_default_context(cafile=str(PROJECT / "deploy/testflying-prod-ca.crt"))
 
     def request(path: str, token: str | None = None, method: str = "GET", data: dict | None = None,
-                scheme: str = "https") -> tuple[int, bytes]:
+                scheme: str = "https", *, setup_session: str | None = None,
+                cookies: list[str] | None = None) -> tuple[int, bytes]:
         if scheme not in connections:
             connections[scheme] = (http.client.HTTPSConnection(public.hostname, context=ca, timeout=45)
                                    if scheme == "https" else http.client.HTTPConnection(public.hostname, timeout=45))
@@ -145,9 +148,15 @@ if worker_sha:
         headers = {"Content-Type": "application/json"}
         if token:
             headers["Authorization"] = "Bearer " + token
+        if setup_session is not None:
+            headers["X-Testflying-Setup"] = "1"
+            if setup_session:
+                headers["Cookie"] = setup_session
         connection.request(method, public.path.rstrip("/") + path, headers=headers,
                            body=None if data is None else json.dumps(data).encode())
         response = connection.getresponse()
+        if cookies is not None:
+            cookies.extend(value for key, value in response.getheaders() if key.lower() == "set-cookie")
         body = response.read(16 * 1024 * 1024 + 1)
         if len(body) > 16 * 1024 * 1024:
             raise RuntimeError("Deployment response budget exceeded")
@@ -223,6 +232,33 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
         check(status == 200, "administrator can access node setup")
         if integrations_only:
             discovery = "/v1/store-management/connectors"
+            login = "/connector-setup/api/session"
+            cookies = []
+            check(request(login, snapshot["admin"], "POST", scheme="http", setup_session="")[0] == 403,
+                  "administrator session login requires HTTPS")
+            check(request(login, method="POST", setup_session="")[0] == 401,
+                  "anonymous requests cannot issue administrator sessions")
+            try:
+                check(request(login, snapshot["admin"], "POST", setup_session="", cookies=cookies)[0] == 204,
+                      "administrator can establish an HTTPS setup session")
+                check(len(cookies) == 1 and cookies[0].startswith("__Secure-tf-setup="),
+                      "proxy passes through the setup session cookie")
+                check(cookies[0].endswith("; Secure; HttpOnly; SameSite=Strict"),
+                      "setup cookie is Secure, HttpOnly and SameSite Strict")
+                cookie = cookies[0].split(";", 1)[0]
+                check(request(setup, setup_session=cookie)[0] == 200,
+                      "setup session restores node management without sending the administrator token again")
+                check(request("/connector-setup/api/integrations", setup_session=cookie)[0] == 200,
+                      "setup session can list integrations through the scoped browser route")
+                check(request(management, setup_session=cookie)[0] == 401,
+                      "public management routes still require a bearer token")
+            finally:
+                if cookies:
+                    cookie = cookies[0].split(";", 1)[0]
+                    check(request(login, method="DELETE", setup_session=cookie)[0] == 204,
+                          "administrator setup session was revoked")
+                    check(request(setup, setup_session=cookie)[0] == 401,
+                          "revoked setup session cannot be replayed")
             check(request(management, scheme="http")[0] == 403, "credential management requires HTTPS")
             check(request(management)[0] == 401, "anonymous credential management rejected")
             check(request(management, snapshot["token"])[0] == 401, "legacy business token cannot manage credentials")
@@ -283,11 +319,12 @@ print(json.dumps({'environmentSha256':hashlib.sha256(open('/etc/testflying-store
             check(after["current"] == release, "new API release selected")
             check(after["environmentSha256"] == snapshot["environmentSha256"], "persistent API configuration unchanged")
             check(after["proxySha256"] == snapshot["proxySha256"], "HTTP and HTTPS proxy configuration unchanged")
-            if worker:
+            expected_worker = worker["sha256"] if worker else snapshot["screenshotConnectorSha256"]
+            if expected_worker:
                 check(remote("""
 import hashlib
 print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-universal/screenshot-connector','rb').read()).hexdigest())
-""").decode().strip() == worker["sha256"], "published universal macOS Screenshot Connector checksum")
+""").decode().strip() == expected_worker, "published universal macOS Screenshot Connector checksum")
                 screenshot_node = next((node for node in json.loads(setup_nodes)["connectors"]
                                         if node["kind"] == "screenshot" and node["enabled"]), None)
                 if screenshot_node:
@@ -298,7 +335,7 @@ print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-uni
                         config = json.loads(archive.read("connector.json"))
                         check(config["connectorId"] == screenshot_id and len(config["messageKey"]) == 64
                               and archive.getinfo("install.sh").external_attr >> 16 & 0o700 == 0o700
-                              and hashlib.sha256(archive.read("screenshot-connector")).hexdigest() == worker["sha256"],
+                              and hashlib.sha256(archive.read("screenshot-connector")).hexdigest() == expected_worker,
                               "download contains the node's WSS configuration, installer and verified macOS worker")
             report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
                       "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -306,7 +343,7 @@ print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-uni
                       "apiSha256": expected_api, "connectorBinarySha256": snapshot["binaries"],
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
                       "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
-                      "screenshotConnectorSha256": worker["sha256"] if worker else None,
+                      "screenshotConnectorSha256": expected_worker,
                       "temporaryIntegrationRevoked": True, "cleanup": "See the supervisor cleanup report for this runId"}
             report_path.write_text(json.dumps(report, indent=2) + "\n")
             success = True

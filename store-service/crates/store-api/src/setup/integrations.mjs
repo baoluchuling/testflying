@@ -43,7 +43,7 @@ export function bindIntegrations(request, getSession) {
     for (const integration of integrations) {
       const row = document.createElement("li");
       row.append(document.createTextNode(`${integration.name} · 全部节点 `));
-      const path = `v1/integrations/${encodeURIComponent(integration.id)}`;
+      const path = `integrations/${encodeURIComponent(integration.id)}`;
       row.append(actionButton("取回 Token", async (session) => {
         showToken((await request(session, path + "/token")).token);
         message("可以复制这枚接入 Token。");
@@ -60,7 +60,7 @@ export function bindIntegrations(request, getSession) {
   }
 
   async function refresh(session) {
-    const result = await request(session, "v1/integrations");
+    const result = await request(session, "integrations");
     renderList(result.integrations);
   }
 
@@ -72,7 +72,7 @@ export function bindIntegrations(request, getSession) {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     run(async (session) => {
-      const result = await request(session, "v1/integrations", {
+      const result = await request(session, "integrations", {
         method: "POST",
         body: { name: $("integrationName").value.trim() },
       });

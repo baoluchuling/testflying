@@ -66,13 +66,17 @@ pub(super) async fn list_nodes(State(state): State<Arc<ApiState>>) -> Result<Jso
 }
 
 pub(super) fn admin_routes(state: Arc<ApiState>) -> Router<Arc<ApiState>> {
-    Router::new()
-        .route("/v1/integrations", get(list).post(issue))
-        .route("/v1/integrations/{id}", delete(revoke))
-        .route("/v1/integrations/{id}/token", get(reveal))
+    management_routes("/v1/integrations")
         .route_layer(middleware::from_fn_with_state(state, authorize_admin))
         .route_layer(middleware::from_fn(authorize_https))
         .route_layer(middleware::map_response(no_store_response))
+}
+
+pub(super) fn management_routes(path: &str) -> Router<Arc<ApiState>> {
+    Router::new()
+        .route(path, get(list).post(issue))
+        .route(&format!("{path}/{{id}}"), delete(revoke))
+        .route(&format!("{path}/{{id}}/token"), get(reveal))
 }
 
 async fn no_store_response(response: Response) -> Response {

@@ -1,5 +1,5 @@
 {
-  "runId": "c456a266ddd243b5a84a31396ac70154",
+  "runId": "6a2b37673b934743b66cb3d4ffc20b47",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -29,7 +29,8 @@
     "screenshot node is available in its own deployment panel and excluded from Store Connector downloads",
     "admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it",
     "unlocked admin can provision a screenshot node and download its macOS deployment ZIP",
-    "reload clears files and browser storage remains empty",
+    "refresh restores the HTTPS session and clears local files without writing to web storage",
+    "locking clears the cookie and a subsequent refresh stays locked",
     "mobile layout has no horizontal overflow",
     "no credential file or account fields are uploaded and CSP passes"
   ],
@@ -38,8 +39,8 @@
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "5c1a64e4-1c87-4d3f-8fe1-3373a7e664e4",
-    "594e2f32-e16a-4b8c-9ab7-cab19dd6023c"
+    "5b46ccff-af84-475f-a1e8-d5c7ebbf86ec",
+    "7566f1a0-63aa-4b1f-8e30-bb6950edc202"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0

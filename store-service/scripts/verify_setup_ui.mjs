@@ -37,7 +37,9 @@ const nodes = [];
 const integrationFixtures = [];
 const fixtureAdminToken = "fixture-admin-token";
 const fixtureIntegrationToken = "fixture-integration-token";
-const screenshotInstallerPath = /^\/store-api\/v1\/connectors\/([^/]+)\/screenshot-installer$/;
+const setupApi = "/store-api/connector-setup/api/";
+const screenshotInstallerPath = /^\/store-api\/connector-setup\/api\/connectors\/([^/]+)\/screenshot-installer$/;
+const sessionCookie = "__Secure-tf-setup";
 const created = new Set();
 const posts = [];
 const violations = [];
@@ -47,6 +49,7 @@ let insecureServer;
 let base = process.env.SETUP_BASE_URL;
 let downloadAttempts = 0;
 let listAttempts = 0;
+let fixtureSession;
 let heldReveal;
 let revealStarted;
 let releaseReveal;
@@ -83,10 +86,23 @@ if (!production) {
       }
       if (url.pathname === "/favicon.ico") { res.writeHead(204).end(); return; }
       res.setHeader("Content-Type", "application/json");
-      if (relative.startsWith("api/") || url.pathname.startsWith("/store-api/v1/integrations") ||
-          screenshotInstallerPath.test(url.pathname)) {
+      if (url.pathname.startsWith(setupApi)) {
         if (!req.socket.encrypted) { res.writeHead(403).end("{}"); return; }
-        if (req.headers.authorization !== `Bearer ${fixtureAdminToken}`) { res.writeHead(401).end("{}"); return; }
+        if (req.headers["x-testflying-setup"] !== "1") { res.writeHead(403).end("{}"); return; }
+        if (url.pathname === setupApi + "session") {
+          if (req.method === "POST") {
+            if (req.headers.authorization !== `Bearer ${fixtureAdminToken}`) { res.writeHead(401).end("{}"); return; }
+            fixtureSession = randomUUID();
+            res.setHeader("Set-Cookie", `${sessionCookie}=${fixtureSession}; Secure; HttpOnly; SameSite=Strict`);
+          } else if (req.method === "DELETE") {
+            fixtureSession = undefined;
+            res.setHeader("Set-Cookie", `${sessionCookie}=; Secure; HttpOnly; SameSite=Strict; Max-Age=0`);
+          } else { res.writeHead(405).end("{}"); return; }
+          res.writeHead(204).end(); return;
+        }
+        if (!fixtureSession || !req.headers.cookie?.split(/;\s*/).includes(`${sessionCookie}=${fixtureSession}`)) {
+          res.writeHead(401).end("{}"); return;
+        }
       }
       const screenshot = screenshotInstallerPath.exec(url.pathname);
       if (screenshot) {
@@ -104,7 +120,7 @@ if (!production) {
         res.end(await zip.generateAsync({ type: "nodebuffer" }));
         return;
       }
-      if (url.pathname.startsWith("/store-api/v1/integrations")) {
+      if (url.pathname.startsWith(setupApi + "integrations")) {
         if (req.method === "POST") {
           let body = "";
           for await (const chunk of req) body += chunk;
@@ -228,11 +244,10 @@ try {
     const request = route.request();
     const url = new URL(request.url());
     const body = request.postData() || "";
-    const authenticated = !!request.headers().authorization;
-    const adminRequest = url.origin === origin && url.protocol === "https:" &&
-      (/^\/store-api\/connector-setup\/api\/connectors(?:\/|$)/.test(url.pathname) ||
-       /^\/store-api\/v1\/integrations(?:\/|$)/.test(url.pathname) || screenshotInstallerPath.test(url.pathname));
-    if (authenticated !== adminRequest) {
+    const headers = request.headers();
+    const adminRequest = url.origin === origin && url.protocol === "https:" && url.pathname.startsWith(setupApi);
+    const loginRequest = adminRequest && url.pathname === setupApi + "session" && request.method() === "POST";
+    if (!!headers.authorization !== loginRequest || (headers["x-testflying-setup"] === "1") !== adminRequest) {
       violations.push("incorrect authorization header boundary");
       return route.abort();
     }
@@ -338,7 +353,7 @@ try {
   checks.push("program-only upgrade preserves node identity without including local configuration");
   if (!production) {
     await Promise.all([
-      page.waitForResponse((response) => new URL(response.url()).pathname.endsWith("/v1/integrations")),
+      page.waitForResponse((response) => new URL(response.url()).pathname === setupApi + "integrations"),
       page.getByText("接入凭据", { exact: true }).click(),
     ]);
     await page.locator("#integrationName").fill("Fixture System");
@@ -406,19 +421,40 @@ try {
     assert.equal(nodeConfig.kind, "screenshot");
     assert(deployment.file("install.sh") && deployment.file("screenshot-connector") &&
       deployment.file("run.sh") && deployment.file("scripts/screenshot_connector.py"));
-    await page.locator("#adminLock").click();
+    await Promise.all([
+      page.waitForResponse((response) => response.request().method() === "DELETE" && new URL(response.url()).pathname === setupApi + "session"),
+      page.locator("#adminLock").click(),
+    ]);
     assert.equal(await page.locator("#screenshotWorkspace").isVisible(), false);
     assert.equal(await page.locator("#screenshotNode").inputValue(), "");
     checks.push("unlocked admin can provision a screenshot node and download its macOS deployment ZIP");
+    await unlock();
+    await page.locator("#setupForm").waitFor({ state: "visible" });
   }
+  await page.locator("#appleFile").setInputFiles(appleFile);
+  await page.locator("#googleFile").setInputFiles(googleFile);
+  const cookie = (await context.cookies()).find((entry) => entry.name === sessionCookie);
+  assert.equal(!!cookie && cookie.httpOnly && cookie.secure && cookie.sameSite === "Strict" &&
+    cookie.path === setupApi.slice(0, -1), true, "login issued a scoped HttpOnly cookie");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.locator("#adminUnlock").waitFor({ state: "visible" });
-  assert.equal(await page.locator("#setupForm").isVisible(), false);
-  assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);
+  await page.locator("#setupForm").waitFor({ state: "visible" });
+  assert.equal(await page.locator("#integrationWorkspace").isVisible(), true);
+  assert.equal(await page.locator("#adminUnlock").isVisible(), false);
   assert.equal(await page.locator("#appleFile").inputValue(), "");
   assert.equal(await page.locator("#googleFile").inputValue(), "");
   assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
-  checks.push("reload clears files and browser storage remains empty");
+  checks.push("refresh restores the HTTPS session and clears local files without writing to web storage");
+  const [logout] = await Promise.all([
+    page.waitForResponse((response) => response.request().method() === "DELETE" && new URL(response.url()).pathname === setupApi + "session"),
+    page.locator("#adminLock").click(),
+  ]);
+  assert.equal(logout.status(), 204);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.locator("#loginButton:enabled").waitFor();
+  assert.equal(await page.locator("#setupForm").isVisible(), false);
+  assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);
+  assert.equal((await context.cookies()).some((entry) => entry.name === sessionCookie), false);
+  checks.push("locking clears the cookie and a subsequent refresh stays locked");
   await page.setViewportSize({ width: 390, height: 844 });
   assert(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth));
   checks.push("mobile layout has no horizontal overflow");

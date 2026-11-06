@@ -2,8 +2,8 @@ import { CREDENTIAL_LIMIT, validateAccount, buildInstaller, installationFiles } 
 import { bindIntegrations } from "./integrations.mjs";
 
 const $ = (id) => document.getElementById(id);
-const center = new URL("../", window.location.href);
-const setupPath = "connector-setup/api/connectors";
+const api = new URL("api/", window.location.href);
+const setupPath = "connectors";
 let session;
 let nodes = [];
 let automaticKeyId = "";
@@ -15,33 +15,37 @@ function status(message, kind = "info") {
   $("status").dataset.kind = kind;
 }
 
-async function request(active, path, { method = "GET", body, binary = false } = {}) {
+class Unauthorized extends Error {}
+
+async function request(active, path, { method = "GET", body, binary = false, token } = {}) {
   active.signal.throwIfAborted();
-  const response = await fetch(new URL(path, center), {
+  const response = await fetch(new URL(path, api), {
     method,
     cache: "no-store",
-    credentials: "omit",
+    credentials: "same-origin",
     mode: "same-origin",
     redirect: "error",
     referrerPolicy: "no-referrer",
     headers: {
-      Authorization: `Bearer ${active.token}`,
+      "X-Testflying-Setup": "1",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: active.signal,
+    keepalive: path === "session" && method === "DELETE",
   });
   active.signal.throwIfAborted();
   if (!response.ok) {
     if (response.status === 401) {
-      const message = "管理员 Token 无效";
+      const message = token ? "管理员 Token 无效" : "管理员会话已失效，请重新登录";
       if (!$("setupForm").hidden) {
-        lock();
+        resetSession();
         status(message, "error");
       }
-      throw new Error(message);
+      throw new Unauthorized(message);
     }
-    if (response.status === 409 && path === "v1/integrations") throw new Error("这个系统名称已有 Token");
+    if (response.status === 409 && path === "integrations") throw new Error("这个系统名称已有 Token");
     if (binary && response.status === 503) throw new Error("所选系统的程序尚未发布，请选择其他系统");
     throw new Error(`中心请求失败（${response.status}），请检查节点状态后重试`);
   }
@@ -109,7 +113,7 @@ $("screenshotProvision").addEventListener("submit", (event) => {
 $("screenshotDownload").addEventListener("click", () => {
   screenshotAction($("screenshotDownload"), async (active) => {
     const id = encodeURIComponent($("screenshotNode").value);
-    const bytes = await request(active, `v1/connectors/${id}/screenshot-installer`, { binary: true });
+    const bytes = await request(active, `${setupPath}/${id}/screenshot-installer`, { binary: true });
     downloadFile(bytes, "application/zip", `screenshot-connector-macos-${id.slice(0, 8)}.zip`);
     $("screenshotStatus").textContent = "部署包已下载，请在对应 Mac 上解压并配置。";
   });
@@ -158,9 +162,8 @@ async function fileBytes(id, label) {
   return new Uint8Array(await file.arrayBuffer());
 }
 
-function lock() {
+function resetSession() {
   if (session) {
-    session.token = "";
     session.controller.abort();
     session = undefined;
   }
@@ -186,21 +189,19 @@ function lock() {
   renderScreenshotNodes();
 }
 
-async function unlock(event) {
-  event.preventDefault();
+async function restoreSession(token = "") {
   if (session) return;
+  const signingIn = Boolean(token);
   const controller = new AbortController();
-  const active = { token: $("adminCredential").value.trim(), controller, signal: controller.signal };
-  $("adminCredential").value = "";
-  if (!active.token) {
-    status("请输入管理员 Token", "error");
-    return;
-  }
+  const active = { controller, signal: controller.signal };
   session = active;
   $("loginButton").disabled = true;
-  $("adminLock").hidden = false;
   try {
-    status("正在验证管理员 Token…");
+    if (token) {
+      status("正在验证管理员 Token…");
+      await request(active, "session", { method: "POST", token });
+      token = "";
+    }
     const result = await request(active, setupPath);
     nodes = result.connectors;
     renderNodes();
@@ -208,26 +209,46 @@ async function unlock(event) {
     renderScreenshotNodes();
     $("screenshotWorkspace").hidden = false;
     $("adminUnlock").hidden = true;
+    $("adminLock").hidden = false;
     $("setupForm").hidden = false;
     $("status").hidden = true;
   } catch (error) {
     if (!active.signal.aborted) {
-      lock();
-      status(error.message || "无法连接中心", "error");
+      resetSession();
+      if (signingIn || !(error instanceof Unauthorized)) status(error.message || "无法连接中心", "error");
     }
+  }
+}
+
+async function lock() {
+  resetSession();
+  $("loginButton").disabled = true;
+  try {
+    await request({ signal: new AbortController().signal }, "session", { method: "DELETE" });
+    $("loginButton").disabled = false;
+    $("adminCredential").focus();
+  } catch {
+    $("adminLock").hidden = false;
+    status("暂时无法结束会话，请重试「锁定管理」。", "error");
   }
 }
 
 // Local loopback is a secure context in Chrome, but credential entry still requires TLS.
 const securePage = window.isSecureContext && window.location.protocol === "https:";
 if (securePage) {
-  $("adminUnlock").hidden = false;
-  $("adminUnlock").addEventListener("submit", unlock);
-  $("adminLock").addEventListener("click", () => {
-    lock();
-    $("adminCredential").focus();
+  $("adminUnlock").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const token = $("adminCredential").value.trim();
+    $("adminCredential").value = "";
+    if (token) restoreSession(token);
+    else status("请输入管理员 Token", "error");
   });
-  window.addEventListener("pagehide", lock);
+  $("adminLock").addEventListener("click", lock);
+  window.addEventListener("pagehide", resetSession);
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) restoreSession();
+  });
+  restoreSession();
 } else {
   const https = new URL(window.location.href);
   https.protocol = "https:";
