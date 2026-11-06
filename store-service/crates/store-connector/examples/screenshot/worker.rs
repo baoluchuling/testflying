@@ -44,10 +44,8 @@ pub(super) struct Config {
     #[serde(deserialize_with = "https_url")]
     pub server_url: Url,
     pub message_key: String,
-    #[serde(default)]
-    codex_path: PathBuf,
-    #[serde(default)]
-    codex_home: PathBuf,
+    codex_path: Option<PathBuf>,
+    codex_home: Option<PathBuf>,
     adb_path: Option<PathBuf>,
     ca_file: Option<PathBuf>,
 }
@@ -98,6 +96,7 @@ impl Config {
                 local_path(&root.join("platform-tools/adb"), false).ok()
             })
             .next()
+            .or_else(|| path_executable("adb"))
     }
 }
 
@@ -233,8 +232,23 @@ impl<'a> Worker<'a> {
         stop: &mut watch::Receiver<bool>,
     ) -> Result<Vec<u8>, &'static str> {
         let unavailable = |_| "profile_unavailable";
-        let codex = local_path(&self.config.codex_path, false).map_err(unavailable)?;
-        let codex_home = local_path(&self.config.codex_home, true).map_err(unavailable)?;
+        let codex = match self
+            .config
+            .codex_path
+            .as_deref()
+            .filter(|path| !path.as_os_str().is_empty())
+        {
+            Some(path) => local_path(path, false).map_err(unavailable)?,
+            None => path_executable("codex").ok_or("profile_unavailable")?,
+        };
+        let codex_home = self
+            .config
+            .codex_home
+            .as_deref()
+            .filter(|path| !path.as_os_str().is_empty())
+            .map(|path| local_path(path, true))
+            .transpose()
+            .map_err(unavailable)?;
         let adb = self.config.adb();
 
         let schema = root.join("codex-result-schema.json");
@@ -246,7 +260,6 @@ impl<'a> Worker<'a> {
             .args(["--ask-for-approval", "never"])
             .args([
                 "exec",
-                "--ignore-user-config",
                 "--sandbox",
                 "workspace-write",
                 "--ephemeral",
@@ -258,7 +271,7 @@ impl<'a> Worker<'a> {
             .arg(&result)
             .arg("-")
             .stdout(Stdio::null());
-        job_environment(&mut command, root, &codex_home);
+        job_environment(&mut command, root, codex_home.as_deref());
         run_command(
             &mut command,
             Some(prompt.as_bytes()),
@@ -276,7 +289,7 @@ impl<'a> Worker<'a> {
 
         let device = selection.validate().ok_or("selection_invalid")?;
         device
-            .verify_running(root, &codex_home, adb.as_deref(), stop)
+            .verify_running(root, adb.as_deref(), stop)
             .await
             .map_err(|_| "selection_invalid")?;
         let png = root.join("screenshot.png");
@@ -296,7 +309,7 @@ impl<'a> Worker<'a> {
         } else {
             capture.stdout(Stdio::null());
         }
-        job_environment(&mut capture, root, &codex_home);
+        job_environment(&mut capture, root, None);
         run_command(&mut capture, None, Duration::from_secs(45), stop)
             .await
             .map_err(|_| "capture_failed")?;
@@ -364,7 +377,6 @@ impl Device {
     async fn verify_running(
         &self,
         root: &Path,
-        codex_home: &Path,
         adb: Option<&Path>,
         stop: &mut watch::Receiver<bool>,
     ) -> io::Result<()> {
@@ -394,7 +406,7 @@ impl Device {
                 .mode(0o600)
                 .open(&output)?,
         );
-        job_environment(&mut list, root, codex_home);
+        job_environment(&mut list, root, None);
         run_command(&mut list, None, Duration::from_secs(10), stop).await?;
         if self.is_running(&read_owned(&output, 1024 * 1024, false)?) {
             Ok(())
@@ -471,7 +483,20 @@ fn adb_command(adb: Option<&Path>) -> io::Result<Command> {
     Ok(command)
 }
 
-fn job_environment(command: &mut Command, root: &Path, codex_home: &Path) {
+fn path_executable(name: &str) -> Option<PathBuf> {
+    let path = env::var_os("PATH")?;
+    env::split_paths(&path)
+        .filter(|dir| dir.is_absolute())
+        .find_map(|dir| {
+            let candidate = local_path(&dir.join(name), false).ok()?;
+            fs::metadata(&candidate)
+                .ok()
+                .filter(|metadata| metadata.mode() & 0o111 != 0)
+                .map(|_| candidate)
+        })
+}
+
+fn job_environment(command: &mut Command, root: &Path, codex_home: Option<&Path>) {
     command.current_dir(root).env_clear();
     for key in [
         "HOME",
@@ -479,6 +504,7 @@ fn job_environment(command: &mut Command, root: &Path, codex_home: &Path) {
         "USER",
         "LOGNAME",
         "LANG",
+        "CODEX_HOME",
         "DEVELOPER_DIR",
         "ANDROID_HOME",
         "ANDROID_SDK_ROOT",
@@ -487,8 +513,10 @@ fn job_environment(command: &mut Command, root: &Path, codex_home: &Path) {
             command.env(key, value);
         }
     }
+    if let Some(codex_home) = codex_home {
+        command.env("CODEX_HOME", codex_home);
+    }
     command
-        .env("CODEX_HOME", codex_home)
         .env("TMPDIR", root)
         .env("XDG_CACHE_HOME", root.join("cache"))
         .env("GRADLE_USER_HOME", root.join("gradle"))
@@ -724,7 +752,7 @@ printf '%s\n' '{"ready":true,"projectRoot":"/","platform":"android","deviceId":"
         );
         let args = fs::read_to_string(root.join("args")).unwrap();
         assert!(args.starts_with(concat!(
-            "--ask-for-approval\nnever\nexec\n--ignore-user-config\n",
+            "--ask-for-approval\nnever\nexec\n",
             "--sandbox\nworkspace-write\n--ephemeral\n",
         )));
         assert!(!args.contains("resume") && !args.contains(&job.prompt));

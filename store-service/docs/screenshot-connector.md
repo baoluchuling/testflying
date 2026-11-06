@@ -35,7 +35,7 @@ Content-Type: application/json
 
 ## 在实体 Mac 上运行
 
-将部署 ZIP 解压到 Mac 的私密目录并限制目录访问，将 `connector.json` 设为 `0600`。在这台 Mac 上提前准备专用账号、项目、Codex 登录和可用的模拟器。Codex 根据任务在本机查找项目，访问范围由其本机权限配置决定。Android 的 ADB 服务使用默认本地端口，由部署方启动。Connector 优先使用可选的 `adbPath`，其次查找 Android SDK 的 `platform-tools/adb`。
+将部署 ZIP 解压到 Mac 的私密目录并限制目录访问，将 `connector.json` 设为 `0600`。在这台 Mac 上提前准备专用账号、项目、Codex 登录和可用的模拟器。Codex 根据任务在本机查找项目，访问范围由其本机权限配置决定。Android 的 ADB 服务使用默认本地端口，由部署方启动。Connector 优先使用可选的 `adbPath`，其次查找 Android SDK 和 `PATH` 中的 `adb`。
 
 ```json
 {
@@ -43,13 +43,11 @@ Content-Type: application/json
   "connectorId": "11111111-1111-4111-8111-111111111111",
   "token": "NODE_TOKEN_FROM_INSTALLATION",
   "messageKey": "MESSAGE_KEY_FROM_INSTALLATION",
-  "serverUrl": "https://store-api.example.com/store-api",
-  "codexPath": "/absolute/path/to/codex",
-  "codexHome": "/absolute/path/to/dedicated/codex-home"
+  "serverUrl": "https://store-api.example.com/store-api"
 }
 ```
 
-使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 直接运行 Codex 和模拟器命令。Codex 使用内置 `workspace-write`，按本机权限查找项目。任务的工作区设为 Connector 创建的私有临时目录，用于存放任务产物，完成、失败或正常停止时由 Connector 清理。Codex 启动时跳过用户配置，并以 `never` 审批模式运行。 [OpenAI Docs](https://learn.chatgpt.com/docs/sandboxing)
+使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 从安装账号的 `PATH` 找到 Codex CLI，沿用该账号的登录和用户配置，并以内置 `workspace-write` 沙盒和 `never` 审批模式启动。特殊安装可通过 `codexPath` 或 `codexHome` 指定绝对路径。Codex 按本机权限查找项目，任务的工作区设为 Connector 创建的私有临时目录，用于存放任务产物，完成、失败或正常停止时清理。[OpenAI Docs](https://learn.chatgpt.com/docs/sandboxing)
 
 Codex 在独立会话中接收 `jobId`、`connectorId`、`profile` 和 `prompt`，以 JSON 返回 `ready`、`projectRoot`、`platform` 和 `deviceId`。Connector 检查返回的绝对路径确实指向本机目录，并确认设备列表中有已启动的 iOS Simulator UUID 或在线的 Android Emulator serial。结构或选择校验失败时返回 `selection_invalid`。[OpenAI Docs](https://learn.chatgpt.com/docs/developer-commands?surface=cli)
 

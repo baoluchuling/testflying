@@ -363,8 +363,8 @@ print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-arm
                               "download contains the current LaunchDaemon installer script")
                         check("projectRoots" not in config and "profiles" not in config,
                               "download supports machine-local discovery without predefined projects or profiles")
-                        check("codexPermissionProfile" not in config,
-                              "download uses Codex without a custom permission profile")
+                        check({"codexPath", "codexHome", "codexPermissionProfile"}.isdisjoint(config),
+                              "download uses the installed Codex without machine-specific settings")
                         executable = archive.read("screenshot-connector")
                         check(executable.startswith(b"\xcf\xfa\xed\xfe\x0c\0\0\x01"),
                               "download contains a single-architecture Apple Silicon Mach-O")
