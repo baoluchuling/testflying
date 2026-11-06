@@ -1,11 +1,11 @@
 {
-  "runId": "61fe0e926c714a8e89e3834411f54526",
+  "runId": "8f04d7096b6b46c68294ce060da768b9",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-06T06:34:10.879350+00:00",
-  "deploymentCommit": "57d8619d0be03ecc24d8bfee771a82351ffd1fd4",
-  "binarySourceCommit": "ed5e8b6123dcbae746670dae6f79dac2e3e92397",
-  "apiSha256": "253b0bf35912c9323b437730cda5f2266cb09d5d660de62c532bf890c70461a3",
+  "finishedAt": "2026-11-06T06:45:27.284273+00:00",
+  "deploymentCommit": "b0b437dabe29ce1ac30dfb45da60201ee2b2dd89",
+  "binarySourceCommit": "988a09d2acaff3edb313a395dba8ce777b2576d8",
+  "apiSha256": "9887aa6c3995a5a34d1f9cfc48d0e96f859741fa61cf9114cb68a11706dbd472",
   "connectorBinarySha256": {
     "linux-amd64": "9027c88c561a898de08d4efe2569f3525033c3c323c836a418152143fb9d5590",
     "darwin-arm64": "0bee2286f60390f8df4900c811b64aed2e90324a018d15dbf9dabb9fa4157b73",
@@ -68,6 +68,7 @@
     "published universal macOS Screenshot Connector checksum",
     "administrator can download an existing screenshot node installer",
     "screenshot package contains the native worker and its installation files",
+    "download contains the current LaunchDaemon installer script",
     "download contains the node's WSS configuration, installer and verified macOS worker"
   ],
   "testNodesCreated": 0,
