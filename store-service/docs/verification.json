@@ -1,6 +1,6 @@
 {
-  "runId": "9b19dc1585f646aeb063c997f3534395",
-  "finishedAt": "2026-11-06T06:28:41.320726+00:00",
+  "runId": "39adac000eee430abde89e129c882996",
+  "finishedAt": "2026-11-06T06:44:01.981594+00:00",
   "checks": [
     {
       "command": [
@@ -60,16 +60,16 @@
       "testSummaries": [
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.05s",
-        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.04s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
         "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.78s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.90s",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
         "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
-        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.72s",
+        "test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.46s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
@@ -198,7 +198,7 @@
     "packaging/connector/start.cmd": "ecc92264b3fd9d4adc9612a3f68cf29da362af32d26b9a822a4fc5aaf80ad5aa",
     "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
     "packaging/screenshot-connector/README.md": "679adb9e0f8799ce0fd3ea7e2a943b57466552d1ed9f5f6e0d3d3b4acce6416a",
-    "packaging/screenshot-connector/install.sh": "4e57694371d6e9baf67893d921f3501f0997f52797f420a1e05e596e69260f7c",
+    "packaging/screenshot-connector/install.sh": "a8990a1f1308c4d941b62d9a390e3a7af8af30d4cf976b39d3e01a2d470de356",
     "packaging/screenshot-connector/run.sh": "1ce10eee90d4c6a04b5edfa86d844917af69bf8eb7cb742340023e53b67a5f2a",
     "scripts/managed_workspace.py": "840a77c1c75de77372bacfcbd5049179340a5e910923f30b4a7ed0828a37e203",
     "scripts/verify_connector_install.py": "ddba2a869e281eebda94c5e8f890c26c5e9c25687affe926884551b5673df29f",
