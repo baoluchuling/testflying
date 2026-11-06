@@ -1,6 +1,6 @@
 # Testflying Screenshot Connector for macOS
 
-This ZIP contains a universal Rust worker and the credentials for one Screenshot Connector. Keep it private. Move the extracted directory to a permanent location under `~/Library/Application Support/` on the assigned Mac.
+This ZIP contains the Apple Silicon (arm64) Rust worker and the credentials for one Screenshot Connector. Keep it private. Move the extracted directory to a permanent location under `~/Library/Application Support/` on the assigned Mac.
 
 1. Set owner-only permissions with `chmod 700 . && chmod 600 connector.json`.
 2. Sign in to Codex with the dedicated macOS account.

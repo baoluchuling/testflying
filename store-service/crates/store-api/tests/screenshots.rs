@@ -438,13 +438,9 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
 #[tokio::test]
 async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
     let releases = tempfile::tempdir().unwrap();
-    let mac_release = releases.path().join("darwin-universal");
+    let mac_release = releases.path().join("darwin-arm64");
     std::fs::create_dir(&mac_release).unwrap();
-    std::fs::write(
-        mac_release.join("screenshot-connector"),
-        b"macOS release fixture",
-    )
-    .unwrap();
+    let executable = mac_release.join("screenshot-connector");
     let app = store_api::router(state_with_releases(releases.path().into()));
     let (mac, token) = node(&app, "Mac", "screenshot").await;
     let (store, _) = node(&app, "Store", "store").await;
@@ -482,6 +478,17 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
         .await
         .unwrap();
     assert_eq!(plain.status(), 403);
+    for unsupported in [
+        b"\xcf\xfa\xed\xfe\x07\0\0\x01".as_slice(),
+        b"\xca\xfe\xba\xbe".as_slice(),
+    ] {
+        std::fs::write(&executable, unsupported).unwrap();
+        assert_eq!(
+            send(&app, "GET", &url, ADMIN, Value::Null).await.status(),
+            503
+        );
+    }
+    std::fs::write(&executable, b"\xcf\xfa\xed\xfe\x0c\0\0\x01fixture").unwrap();
     let response = send(&app, "GET", &url, ADMIN, Value::Null).await;
     assert_eq!(response.status(), 200);
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");

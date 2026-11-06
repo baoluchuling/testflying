@@ -4,6 +4,8 @@ umask 077
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 [ "$(uname -s)" = Darwin ] || { echo 'Screenshot Connector requires macOS.' >&2; exit 1; }
+[ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ] ||
+    { echo 'Screenshot Connector requires an Apple Silicon Mac.' >&2; exit 1; }
 custom_ca=$(/usr/bin/plutil -extract caFile raw -expect string -o - -- "$root/connector.json" 2>/dev/null || true)
 SSL_CERT_FILE=${custom_ca:-${SSL_CERT_FILE:-"$root/testflying-prod-ca.crt"}}
 export SSL_CERT_FILE

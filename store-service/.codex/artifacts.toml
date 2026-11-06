@@ -8,6 +8,7 @@ protected_deliverables = [
   "releases/linux-amd64/store-api",
   "releases/linux-amd64/store-connector",
   "releases/darwin-arm64/store-connector",
+  "releases/darwin-arm64/screenshot-connector",
   "releases/darwin-universal/screenshot-connector",
   "docs/deployment-build.json",
   "docs/deployment-verification.json",

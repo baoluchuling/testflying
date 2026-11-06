@@ -70,15 +70,8 @@ def main() -> None:
             ["cargo", "build", "--locked", "--release", "--package", "store-connector"],
         ])
     if screenshots:
-        commands.append(["rustup", "target", "add", "x86_64-apple-darwin"])
-        for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"):
-            commands.append(["cargo", "build", "--locked", "--release", "--target", target,
-                             "--package", "store-connector", "--example", "screenshot-connector"])
-        commands.append(["/usr/bin/lipo", "-create", "-output", str(tmp / "screenshot-connector"),
-                         *(str(tmp / "target" / target / "release/examples/screenshot-connector")
-                           for target in ("aarch64-apple-darwin", "x86_64-apple-darwin"))])
-        commands.append(["/usr/bin/lipo", str(tmp / "screenshot-connector"),
-                         "-verify_arch", "arm64", "x86_64"])
+        commands.append(["cargo", "build", "--locked", "--release", "--target", "aarch64-apple-darwin",
+                         "--package", "store-connector", "--example", "screenshot-connector"])
     for command in commands:
         print("Running: " + " ".join(command), flush=True)
         # Resume transient official-toolchain download failures within the same owned cache.
@@ -105,15 +98,20 @@ def main() -> None:
     elif api_only:
         outputs = {"releases/linux-amd64/store-api": tmp / "target/x86_64-unknown-linux-musl/release/store-api"}
         if screenshots:
-            outputs["releases/darwin-universal/screenshot-connector"] = tmp / "screenshot-connector"
+            outputs["releases/darwin-arm64/screenshot-connector"] = (
+                tmp / "target/aarch64-apple-darwin/release/examples/screenshot-connector"
+            )
     hashes = {}
     for relative, binary in outputs.items():
         description = subprocess.check_output(["file", str(binary)], text=True).strip()
         if ("linux-amd64" in relative and "ELF 64-bit" not in description
                 or "darwin-arm64" in relative and "Mach-O 64-bit executable arm64" not in description
-                or "darwin-universal" in relative and "Mach-O universal binary" not in description
                 or "windows-amd64" in relative and ("PE32+ executable" not in description or "x86-64" not in description)):
             raise RuntimeError("Unexpected release architecture: " + description)
+        if relative == "releases/darwin-arm64/screenshot-connector":
+            architectures = subprocess.check_output(["/usr/bin/lipo", "-archs", str(binary)], text=True)
+            if architectures.split() != ["arm64"]:
+                raise RuntimeError("Screenshot Connector must contain a single arm64 architecture")
         imports = []
         if windows:
             details = subprocess.check_output(["/opt/homebrew/opt/llvm/bin/llvm-objdump", "-p", str(binary)], text=True)

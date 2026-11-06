@@ -10,6 +10,7 @@ use zip::{write::SimpleFileOptions, ZipWriter};
 const MAX_IMAGE: usize = 16 * 1024 * 1024;
 const MAX_REPLY: usize = 64 * 1024;
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+const ARM64_MACHO_HEADER: &[u8] = b"\xcf\xfa\xed\xfe\x0c\0\0\x01";
 
 pub struct ScreenshotUploader {
     url: Url,
@@ -198,9 +199,7 @@ pub(super) async fn screenshot_installer(
     config["codexHome"] = json!("");
     config["codexPermissionProfile"] = json!("screenshot-worker");
     let config = serde_json::to_vec_pretty(&config).expect("Connector config serialization");
-    let executable = state
-        .release_root
-        .join("darwin-universal/screenshot-connector");
+    let executable = state.release_root.join("darwin-arm64/screenshot-connector");
     let metadata = tokio::fs::metadata(&executable)
         .await
         .map_err(|_| release_unavailable())?;
@@ -210,6 +209,9 @@ pub(super) async fn screenshot_installer(
     let executable = tokio::fs::read(executable)
         .await
         .map_err(|_| release_unavailable())?;
+    if !executable.starts_with(ARM64_MACHO_HEADER) {
+        return Err(release_unavailable().into());
+    }
     let bytes = installer_archive(&config, &executable).map_err(|_| {
         StoreError::new(
             500,

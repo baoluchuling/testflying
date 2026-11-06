@@ -5,6 +5,8 @@ umask 077
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 root=$(CDPATH= cd -- "$(/usr/bin/dirname -- "$0")" && pwd -P)
 [ "$(/usr/bin/uname -s)" = Darwin ] || fail 'This installer requires macOS.'
+[ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ] ||
+    fail 'This installer requires an Apple Silicon Mac.'
 
 if [ "$(/usr/bin/id -u)" -ne 0 ]; then
     [ "$#" -eq 0 ] || fail 'Usage: sh ./install.sh'

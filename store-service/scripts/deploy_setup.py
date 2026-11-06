@@ -77,7 +77,7 @@ def main() -> None:
     expected_api = build["outputs"]["releases/linux-amd64/store-api"]["sha256"]
     if hashlib.sha256(api.read_bytes()).hexdigest() != expected_api:
         raise RuntimeError("Linux API checksum mismatch")
-    worker_relative = "releases/darwin-universal/screenshot-connector"
+    worker_relative = "releases/darwin-arm64/screenshot-connector"
     worker = build["outputs"].get(worker_relative)
     if worker and hashlib.sha256((PROJECT / worker_relative).read_bytes()).hexdigest() != worker["sha256"]:
         raise RuntimeError("macOS Screenshot Connector checksum mismatch")
@@ -90,7 +90,7 @@ hashes={}
 for target,name in [('linux-amd64','store-connector'),('darwin-arm64','store-connector'),('windows-amd64','store-connector.exe')]:
  p=os.path.join(current,'releases',target,name)
  hashes[target]=hashlib.sha256(open(p,'rb').read()).hexdigest()
-worker=os.path.join(current,'releases/darwin-universal/screenshot-connector')
+worker=os.path.join(current,'releases/darwin-arm64/screenshot-connector')
 print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdigest(),
  'proxySha256':hashlib.sha256(open('/etc/bugsmith/zentao-tls/nginx.conf','rb').read()).hexdigest(),
  'url':v['STORE_API_PUBLIC_URL'],'admin':v['STORE_API_ADMIN_TOKEN'],'token':v['STORE_API_TOKEN'],
@@ -146,13 +146,15 @@ with tarfile.open(fileobj=io.BytesIO(sys.stdin.buffer.read()),mode='r:')as t:
  for m in t.getmembers():
   assert (m.isfile()or m.isdir())and not m.name.startswith('/')and '..'not in m.name.split('/')
  t.extractall(p)
-shutil.copytree(os.path.join(old,'releases'),os.path.join(p,'releases'),symlinks=True)
+legacy=os.path.join(old,'releases/darwin-universal')
+shutil.copytree(os.path.join(old,'releases'),os.path.join(p,'releases'),symlinks=True,
+                ignore=lambda source,names: {'screenshot-connector'} if source==legacy else set())
 assert hashlib.sha256(open(os.path.join(p,'bin/store-api'),'rb').read()).hexdigest()==""" + repr(expected_api) + """
 worker_sha=""" + repr(worker["sha256"] if worker else None) + """
 if worker_sha:
  staged=os.path.join(p,'bin/screenshot-connector')
  assert hashlib.sha256(open(staged,'rb').read()).hexdigest()==worker_sha
- target=os.path.join(p,'releases/darwin-universal')
+ target=os.path.join(p,'releases/darwin-arm64')
  os.makedirs(target,exist_ok=True)
  os.replace(staged,os.path.join(target,'screenshot-connector'))
 """, payload)
@@ -344,8 +346,8 @@ print(json.dumps({'environmentSha256':hashlib.sha256(open('/etc/testflying-store
             if expected_worker:
                 check(remote("""
 import hashlib
-print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-universal/screenshot-connector','rb').read()).hexdigest())
-""").decode().strip() == expected_worker, "published universal macOS Screenshot Connector checksum")
+print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-arm64/screenshot-connector','rb').read()).hexdigest())
+""").decode().strip() == expected_worker, "published Apple Silicon Screenshot Connector checksum")
                 screenshot_node = next((node for node in json.loads(setup_nodes)["connectors"]
                                         if node["kind"] == "screenshot" and node["enabled"]), None)
                 if screenshot_node:
@@ -361,9 +363,12 @@ print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-uni
                               "download contains the current LaunchDaemon installer script")
                         check("projectRoots" not in config and "profiles" not in config,
                               "download supports machine-local discovery without predefined projects or profiles")
+                        executable = archive.read("screenshot-connector")
+                        check(executable.startswith(b"\xcf\xfa\xed\xfe\x0c\0\0\x01"),
+                              "download contains a single-architecture Apple Silicon Mach-O")
                         check(config["connectorId"] == screenshot_id and len(config["messageKey"]) == 64
                               and archive.getinfo("install.sh").external_attr >> 16 & 0o700 == 0o700
-                              and hashlib.sha256(archive.read("screenshot-connector")).hexdigest() == expected_worker,
+                              and hashlib.sha256(executable).hexdigest() == expected_worker,
                               "download contains the node's WSS configuration, installer and verified macOS worker")
             report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
                       "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),

@@ -399,6 +399,7 @@ try {
     assert.equal(integrationFixtures.length, 0);
     checks.push("admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it");
     await page.getByText("截图 Connector 部署", { exact: true }).click();
+    assert.match(await page.locator("#screenshotWorkspace").textContent(), /Apple Silicon（arm64）/);
     screenshotNode.connected = true;
     await page.getByRole("button", { name: "刷新连接状态", exact: true }).click();
     await page.getByText("连接状态已刷新。", { exact: true }).waitFor();

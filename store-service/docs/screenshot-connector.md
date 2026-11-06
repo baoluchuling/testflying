@@ -4,7 +4,7 @@
 
 ## 创建节点
 
-管理员在 HTTPS 配置页解锁，打开「截图 Connector 部署」，可新建或选择截图节点并下载该节点的 macOS 部署 ZIP。也可通过现有接口创建，省略 `kind` 时仍创建商店 Connector。
+管理员在 HTTPS 配置页解锁，打开「截图 Connector 部署」，可新建或选择截图节点并下载该节点的 macOS Apple Silicon（arm64）部署 ZIP。也可通过现有接口创建，省略 `kind` 时仍创建商店 Connector。
 
 ```http
 POST /v1/connectors
