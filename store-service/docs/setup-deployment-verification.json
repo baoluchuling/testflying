@@ -1,11 +1,11 @@
 {
-  "runId": "6687b0df854540fdbba71bbe059f1737",
+  "runId": "61fe0e926c714a8e89e3834411f54526",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-06T06:15:07.767861+00:00",
-  "deploymentCommit": "6a7d73c871289892f0b5f8cd1257a7ccba68fbc8",
-  "binarySourceCommit": "418374cd8e497ebb06e6597be10ca4ad4a3acfed",
-  "apiSha256": "a0ee7256a40122297b034fe1450709dae657d1700c9dbb4e35404b8b5ab91495",
+  "finishedAt": "2026-11-06T06:34:10.879350+00:00",
+  "deploymentCommit": "57d8619d0be03ecc24d8bfee771a82351ffd1fd4",
+  "binarySourceCommit": "ed5e8b6123dcbae746670dae6f79dac2e3e92397",
+  "apiSha256": "253b0bf35912c9323b437730cda5f2266cb09d5d660de62c532bf890c70461a3",
   "connectorBinarySha256": {
     "linux-amd64": "9027c88c561a898de08d4efe2569f3525033c3c323c836a418152143fb9d5590",
     "darwin-arm64": "0bee2286f60390f8df4900c811b64aed2e90324a018d15dbf9dabb9fa4157b73",
@@ -67,12 +67,13 @@
     "HTTP and HTTPS proxy configuration unchanged",
     "published universal macOS Screenshot Connector checksum",
     "administrator can download an existing screenshot node installer",
+    "screenshot package contains the native worker and its installation files",
     "download contains the node's WSS configuration, installer and verified macOS worker"
   ],
   "testNodesCreated": 0,
   "appBindingsWritten": 0,
   "screenshotUploadConfigured": false,
-  "screenshotConnectorSha256": "b2995770baefbb4c00e58b089ce330846013bb203ee51635e4826e908d95bfd7",
+  "screenshotConnectorSha256": "3b47121f6231825ce77113196ce65db4665d8473c2e207ca59a61d8684100b09",
   "temporaryIntegrationRevoked": true,
   "cleanup": "See the supervisor cleanup report for this runId"
 }
