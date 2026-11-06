@@ -1,4 +1,7 @@
-use super::Failure;
+use super::{
+    diagnostic::{codex_diagnostic, Log},
+    Failure,
+};
 use reqwest::{header, Client, Method, RequestBuilder, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::json;
@@ -9,11 +12,11 @@ use std::{
     io::{self, Read},
     os::unix::fs::{MetadataExt, OpenOptionsExt},
     path::{Path, PathBuf},
-    process::Stdio,
+    process::{ExitStatus, Stdio},
     time::Duration,
 };
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
     process::Command,
     sync::watch,
@@ -22,6 +25,7 @@ use tokio::{
 use uuid::Uuid;
 
 const MAX_IMAGE: usize = 16 * 1024 * 1024;
+const CODEX_STDERR_LIMIT: usize = 8 * 1024;
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
 const SELECTION_SCHEMA: &[u8] = br#"{
   "type":"object",
@@ -29,9 +33,10 @@ const SELECTION_SCHEMA: &[u8] = br#"{
     "ready":{"type":"boolean"},
     "projectRoot":{"type":["string","null"]},
     "platform":{"type":["string","null"],"enum":["ios","android",null]},
-    "deviceId":{"type":["string","null"]}
+    "deviceId":{"type":["string","null"]},
+    "notReadyReason":{"type":["string","null"],"enum":["project_not_found","simulator_unavailable","ambiguous_selection","preparation_failed",null]}
   },
-  "required":["ready","projectRoot","platform","deviceId"],
+  "required":["ready","projectRoot","platform","deviceId","notReadyReason"],
   "additionalProperties":false
 }"#;
 
@@ -113,6 +118,7 @@ pub(super) struct Worker<'a> {
     config: &'a Config,
     client: Client,
     jobs: String,
+    log: Log,
 }
 
 impl<'a> Worker<'a> {
@@ -147,6 +153,7 @@ impl<'a> Worker<'a> {
             config,
             client: client.build()?,
             jobs,
+            log: Log::for_config(path),
         })
     }
 
@@ -162,7 +169,13 @@ impl<'a> Worker<'a> {
             match response.status() {
                 StatusCode::NO_CONTENT => return Ok(None),
                 StatusCode::OK => {}
-                _ => return Err::<_, Failure>("Center refused the screenshot claim".into()),
+                status => {
+                    self.log.event(
+                        None,
+                        format_args!("claim_rejected http={}", status.as_u16()),
+                    );
+                    return Err::<_, Failure>("Center refused the screenshot claim".into());
+                }
             }
             let mut body = Vec::new();
             while let Some(chunk) = response.chunk().await? {
@@ -174,22 +187,28 @@ impl<'a> Worker<'a> {
             Ok(Some(serde_json::from_slice::<Job>(&body)?))
         };
         let job = tokio::select! {
-            result = claim => result?,
+            result = claim => result.inspect_err(|_| self.log.event(None, "claim_failed"))?,
             _ = stop.wait_for(|stopped| *stopped) => return Ok(false),
         };
         let Some(job) = job else {
             return Ok(false);
         };
+        let id = Some(job.job_id);
+        self.log.prompt(job.job_id, &job.prompt);
         let image = self.capture(&job, stop).await;
         let stopping = *stop.borrow();
+        let sending_image = image.is_ok() && !stopping;
         let request = match image {
-            Ok(image) if !stopping => self
-                .request(Method::PUT, &format!("{}/image", job.job_id))
-                .header(header::CONTENT_TYPE, "image/png")
-                .body(image),
+            Ok(image) if !stopping => {
+                self.log
+                    .event(id, format_args!("image_ready bytes={}", image.len()));
+                self.request(Method::PUT, &format!("{}/image", job.job_id))
+                    .header(header::CONTENT_TYPE, "image/png")
+                    .body(image)
+            }
             outcome => {
                 let code = outcome.err().unwrap_or("capture_failed");
-                eprintln!("Screenshot job failed: {code}");
+                self.log.event(id, format_args!("job_failed code={code}"));
                 self.request(Method::POST, &format!("{}/failure", job.job_id))
                     .json(&json!({"code":code}))
             }
@@ -197,17 +216,37 @@ impl<'a> Worker<'a> {
         let delivery = request
             .header("X-Screenshot-Lease", job.lease.to_string())
             .send();
-        let response = if stopping {
-            timeout(Duration::from_secs(3), delivery).await??
+        let response: Result<_, Failure> = if stopping {
+            match timeout(Duration::from_secs(3), delivery).await {
+                Ok(response) => response.map_err(Into::into),
+                Err(error) => Err(error.into()),
+            }
         } else {
             tokio::select! {
-                response = delivery => response?,
+                response = delivery => response.map_err(Into::into),
                 _ = stop.wait_for(|stopped| *stopped) => return Ok(false),
             }
         };
+        let response = response.inspect_err(|_| self.log.event(id, "result_request_failed"))?;
         if response.status() != StatusCode::NO_CONTENT {
+            let status = response.status().as_u16();
+            let code = timeout(Duration::from_secs(2), result_error_code(response))
+                .await
+                .unwrap_or("unknown");
+            self.log.event(
+                id,
+                format_args!("result_rejected http={status} code={code}"),
+            );
             return Err("Center refused the screenshot result".into());
         }
+        self.log.event(
+            id,
+            if sending_image {
+                "image_delivered"
+            } else {
+                "failure_reported"
+            },
+        );
         Ok(!stopping)
     }
 
@@ -231,6 +270,7 @@ impl<'a> Worker<'a> {
         job: &Job,
         stop: &mut watch::Receiver<bool>,
     ) -> Result<Vec<u8>, &'static str> {
+        let id = Some(job.job_id);
         let unavailable = |_| "profile_unavailable";
         let codex = match self
             .config
@@ -238,8 +278,13 @@ impl<'a> Worker<'a> {
             .as_deref()
             .filter(|path| !path.as_os_str().is_empty())
         {
-            Some(path) => local_path(path, false).map_err(unavailable)?,
-            None => path_executable("codex").ok_or("profile_unavailable")?,
+            Some(path) => local_path(path, false)
+                .inspect_err(|_| self.log.event(id, "codex_path_invalid"))
+                .map_err(unavailable)?,
+            None => path_executable("codex").ok_or_else(|| {
+                self.log.event(id, "codex_not_found_on_path");
+                "profile_unavailable"
+            })?,
         };
         let codex_home = self
             .config
@@ -248,12 +293,15 @@ impl<'a> Worker<'a> {
             .filter(|path| !path.as_os_str().is_empty())
             .map(|path| local_path(path, true))
             .transpose()
+            .inspect_err(|_| self.log.event(id, "codex_home_invalid"))
             .map_err(unavailable)?;
         let adb = self.config.adb();
 
         let schema = root.join("codex-result-schema.json");
         let result = root.join("codex-result.json");
-        fs::write(&schema, SELECTION_SCHEMA).map_err(|_| "codex_failed")?;
+        fs::write(&schema, SELECTION_SCHEMA)
+            .inspect_err(|_| self.log.event(id, "codex_schema_write_failed"))
+            .map_err(|_| "codex_failed")?;
         let prompt = self.session_prompt(job, adb.as_deref());
         let mut command = Command::new(codex);
         command
@@ -272,26 +320,70 @@ impl<'a> Worker<'a> {
             .arg("-")
             .stdout(Stdio::null());
         job_environment(&mut command, root, codex_home.as_deref());
-        run_command(
+        self.log.event(id, "codex_starting");
+        let mut stderr = Vec::new();
+        let status = run_command(
             &mut command,
             Some(prompt.as_bytes()),
             Duration::from_secs(24 * 60),
             stop,
+            Some(&mut stderr),
         )
         .await
-        .map_err(|_| "codex_failed")?;
-        let selection = read_owned(&result, 4096, false).map_err(|_| "codex_failed")?;
-        let selection: Selection =
-            serde_json::from_slice(&selection).map_err(|_| "selection_invalid")?;
+        .map_err(|error| {
+            let kind = error.kind();
+            let os_error = error.raw_os_error();
+            self.log.event(
+                id,
+                format_args!("codex_process_error kind={kind:?} os_error={os_error:?}"),
+            );
+            "codex_failed"
+        })?;
+        if !status.success() {
+            let (kind, flag) = codex_diagnostic(&stderr);
+            self.log.event(
+                id,
+                format_args!(
+                    "codex_exit_failed status={status} diagnostic={kind} flag={}",
+                    flag.unwrap_or("none")
+                ),
+            );
+            return Err("codex_failed");
+        }
+        let selection = read_owned(&result, 4096, false)
+            .inspect_err(|error| {
+                self.log.event(
+                    id,
+                    format_args!("codex_result_unreadable kind={:?}", error.kind()),
+                )
+            })
+            .map_err(|_| "codex_failed")?;
+        let selection: Selection = serde_json::from_slice(&selection)
+            .inspect_err(|_| self.log.event(id, "codex_result_invalid"))
+            .map_err(|_| "selection_invalid")?;
         if !selection.ready {
+            let reason = match selection.not_ready_reason {
+                Some(NotReadyReason::ProjectNotFound) => "project_not_found",
+                Some(NotReadyReason::SimulatorUnavailable) => "simulator_unavailable",
+                Some(NotReadyReason::AmbiguousSelection) => "ambiguous_selection",
+                Some(NotReadyReason::PreparationFailed) => "preparation_failed",
+                None => "unspecified",
+            };
+            self.log
+                .event(id, format_args!("codex_not_ready reason={reason}"));
             return Err("codex_failed");
         }
 
-        let device = selection.validate().ok_or("selection_invalid")?;
+        let device = selection.validate().ok_or_else(|| {
+            self.log.event(id, "simulator_selection_invalid");
+            "selection_invalid"
+        })?;
         device
             .verify_running(root, adb.as_deref(), stop)
             .await
+            .inspect_err(|_| self.log.event(id, "simulator_unavailable"))
             .map_err(|_| "selection_invalid")?;
+        self.log.event(id, "simulator_verified");
         let png = root.join("screenshot.png");
         let (mut capture, stdout) = device
             .capture_command(&png, adb.as_deref())
@@ -310,11 +402,28 @@ impl<'a> Worker<'a> {
             capture.stdout(Stdio::null());
         }
         job_environment(&mut capture, root, None);
-        run_command(&mut capture, None, Duration::from_secs(45), stop)
+        let status = run_command(&mut capture, None, Duration::from_secs(45), stop, None)
             .await
+            .inspect_err(|error| {
+                self.log.event(
+                    id,
+                    format_args!("capture_process_error kind={:?}", error.kind()),
+                )
+            })
             .map_err(|_| "capture_failed")?;
-        let bytes = read_owned(&png, MAX_IMAGE, false).map_err(|_| "capture_failed")?;
+        if !status.success() {
+            self.log
+                .event(id, format_args!("capture_exit_failed status={status}"));
+            return Err("capture_failed");
+        }
+        let bytes = read_owned(&png, MAX_IMAGE, false)
+            .inspect_err(|error| {
+                self.log
+                    .event(id, format_args!("image_unreadable kind={:?}", error.kind()))
+            })
+            .map_err(|_| "capture_failed")?;
         if bytes.len() < 33 || !bytes.starts_with(PNG) {
+            self.log.event(id, "image_invalid");
             return Err("capture_failed");
         }
         Ok(bytes)
@@ -331,8 +440,28 @@ impl<'a> Worker<'a> {
             "adbPath": adb,
         });
         format!(
-            "Find the app project for this task on this Mac using the local files and development tools available to this session. Search for the project by the app or project named in the task and verify it against local project files. Treat the optional task.profile as a hint. Choose one appropriate iOS Simulator or Android Emulator using simctl or local adb. Decide whether to build, install, launch or interact with the app and leave the requested screen visible. Treat project source as read-only. Keep generated files in the working directory and use the DerivedData and Gradle paths in the environment. Do not capture or upload screenshots yourself. Return ready=true, the absolute projectRoot, platform and deviceId only after the screen is ready on that booted simulator. Use the simulator UUID on iOS or the emulator serial on Android. If the project or device cannot be identified or the screen cannot be prepared, return ready=false and null for the selection fields.\nTask context (JSON):\n{context}"
+            "Find the app project for this task on this Mac using the local files and development tools available to this session. Search for the project by the app or project named in the task and verify it against local project files. Treat the optional task.profile as a hint. Choose one appropriate iOS Simulator or Android Emulator using simctl or local adb. Decide whether to build, install, launch or interact with the app and leave the requested screen visible. Treat project source as read-only. Keep generated files in the working directory and use the DerivedData and Gradle paths in the environment. Do not capture or upload screenshots yourself. Return ready=true, the absolute projectRoot, platform, deviceId and null notReadyReason only after the screen is ready on that booted simulator. Use the simulator UUID on iOS or the emulator serial on Android. If the project or device cannot be identified or the screen cannot be prepared, return ready=false, null for the selection fields, and the matching notReadyReason.\nTask context (JSON):\n{context}"
         )
+    }
+}
+
+async fn result_error_code(mut response: reqwest::Response) -> &'static str {
+    let mut body = Vec::new();
+    while let Ok(Some(chunk)) = response.chunk().await {
+        if chunk.len() > 4096 - body.len() {
+            return "unknown";
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let Ok(body) = serde_json::from_slice::<serde_json::Value>(&body) else {
+        return "unknown";
+    };
+    match body["error"]["code"].as_str() {
+        Some("screenshot_upload_unconfigured") => "screenshot_upload_unconfigured",
+        Some("screenshot_upload_busy") => "screenshot_upload_busy",
+        Some("delivery_unknown") => "delivery_unknown",
+        Some("invalid_job_lease") => "invalid_job_lease",
+        _ => "unknown",
     }
 }
 
@@ -343,6 +472,16 @@ struct Selection {
     project_root: Option<PathBuf>,
     platform: Option<Platform>,
     device_id: Option<String>,
+    not_ready_reason: Option<NotReadyReason>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum NotReadyReason {
+    ProjectNotFound,
+    SimulatorUnavailable,
+    AmbiguousSelection,
+    PreparationFailed,
 }
 
 #[derive(Deserialize)]
@@ -407,8 +546,8 @@ impl Device {
                 .open(&output)?,
         );
         job_environment(&mut list, root, None);
-        run_command(&mut list, None, Duration::from_secs(10), stop).await?;
-        if self.is_running(&read_owned(&output, 1024 * 1024, false)?) {
+        let status = run_command(&mut list, None, Duration::from_secs(10), stop, None).await?;
+        if status.success() && self.is_running(&read_owned(&output, 1024 * 1024, false)?) {
             Ok(())
         } else {
             Err(io::Error::other("Selected simulator is unavailable"))
@@ -567,9 +706,13 @@ async fn run_command(
     input: Option<&[u8]>,
     limit: Duration,
     stop: &mut watch::Receiver<bool>,
-) -> io::Result<()> {
+    stderr_capture: Option<&mut Vec<u8>>,
+) -> io::Result<ExitStatus> {
     if *stop.borrow() {
-        return Err(io::Error::other("Connector is shutting down"));
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "Connector is shutting down",
+        ));
     }
     let mut child = command
         .stdin(if input.is_some() {
@@ -577,15 +720,35 @@ async fn run_command(
         } else {
             Stdio::null()
         })
-        .stderr(Stdio::null())
+        .stderr(if stderr_capture.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .process_group(0)
         .kill_on_drop(true)
         .spawn()?;
     let pid = child.id().expect("new child has a PID") as libc::pid_t;
+    let stderr = child.stderr.take().map(|mut stderr| {
+        tokio::spawn(async move {
+            let mut captured = Vec::new();
+            let mut buffer = [0; 2048];
+            while let Ok(count @ 1..) = stderr.read(&mut buffer).await {
+                let keep = count.min(CODEX_STDERR_LIMIT - captured.len());
+                captured.extend_from_slice(&buffer[..keep]);
+            }
+            captured
+        })
+    });
     let completion = timeout(limit, async {
         if let Some(input) = input {
             let mut stdin = child.stdin.take().expect("child stdin is piped");
-            stdin.write_all(input).await?;
+            if let Err(error) = stdin.write_all(input).await {
+                // A CLI usage error can exit before reading the prompt. Preserve its exit code.
+                if error.kind() != io::ErrorKind::BrokenPipe {
+                    return Err(error);
+                }
+            }
         }
         loop {
             // WNOWAIT keeps the PID reserved until we finish signaling this process group.
@@ -611,8 +774,8 @@ async fn run_command(
         }
     });
     let result = tokio::select! {
-        result = completion => result.map_err(io::Error::other).and_then(|r| r),
-        _ = stop.wait_for(|stopped| *stopped) => Err(io::Error::other("Connector is shutting down")),
+        result = completion => result.map_err(|e| io::Error::new(io::ErrorKind::TimedOut, e)).and_then(|r| r),
+        _ = stop.wait_for(|stopped| *stopped) => Err(io::Error::new(io::ErrorKind::Interrupted, "Connector is shutting down")),
     };
     // The unreaped direct child reserves this group ID across both signals.
     if result.is_err() {
@@ -620,14 +783,16 @@ async fn run_command(
         sleep(Duration::from_secs(1)).await;
     }
     unsafe { libc::kill(-pid, libc::SIGKILL) };
-    let status = timeout(Duration::from_secs(5), child.wait())
-        .await
-        .map_err(io::Error::other)??;
-    result?;
-    if !status.success() {
-        return Err(io::Error::other("Screenshot command failed"));
+    let status = timeout(Duration::from_secs(5), child.wait()).await;
+    if let (Some(sink), Some(mut stderr)) = (stderr_capture, stderr) {
+        match timeout(Duration::from_secs(1), &mut stderr).await {
+            Ok(Ok(captured)) => *sink = captured,
+            Ok(Err(_)) => {}
+            Err(_) => stderr.abort(),
+        }
     }
-    Ok(())
+    result?;
+    status.map_err(|error| io::Error::new(io::ErrorKind::TimedOut, error))?
 }
 
 #[cfg(test)]
@@ -699,6 +864,7 @@ mod tests {
             project_root: Some(project),
             platform: Some(Platform::Android),
             device_id: Some(device.into()),
+            not_ready_reason: None,
         };
         assert!(selection(path.clone(), "emulator-5554")
             .validate()
@@ -781,14 +947,16 @@ printf '%s\n' '{"ready":true,"projectRoot":"/","platform":"android","deviceId":"
             .current_dir(workspace.path())
             .args(["-c", "cat > input; (sleep 1; touch leaked) &"]);
         let (_stop, mut stopped) = watch::channel(false);
-        run_command(
+        let status = run_command(
             &mut command,
             Some("合成截图任务".as_bytes()),
             Duration::from_secs(5),
             &mut stopped,
+            None,
         )
         .await
         .unwrap();
+        assert!(status.success());
         assert_eq!(
             fs::read_to_string(workspace.path().join("input")).unwrap(),
             "合成截图任务"
@@ -817,11 +985,51 @@ printf '%s\n' '{"ready":true,"projectRoot":"/","platform":"android","deviceId":"
             stop.send_replace(true);
         };
         let (result, ()) = tokio::join!(
-            run_command(&mut command, None, Duration::from_secs(10), &mut stopped),
+            run_command(
+                &mut command,
+                None,
+                Duration::from_secs(10),
+                &mut stopped,
+                None
+            ),
             cancel
         );
         assert!(result.is_err());
         sleep(Duration::from_millis(1100)).await;
         assert!(!workspace.path().join("leaked").exists());
+    }
+
+    #[tokio::test]
+    async fn drains_stderr_after_the_capture_limit_and_returns_the_cli_exit_status() {
+        let mut command = Command::new("/bin/sh");
+        command.args([
+            "-c",
+            r#"
+            printf '%s\n' "error: unexpected argument '--sandbox' found" >&2
+            i=0
+            while [ "$i" -lt 3000 ]; do
+                printf '%s\n' 'synthetic output that must not block the process' >&2
+                i=$((i+1))
+            done
+            exit 2
+        "#,
+        ]);
+        let (_stop, mut stopped) = watch::channel(false);
+        let mut stderr = Vec::new();
+        let status = run_command(
+            &mut command,
+            Some(b"fixture task"),
+            Duration::from_secs(5),
+            &mut stopped,
+            Some(&mut stderr),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status.code(), Some(2));
+        assert_eq!(stderr.len(), CODEX_STDERR_LIMIT);
+        assert_eq!(
+            codex_diagnostic(&stderr),
+            ("unexpected_argument", Some("--sandbox"))
+        );
     }
 }

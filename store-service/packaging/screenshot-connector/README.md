@@ -13,4 +13,6 @@ This ZIP contains the Apple Silicon (arm64) Rust worker and the credentials for 
 
 To upgrade an existing node, copy the new `screenshot-connector`, `run.sh`, `install.sh` and `testflying-prod-ca.crt` into the original installation directory. Keep its `connector.json` and run `sh ./install.sh` to restart the service.
 
+From the installation directory, run `tail -F connector.log` to follow the local service log. It records connection status, job IDs and complete prompts, Codex exit status and recognized diagnostics, and screenshot delivery status. Prompts are JSON strings so multiline tasks stay on a single log line. The file is private to the installation account. The Connector removes entries older than 24 hours on startup and every minute while the service is running.
+
 The bundled CA is used for the center connection. For a different private CA, set `caFile` to its absolute path.

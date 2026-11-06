@@ -10,13 +10,16 @@ use tokio_tungstenite::{
     tungstenite::{client::IntoClientRequest, protocol::WebSocketConfig, Message},
 };
 
+#[path = "diagnostic.rs"]
+mod diagnostic;
 #[path = "worker.rs"]
 mod worker;
+use diagnostic::Log;
 use worker::{Config, Worker};
 
 type Failure = Box<dyn std::error::Error + Send + Sync>;
 
-async fn connection(config: &Config, jobs: &watch::Sender<()>) -> Result<(), Failure> {
+async fn connection(config: &Config, jobs: &watch::Sender<()>, log: &Log) -> Result<(), Failure> {
     let mut url = config.server_url.clone();
     url.set_scheme("wss").map_err(|_| "Invalid center URL")?;
     let path = format!(
@@ -70,6 +73,7 @@ async fn connection(config: &Config, jobs: &watch::Sender<()>) -> Result<(), Fai
         Ok(channel)
     })
     .await??;
+    log.event(None, "center_connected");
     let (mut write, mut read) = socket.split();
     let mut heartbeat = interval(Duration::from_secs(10));
     let mut last_seen = Instant::now();
@@ -98,11 +102,14 @@ async fn connection(config: &Config, jobs: &watch::Sender<()>) -> Result<(), Fai
     }
 }
 
-async fn reconnect(config: &Config, jobs: watch::Sender<()>) {
+async fn reconnect(config: &Config, jobs: watch::Sender<()>, log: &Log) {
     let mut delay = 1;
     loop {
         let started = Instant::now();
-        let _ = connection(config, &jobs).await;
+        match connection(config, &jobs, log).await {
+            Ok(()) => log.event(None, "center_disconnected"),
+            Err(_) => log.event(None, "center_connection_failed"),
+        }
         if started.elapsed() >= Duration::from_secs(10) {
             delay = 1;
         }
@@ -130,10 +137,7 @@ async fn drain(
             match worker.once(&mut stop).await {
                 Ok(true) => {}
                 Ok(false) => break false,
-                Err(_) => {
-                    eprintln!("Screenshot Connector center request failed");
-                    break true;
-                }
+                Err(_) => break true,
             }
         };
     }
@@ -162,8 +166,19 @@ pub async fn run() -> Result<(), Failure> {
         return Err("Usage: screenshot-connector [--once] connector.json".into());
     }
     let path = Path::new(&path);
-    let config = Config::load(path)?;
-    let worker = Worker::new(&config, path)?;
+    let log = Log::for_config(path);
+    log.expire_old_entries();
+    log.event(
+        None,
+        if once {
+            "connector_started mode=once"
+        } else {
+            "connector_started mode=service"
+        },
+    );
+    let config = Config::load(path).inspect_err(|_| log.event(None, "config_invalid"))?;
+    let worker = Worker::new(&config, path)
+        .inspect_err(|_| log.event(None, "center_client_setup_failed"))?;
     let (jobs, changes) = watch::channel(());
     let (stop, mut stopped) = watch::channel(false);
     let work = async {
@@ -175,12 +190,21 @@ pub async fn run() -> Result<(), Failure> {
         Ok(())
     };
     tokio::pin!(work);
-    tokio::select! {
+    let retention = async {
+        loop {
+            sleep(Duration::from_secs(60)).await;
+            log.expire_old_entries();
+        }
+    };
+    let result = tokio::select! {
         _ = shutdown() => {
             stop.send_replace(true);
             work.await
         }
         result = &mut work => result,
-        _ = reconnect(&config, jobs), if !once => Ok(()),
-    }
+        _ = reconnect(&config, jobs, &log), if !once => Ok(()),
+        _ = retention, if !once => Ok(()),
+    };
+    log.event(None, "connector_stopped");
+    result
 }
