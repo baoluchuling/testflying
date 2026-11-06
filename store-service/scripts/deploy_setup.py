@@ -65,6 +65,7 @@ for target,name in [('linux-amd64','store-connector'),('darwin-arm64','store-con
 print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdigest(),
  'proxySha256':hashlib.sha256(open('/etc/bugsmith/zentao-tls/nginx.conf','rb').read()).hexdigest(),
  'url':v['STORE_API_PUBLIC_URL'],'admin':v['STORE_API_ADMIN_TOKEN'],'token':v['STORE_API_TOKEN'],
+ 'screenshotUploadConfigured':bool(v.get('STORE_API_SCREENSHOT_UPLOAD_URL')),
  'binaries':hashes,'available':int(subprocess.check_output(['df','--output=avail','-B1','/opt']).decode().splitlines()[-1])}))
 """))
     if snapshot["available"] <= 21474836480:
@@ -238,6 +239,12 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                 status, body = request(discovery, token)
                 check(status == 200 and {row["connectorId"] for row in json.loads(body)["connectors"]} == business_nodes,
                       "new integration lists all enabled store nodes")
+                status, body = request("/v1/screenshot-jobs", token, "POST",
+                                       {"connectorId": connector_id, "profile": "verification", "prompt": "verify"})
+                expected = (422, "invalid_screenshot_connector") if snapshot["screenshotUploadConfigured"] else (
+                    503, "screenshot_upload_unconfigured")
+                check((status, json.loads(body)["error"]["code"]) == expected,
+                      "screenshot job route applies the production destination and node type checks")
             finally:
                 status, body = request(management, snapshot["admin"])
                 check(status == 200, "temporary integration cleanup listing available")
@@ -246,11 +253,21 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                         check(request(management + "/" + item["id"], snapshot["admin"], "DELETE")[0] == 204,
                               "temporary integration credential revoked")
             check(token is not None and request(discovery, token)[0] == 401, "revoked integration credential rejected")
+            after = json.loads(remote("""
+import json,hashlib,os
+print(json.dumps({'environmentSha256':hashlib.sha256(open('/etc/testflying-store-api/service.env','rb').read()).hexdigest(),
+'proxySha256':hashlib.sha256(open('/etc/bugsmith/zentao-tls/nginx.conf','rb').read()).hexdigest(),
+'current':os.path.realpath('/opt/testflying-store-api/current')}))
+"""))
+            check(after["current"] == release, "new API release selected")
+            check(after["environmentSha256"] == snapshot["environmentSha256"], "persistent API configuration unchanged")
+            check(after["proxySha256"] == snapshot["proxySha256"], "HTTP and HTTPS proxy configuration unchanged")
             report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
                       "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                       "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],
                       "apiSha256": expected_api, "connectorBinarySha256": snapshot["binaries"],
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
+                      "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
                       "temporaryIntegrationRevoked": True, "cleanup": "See the supervisor cleanup report for this runId"}
             report_path.write_text(json.dumps(report, indent=2) + "\n")
             success = True
