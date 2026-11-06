@@ -166,6 +166,19 @@ if worker_sha:
     def request(path: str, token: str | None = None, method: str = "GET", data: dict | None = None,
                 scheme: str = "https", *, setup_session: str | None = None,
                 cookies: list[str] | None = None) -> tuple[int, bytes]:
+        try:
+            return request_once(path, token, method, data, scheme, setup_session, cookies)
+        except http.client.RemoteDisconnected:
+            connection = connections.pop(scheme, None)
+            if connection is not None:
+                connection.close()
+            if method != "GET":
+                raise
+            return request_once(path, token, method, data, scheme, setup_session, cookies)
+
+    def request_once(path: str, token: str | None, method: str, data: dict | None,
+                     scheme: str, setup_session: str | None,
+                     cookies: list[str] | None) -> tuple[int, bytes]:
         if scheme not in connections:
             connections[scheme] = (http.client.HTTPSConnection(public.hostname, context=ca, timeout=45)
                                    if scheme == "https" else http.client.HTTPConnection(public.hostname, timeout=45))
