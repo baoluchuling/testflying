@@ -35,8 +35,12 @@ fn state() -> Arc<ApiState> {
 }
 
 fn state_with_releases(release_root: PathBuf) -> Arc<ApiState> {
+    state_with_database(release_root, ":memory:")
+}
+
+fn state_with_database(release_root: PathBuf, database: &str) -> Arc<ApiState> {
     ApiState::new(
-        Registry::open(":memory:", "test-screenshot-signing-key-0123456789").unwrap(),
+        Registry::open(database, "test-screenshot-signing-key-0123456789").unwrap(),
         ADMIN.into(),
         BUSINESS.into(),
         "https://center.example.invalid/store-api".into(),
@@ -96,8 +100,12 @@ async fn screenshot_socket(
     (socket, channel)
 }
 
-async fn wait_for_screenshot_wake(socket: &mut Socket, channel: &mut crypto::Channel) {
-    tokio::time::timeout(Duration::from_secs(2), async {
+async fn wait_for_screenshot_wake(
+    socket: &mut Socket,
+    channel: &mut crypto::Channel,
+    seconds: u64,
+) {
+    tokio::time::timeout(Duration::from_secs(seconds), async {
         loop {
             match socket.next().await.unwrap().unwrap() {
                 Message::Binary(bytes) => {
@@ -192,7 +200,12 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
         }),
     );
     let server = tokio::spawn(async move { axum::serve(listener, upstream).await.unwrap() });
-    let state = state();
+    let database = tempfile::tempdir().unwrap();
+    let database_path = database.path().join("registry.sqlite3");
+    let state = state_with_database(
+        PathBuf::from("unused-releases"),
+        database_path.to_str().unwrap(),
+    );
     let app = store_api::router_with_screenshots(
         state.clone(),
         Some(ScreenshotUploader::new(&url, Some("upstream-only-test-token")).unwrap()),
@@ -215,7 +228,6 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     let center_app = app.clone();
     let center = tokio::spawn(async move { axum::serve(listener, center_app).await.unwrap() });
     let (mut socket, mut channel) = screenshot_socket(addr, &mac, &mac_token, message_key).await;
-    wait_for_screenshot_wake(&mut socket, &mut channel).await;
     assert!(state.transport.connected(&mac));
     let (store, store_token) = node(&app, "Store Connector", "store").await;
     let client = integration(&app, "screenshots", &[&store]).await;
@@ -267,7 +279,7 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     assert_eq!(store_list["connectors"].as_array().unwrap().len(), 1);
     let response = send(&app, "POST", submit, &client, payload.clone()).await;
     assert_eq!(response.status(), 202);
-    wait_for_screenshot_wake(&mut socket, &mut channel).await;
+    wait_for_screenshot_wake(&mut socket, &mut channel, 2).await;
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
     let job = value(response).await;
     let id = job["jobId"].as_str().unwrap();
@@ -357,9 +369,9 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     })
     .await
     .unwrap();
-    let failed_job = value(send(&app, "POST", submit, &client, payload).await).await;
+    let failed_job = value(send(&app, "POST", submit, &client, payload.clone()).await).await;
     let (mut socket, mut channel) = screenshot_socket(addr, &mac, &mac_token, message_key).await;
-    wait_for_screenshot_wake(&mut socket, &mut channel).await;
+    wait_for_screenshot_wake(&mut socket, &mut channel, 2).await;
     let failed_id = failed_job["jobId"].as_str().unwrap();
     let claimed = value(send(&app, "POST", &claim, &mac_token, Value::Null).await).await;
     assert_eq!(
@@ -373,6 +385,30 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     let failed = value(send(&app, "GET", &failed_status, &client, Value::Null).await).await;
     assert_eq!(failed["status"], "failed");
     assert_eq!(failed["error"], "upstream_rejected");
+
+    let abandoned = value(send(&app, "POST", submit, &client, payload.clone()).await).await;
+    wait_for_screenshot_wake(&mut socket, &mut channel, 2).await;
+    let claimed = value(send(&app, "POST", &claim, &mac_token, Value::Null).await).await;
+    assert_eq!(claimed["jobId"], abandoned["jobId"]);
+    let next = value(send(&app, "POST", submit, &client, payload).await).await;
+    wait_for_screenshot_wake(&mut socket, &mut channel, 2).await;
+    assert_eq!(
+        send(&app, "POST", &claim, &mac_token, Value::Null)
+            .await
+            .status(),
+        204
+    );
+    rusqlite::Connection::open(database_path)
+        .unwrap()
+        .execute(
+            "UPDATE screenshot_jobs SET deadline=0 WHERE id=?1",
+            [abandoned["jobId"].as_str().unwrap()],
+        )
+        .unwrap();
+    wait_for_screenshot_wake(&mut socket, &mut channel, 12).await;
+    let claimed = value(send(&app, "POST", &claim, &mac_token, Value::Null).await).await;
+    assert_eq!(claimed["jobId"], next["jobId"]);
+
     assert_eq!(
         send(&app, "GET", "/v1/screenshot-artifacts", ADMIN, Value::Null)
             .await

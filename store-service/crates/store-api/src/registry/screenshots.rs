@@ -45,6 +45,24 @@ fn invalid_lease() -> StoreError {
     )
 }
 
+fn claimable_screenshot(
+    db: &Connection,
+    node: &str,
+    time: i64,
+) -> Result<Option<(String, String, String)>> {
+    db.query_row(
+        "SELECT id,profile,prompt FROM screenshot_jobs j WHERE connector_id=?1 AND status='queued'
+         AND deadline>?2 AND EXISTS(SELECT 1 FROM integrations WHERE id=j.integration_id)
+         AND NOT EXISTS(SELECT 1 FROM screenshot_jobs WHERE connector_id=?1
+                        AND status IN ('running','uploading') AND deadline>?2)
+         ORDER BY created_at,rowid LIMIT 1",
+        params![node, time],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )
+    .optional()
+    .map_err(database_error)
+}
+
 impl Registry {
     pub(crate) fn enqueue_screenshot(
         &self,
@@ -128,15 +146,7 @@ impl Registry {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
         expire(&tx, time)?;
-        let job = tx.query_row(
-            "SELECT id,profile,prompt FROM screenshot_jobs j WHERE connector_id=?1 AND status='queued'
-             AND EXISTS(SELECT 1 FROM integrations WHERE id=j.integration_id)
-             AND NOT EXISTS(SELECT 1 FROM screenshot_jobs WHERE connector_id=?1 AND status IN ('running','uploading'))
-             ORDER BY created_at,rowid LIMIT 1",
-            [node],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
-        ).optional().map_err(database_error)?;
-        let claimed = if let Some((id, profile, prompt)) = job {
+        let claimed = if let Some((id, profile, prompt)) = claimable_screenshot(&tx, node, time)? {
             let lease = Uuid::new_v4().to_string();
             tx.execute(
                 "UPDATE screenshot_jobs SET status='running', deadline=?2, lease=?3, prompt='' WHERE id=?1",
@@ -148,6 +158,10 @@ impl Registry {
         };
         tx.commit().map_err(database_error)?;
         Ok(claimed)
+    }
+
+    pub(crate) fn has_claimable_screenshot(&self, node: &str) -> Result<bool> {
+        Ok(claimable_screenshot(&self.db.lock().unwrap(), node, timestamp()?)?.is_some())
     }
 
     pub(crate) fn begin_screenshot_upload(&self, node: &str, id: &str, lease: &str) -> Result<()> {

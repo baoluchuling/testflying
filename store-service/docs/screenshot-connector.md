@@ -43,6 +43,7 @@ Content-Type: application/json
   "kind": "screenshot",
   "connectorId": "11111111-1111-4111-8111-111111111111",
   "token": "NODE_TOKEN_FROM_INSTALLATION",
+  "messageKey": "MESSAGE_KEY_FROM_INSTALLATION",
   "serverUrl": "https://store-api.example.com/store-api",
   "codexPath": "/absolute/path/to/codex",
   "codexHome": "/absolute/path/to/dedicated/codex-home",

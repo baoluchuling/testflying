@@ -1,4 +1,4 @@
-use crate::registry::Connector;
+use crate::registry::{Connector, Registry};
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use std::{
@@ -193,7 +193,7 @@ impl Transport {
         id: String,
         mut socket: WebSocket,
         key: String,
-        screenshot: bool,
+        screenshot_registry: Option<&Registry>,
         register: impl FnOnce(Option<String>) -> Result<()> + Send,
     ) {
         let authenticated = tokio::time::timeout(Duration::from_secs(10), async {
@@ -240,9 +240,6 @@ impl Transport {
         let (sender, mut requests) = mpsc::channel(1);
         let (close, mut closed) = watch::channel(false);
         let (screenshot_wake, mut screenshot_ready) = watch::channel(());
-        if screenshot {
-            screenshot_ready.mark_changed();
-        }
         let pending: Pending = Arc::default();
         let generation = Uuid::new_v4();
         {
@@ -282,8 +279,13 @@ impl Transport {
                 _ = closed.changed() => break,
                 _ = heartbeat.tick() => {
                     if last_seen.elapsed() > Duration::from_secs(35) || !bounded_send(&mut write,Message::Ping(Vec::new().into())).await {break;}
+                    // Recover queued work after reconnect or expiration of an abandoned lease.
+                    if !screenshot_ready.has_changed().unwrap_or(false)
+                        && screenshot_registry.is_some_and(|registry| registry.has_claimable_screenshot(&id).unwrap_or(false)) {
+                        screenshot_ready.mark_changed();
+                    }
                 }
-                changed = screenshot_ready.changed(), if screenshot => {
+                changed = screenshot_ready.changed(), if screenshot_registry.is_some() => {
                     if changed.is_err() {break;}
                     let Ok(records) = channel.encrypt(b"screenshot_job_available") else {break;};
                     let mut sent = true;
@@ -307,7 +309,7 @@ impl Transport {
                     last_seen = tokio::time::Instant::now();
                     match message {
                         Message::Binary(bytes) => {
-                            if screenshot {break;}
+                            if screenshot_registry.is_some() {break;}
                             let plain=match channel.decrypt(&bytes) {Ok(Some(plain))=>plain,Ok(None)=>continue,Err(_)=>break};
                             let Ok(reply) = serde_json::from_slice::<StoreReply>(&plain) else {break;};
                             if !(200..=599).contains(&reply.status) {break;}

@@ -376,16 +376,22 @@ async fn connect_ws(
                 let (transport, registration_state, registration_id) =
                     (state.transport.clone(), state.clone(), id.clone());
                 transport
-                    .serve(id, socket, key, screenshot, move |endpoint| {
-                        if screenshot && endpoint.is_some() {
-                            return Err(store_protocol::crypto::error());
-                        }
-                        registration_state.registry.register_endpoint(
-                            &registration_id,
-                            &token,
-                            endpoint.as_deref(),
-                        )
-                    })
+                    .serve(
+                        id,
+                        socket,
+                        key,
+                        screenshot.then_some(&state.registry),
+                        move |endpoint| {
+                            if screenshot && endpoint.is_some() {
+                                return Err(store_protocol::crypto::error());
+                            }
+                            registration_state.registry.register_endpoint(
+                                &registration_id,
+                                &token,
+                                endpoint.as_deref(),
+                            )
+                        },
+                    )
                     .await;
             }
         })
