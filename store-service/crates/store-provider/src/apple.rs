@@ -2,7 +2,12 @@ use super::*;
 use std::collections::BTreeMap;
 
 impl Gateway {
-    async fn apple(&self, method: Method, path: &str, body: Option<Value>) -> Result<Value> {
+    pub(super) async fn apple(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<Value>,
+    ) -> Result<Value> {
         self.api(Platform::Ios, method, path, body).await
     }
     pub(super) async fn apple_execute(&self, r: &StoreRequest) -> Result<Value> {
@@ -125,53 +130,7 @@ impl Gateway {
                         }
                         Ok(json!({"listings":listings.into_values().collect::<Vec<_>>()}))
                     }
-                    Operation::StoreImages => {
-                        let mut rows = Vec::new();
-                        if let Some(v) = version {
-                            for loc in self
-                                .apple_localizations(
-                                    "appStoreVersions",
-                                    id(&v)?,
-                                    "appStoreVersionLocalizations",
-                                )
-                                .await?
-                            {
-                                let response = self
-                                    .apple_sets("appStoreVersionLocalizations", id(&loc)?)
-                                    .await?;
-                                let mut images =
-                                    json!({"phone_screenshots":[],"tablet_screenshots":[]});
-                                for set in arr(&response, "data") {
-                                    let display = s(&set["attributes"], "screenshotDisplayType");
-                                    let slot = if display.contains("IPHONE") {
-                                        "phone_screenshots"
-                                    } else if display.contains("IPAD") {
-                                        "tablet_screenshots"
-                                    } else {
-                                        continue;
-                                    };
-                                    for link in arr(&set["relationships"]["appScreenshots"], "data")
-                                    {
-                                        if let Some(image) =
-                                            arr(&response, "included").iter().find(|v| {
-                                                s(v, "id") == s(link, "id")
-                                                    && s(v, "type") == "appScreenshots"
-                                            })
-                                        {
-                                            let a = &image["attributes"];
-                                            let asset = &a["imageAsset"];
-                                            images[slot].as_array_mut().expect("array").push(json!({"id":image["id"],"fileName":a["fileName"],
-                                                "url":if s(a,"url").is_empty(){&asset["templateUrl"]}else{&a["url"]},"width":asset["width"],"height":asset["height"]}));
-                                        }
-                                    }
-                                }
-                                rows.push(
-                                    json!({"locale":loc["attributes"]["locale"],"images":images}),
-                                );
-                            }
-                        }
-                        Ok(json!({"locales":rows}))
-                    }
+                    Operation::StoreImages => self.apple_images(version.as_ref(), &r.payload).await,
                     Operation::Sync => {
                         self.apple_sync(
                             app,
@@ -442,6 +401,7 @@ impl Gateway {
         }
         if has_images {
             self.apple_sync_images(
+                app,
                 "appStoreVersionLocalization",
                 "appStoreVersionLocalizations",
                 &localization,
@@ -669,6 +629,7 @@ impl Gateway {
         }
         if scopes(p, "store_images", false) && page["storeImages"].is_object() {
             self.apple_sync_images(
+                app,
                 "appCustomProductPageLocalization",
                 "appCustomProductPageLocalizations",
                 &localization,
@@ -678,144 +639,13 @@ impl Gateway {
         }
         Ok(succeeded(json!({"applePageId":page_id,"created":created})))
     }
-    async fn apple_sets(&self, owner: &str, owner_id: &str) -> Result<Value> {
-        self.apple(
-            Method::GET,
-            &query(
-                &format!("/v1/{owner}/{}/appScreenshotSets", escape(owner_id)),
-                &[
-                    ("include", "appScreenshots"),
-                    ("limit", "200"),
-                    ("limit[appScreenshots]", "50"),
-                ],
-            ),
-            None,
-        )
-        .await
-    }
-    async fn apple_sync_images(
-        &self,
-        relationship: &str,
-        owner: &str,
-        owner_id: &str,
-        images: &Value,
-    ) -> Result<()> {
-        for (slot, display) in [
-            ("phone_screenshots", "APP_IPHONE_67"),
-            ("tablet_screenshots", "APP_IPAD_PRO_3GEN_129"),
-        ] {
-            let Some(slot) = images.get(slot) else {
-                continue;
-            };
-            let sources = images::sources(slot)?;
-            let mut downloaded = Vec::new();
-            for source in sources {
-                downloaded.push(self.download_image(&source).await?);
-            }
-            let response = self.apple_sets(owner, owner_id).await?;
-            let set = if let Some(set) = arr(&response, "data")
-                .iter()
-                .find(|v| s(&v["attributes"], "screenshotDisplayType") == display)
-            {
-                set.clone()
-            } else {
-                if downloaded.is_empty() {
-                    continue;
-                }
-                self.apple(
-                    Method::POST,
-                    "/v1/appScreenshotSets",
-                    Some(resource(
-                        "appScreenshotSets",
-                        None,
-                        json!({"screenshotDisplayType":display}),
-                        json!({relationship:{"data":{"type":owner,"id":owner_id}}}),
-                    )),
-                )
-                .await?["data"]
-                    .clone()
-            };
-            let set_id = id(&set)?;
-            for link in arr(&set["relationships"]["appScreenshots"], "data") {
-                self.apple(
-                    Method::DELETE,
-                    &format!("/v1/appScreenshots/{}", escape(id(link)?)),
-                    None,
-                )
-                .await?;
-            }
-            for image in downloaded {
-                let checksum = format!("{:x}", md5::compute(&image.bytes));
-                let response=self.apple(Method::POST,"/v1/appScreenshots",Some(resource("appScreenshots",None,json!({"fileName":image.name,"fileSize":image.bytes.len(),"sourceFileChecksum":checksum}),json!({"appScreenshotSet":{"data":{"type":"appScreenshotSets","id":set_id}}})))).await?;
-                let screenshot = id(&response["data"])?;
-                let operations = arr(&response["data"]["attributes"], "uploadOperations");
-                if operations.is_empty() {
-                    return Err(upstream(
-                        "Apple screenshot reservation omitted upload operations",
-                    ));
-                }
-                for operation in operations {
-                    let start = usize::try_from(
-                        operation
-                            .get("offset")
-                            .unwrap_or(&json!(0))
-                            .as_u64()
-                            .ok_or_else(|| upstream("Invalid Apple upload offset"))?,
-                    )
-                    .map_err(|_| upstream("Invalid Apple upload offset"))?;
-                    let length = usize::try_from(
-                        operation
-                            .get("length")
-                            .unwrap_or(&json!(0))
-                            .as_u64()
-                            .ok_or_else(|| upstream("Invalid Apple upload length"))?,
-                    )
-                    .map_err(|_| upstream("Invalid Apple upload length"))?;
-                    let end = if length == 0 {
-                        image.bytes.len()
-                    } else {
-                        start
-                            .checked_add(length)
-                            .ok_or_else(|| upstream("Invalid Apple upload range"))?
-                    };
-                    if start > end || end > image.bytes.len() {
-                        return Err(upstream("Invalid Apple upload range"));
-                    }
-                    let url = required(operation, "url")?;
-                    let parsed = Url::parse(url).map_err(|_| upstream("Invalid upload URL"))?;
-                    if !matches!(parsed.scheme(), "http" | "https") {
-                        return Err(upstream("Invalid upload URL scheme"));
-                    }
-                    let method = Method::from_bytes(if s(operation, "method").is_empty() {
-                        b"PUT"
-                    } else {
-                        s(operation, "method").as_bytes()
-                    })
-                    .map_err(|_| upstream("Invalid Apple upload method"))?;
-                    let mut request = self
-                        .inner
-                        .client
-                        .request(method, parsed)
-                        .body(image.bytes[start..end].to_vec());
-                    for header in arr(operation, "requestHeaders") {
-                        request = request.header(s(header, "name"), s(header, "value"));
-                    }
-                    let response = request
-                        .send()
-                        .await
-                        .map_err(|_| upstream("Apple screenshot upload failed"))?;
-                    if !response.status().is_success() {
-                        return Err(upstream("Apple screenshot chunk upload failed"));
-                    }
-                }
-                self.apple_patch("appScreenshots", screenshot, json!({"uploaded":true}))
-                    .await?;
-            }
-        }
-        Ok(())
-    }
 }
-fn resource(kind: &str, id: Option<&str>, attributes: Value, relationships: Value) -> Value {
+pub(super) fn resource(
+    kind: &str,
+    id: Option<&str>,
+    attributes: Value,
+    relationships: Value,
+) -> Value {
     let mut data = json!({"type":kind,"attributes":attributes});
     if let Some(id) = id {
         data["id"] = json!(id);

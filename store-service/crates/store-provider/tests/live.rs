@@ -70,15 +70,12 @@ async fn handler(State(state): State<FakeState>, request: Request) -> Response {
     state.records.lock().unwrap().push(record.clone());
     // Enforce vendor request constraints independently of scenario responses.
     // This prevents permissive fake handlers from masking malformed live calls.
-    let invalid_screenshot_limit = record.uri.contains("/appScreenshotSets?")
-        && reqwest::Url::parse(&format!("http://fake.test{}", record.uri))
-            .unwrap()
-            .query_pairs()
-            .any(|(key, value)| {
-                key == "limit[appScreenshots]" && value.parse::<u64>().unwrap_or(u64::MAX) > 50
-            });
+    let deprecated_screenshot_request = record.uri.contains("/appScreenshot");
     let invalid_locale_creation = invalid_apple_locale_creation(&record);
-    let (status, headers, bytes) = if invalid_screenshot_limit || invalid_locale_creation {
+    let (status, headers, bytes) = if deprecated_screenshot_request
+        || invalid_locale_creation
+        || invalid_apple_library_request(&record)
+    {
         (
             StatusCode::BAD_REQUEST,
             vec![],
@@ -92,6 +89,76 @@ async fn handler(State(state): State<FakeState>, request: Request) -> Response {
         response = response.header(k, v);
     }
     response.body(Body::from(bytes)).unwrap()
+}
+fn invalid_apple_library_request(record: &Record) -> bool {
+    let body = record.body();
+    let data = &body["data"];
+    let relations = &data["relationships"];
+    if record.method == "POST" && record.uri == "/v1/appAssetLibraryImages" {
+        return data["type"] != "appAssetLibraryImages"
+            || data["attributes"]["category"] != "APP_SCREENSHOTS_AND_PREVIEWS"
+            || data["attributes"]["fileSize"]
+                .as_u64()
+                .is_none_or(|size| size == 0)
+            || data["attributes"].get("sourceFileChecksum").is_some()
+            || relations["assetLibrary"]["data"]["type"] != "appAssetLibraries"
+            || relations["assetLibrary"]["data"]["id"] != "library";
+    }
+    if record.method == "PATCH" && record.uri.starts_with("/v1/appAssetLibraryImages/") {
+        return data["type"] != "appAssetLibraryImages"
+            || data["attributes"] != json!({"uploaded":true});
+    }
+    if record.method == "POST"
+        && matches!(
+            record.uri.as_str(),
+            "/v1/appAssetLibraryPlacements" | "/v1/appAssetLibraryPlacementOrderingRequests"
+        )
+    {
+        let owner_valid = [
+            (
+                "appStoreVersionLocalization",
+                "appStoreVersionLocalizations",
+            ),
+            (
+                "appCustomProductPageLocalization",
+                "appCustomProductPageLocalizations",
+            ),
+        ]
+        .iter()
+        .filter(|(relation, kind)| {
+            relations[*relation]["data"]["type"] == *kind
+                && relations[*relation]["data"]["id"]
+                    .as_str()
+                    .is_some_and(|id| !id.is_empty())
+        })
+        .count()
+            == 1;
+        if !owner_valid
+            || relations
+                .as_object()
+                .is_none_or(|relations| relations.len() != 2)
+            || data["attributes"]["placementGroup"]
+                .as_str()
+                .is_none_or(|group| group.is_empty())
+        {
+            return true;
+        }
+        if record.uri == "/v1/appAssetLibraryPlacements" {
+            return data["type"] != "appAssetLibraryPlacements"
+                || data["attributes"]["placementType"] != "APP_SCREENSHOT"
+                || relations["image"]["data"]["type"] != "appAssetLibraryImages";
+        }
+        return data["type"] != "appAssetLibraryPlacementOrderingRequests"
+            || relations["orderedPlacements"]["data"]
+                .as_array()
+                .is_none_or(|ordered| {
+                    ordered.is_empty()
+                        || ordered
+                            .iter()
+                            .any(|placement| placement["type"] != "appAssetLibraryPlacements")
+                });
+    }
+    false
 }
 fn invalid_apple_locale_creation(record: &Record) -> bool {
     if record.method != "POST" {
@@ -209,6 +276,17 @@ impl Keys {
     }
 }
 fn apple_base(r: &Record) -> Option<Reply> {
+    if r.uri.ends_with("/assetLibrary") {
+        return Some(ok(
+            json!({"data":{"type":"appAssetLibraries","id":"library"}}),
+        ));
+    }
+    if r.uri.starts_with("/v1/appAssetLibraryRefData?") {
+        return Some(ok(apple_image_reference()));
+    }
+    if r.uri.contains("/placements?") {
+        return Some(ok(apple_image_placements(&[("shot", "phone-profile")])));
+    }
     if r.uri.starts_with("/v1/apps?") {
         return Some(ok(
             json!({"data":[{"id":"resolved-app","attributes":{"bundleId":"com.example.App","primaryLocale":"en-US"}}]}),
@@ -237,6 +315,56 @@ fn apple_base(r: &Record) -> Option<Reply> {
     }
     if r.method == "POST" && r.uri == "/v1/appStoreVersionLocalizations" {
         return Some(ok(json!({"data":{"id":"created-version-loc"}})));
+    }
+    None
+}
+fn apple_image_reference() -> Value {
+    let profiles = [
+        (
+            "phone-profile",
+            "IPHONE_DYNAMIC_ISLAND_LARGE_DISPLAY",
+            "IPHONE",
+        ),
+        ("tablet-profile", "IPAD_13", "IPAD"),
+        ("duo-inner-profile", "IPHONE_DUO", "IPHONE"),
+        ("duo-outer-profile", "IPHONE_DUO", "IPHONE"),
+    ];
+    json!({"data":[{"type":"appAssetLibraryRefData","id":"1","attributes":{
+        "features":(["APP_STORE_VERSIONS","CUSTOM_PRODUCT_PAGES"].iter().map(|feature|json!({"featureId":feature,"placementPolicies":[{"placementType":"APP_SCREENSHOT","groupLimits":[{"groupIds":profiles.iter().map(|(group,_,_)|group).collect::<Vec<_>>(),"maxCount":10}]}]})).collect::<Vec<_>>()),
+        "placementTypes":[{"placementTypeId":"APP_SCREENSHOT","acceptsAssetCategories":["APP_SCREENSHOTS_AND_PREVIEWS"],"specMappings":profiles.iter().map(|(group,_,_)|json!({"placementGroupId":group,"specs":["spec"]})).collect::<Vec<_>>()}],
+        "imageSpecs":[{"specId":"spec","dimensions":{"minWidth":2,"maxWidth":2,"minHeight":3,"maxHeight":3},"compatiblePlacementTypes":["APP_SCREENSHOT"],"alphaAllowed":false,"mimeTypes":["image/png"],"fileExtensions":[".png"],"maxFileSize":65536}],
+        "placementProfileGroups":profiles.iter().map(|(group,class,_)|json!({"placementProfileGroupId":group,"displayClassId":class})).collect::<Vec<_>>(),
+        "displayClasses":profiles.iter().map(|(_,class,family)|json!({"displayClassId":class,"deviceFamily":family})).collect::<Vec<_>>()
+    }}]})
+}
+fn apple_image_placements(images: &[(&str, &str)]) -> Value {
+    json!({
+        "data":images.iter().map(|(id,group)|json!({"type":"appAssetLibraryPlacements","id":format!("placement-{id}"),"attributes":{"placementType":"APP_SCREENSHOT","placementGroup":group},"relationships":{"image":{"data":{"type":"appAssetLibraryImages","id":id}}}})).collect::<Vec<_>>(),
+        "included":images.iter().map(|(id,_)|json!({"type":"appAssetLibraryImages","id":id,"attributes":{"fileName":format!("{id}.png"),"imageAsset":{"templateUrl":"https://cdn.test/{w}","width":1290,"height":2796}}})).collect::<Vec<_>>()
+    })
+}
+fn apple_upload_base(record: &Record, image: &[u8], base: &str) -> Option<Reply> {
+    if record.uri == "/image.png" {
+        return Some((
+            StatusCode::OK,
+            vec![("content-type", "image/png".into())],
+            image.to_vec(),
+        ));
+    }
+    if record.method == "POST" && record.uri == "/v1/appAssetLibraryImages" {
+        return Some(ok(
+            json!({"data":{"type":"appAssetLibraryImages","id":"shot","attributes":{"state":"AWAITING_UPLOAD","uploadOperations":[{"method":"PUT","url":format!("{base}/chunk"),"offset":0,"length":image.len(),"requestHeaders":[{"name":"x-upload","value":"chunk-header"}]}]}}}),
+        ));
+    }
+    if record.method == "GET" && record.uri == "/v1/appAssetLibraryImages/shot" {
+        return Some(ok(
+            json!({"data":{"type":"appAssetLibraryImages","id":"shot","attributes":{"state":"PREPARE_FOR_SUBMISSION","specId":"spec","imageAsset":{"width":2,"height":3}}}}),
+        ));
+    }
+    if record.method == "POST" && record.uri == "/v1/appAssetLibraryPlacements" {
+        return Some(ok(
+            json!({"data":{"type":"appAssetLibraryPlacements","id":format!("new-{}",record.body()["data"]["attributes"]["placementGroup"].as_str().unwrap())}}),
+        ));
     }
     None
 }
@@ -578,17 +706,20 @@ fn png() -> Vec<u8> {
     bytes.into_inner()
 }
 #[tokio::test]
-async fn image_uploads_reservation_chunks_checksum_completion_and_multipart() {
+async fn image_uploads_stage_library_assets_before_placements_and_google_multipart() {
     let image = png();
     let expected = image.clone();
     let port = Arc::new(Mutex::new(String::new()));
     let upload_base = port.clone();
-    let fake=Fake::new(move|r|{
-        if r.uri=="/image.png"{return(StatusCode::OK,vec![("content-type","image/png".into())],image.clone());}
-        if r.uri.contains("/appScreenshotSets?"){return ok(json!({"data":[{"id":"set","attributes":{"screenshotDisplayType":"APP_IPHONE_67"},"relationships":{"appScreenshots":{"data":[{"id":"old"}]}}}]}));}
-        if r.uri=="/v1/appScreenshots"&&r.method=="POST"{return ok(json!({"data":{"id":"shot","attributes":{"uploadOperations":[{"method":"PUT","url":format!("{}/chunk",upload_base.lock().unwrap()),"offset":0,"length":image.len(),"requestHeaders":[{"name":"x-upload","value":"chunk-header"}]}]}}}));}
-        apple_base(r).or_else(||google_base(r)).unwrap_or_else(||ok(json!({})))
-    }).await;
+    let fake = Fake::new(move |r| {
+        if let Some(reply) = apple_upload_base(r, &image, &upload_base.lock().unwrap()) {
+            return reply;
+        }
+        apple_base(r)
+            .or_else(|| google_base(r))
+            .unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
     *port.lock().unwrap() = fake.url.clone();
     let keys = Keys::new();
     let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
@@ -604,20 +735,50 @@ async fn image_uploads_reservation_chunks_checksum_completion_and_multipart() {
     let records = fake.records();
     let reservation = records
         .iter()
-        .find(|r| r.uri == "/v1/appScreenshots" && r.method == "POST")
+        .find(|r| r.uri == "/v1/appAssetLibraryImages" && r.method == "POST")
         .unwrap()
         .body();
     assert_eq!(
-        reservation["data"]["attributes"]["sourceFileChecksum"],
-        format!("{:x}", md5::compute(&expected))
+        reservation["data"]["relationships"]["assetLibrary"]["data"]["id"],
+        "library"
     );
+    assert!(reservation["data"]["attributes"]
+        .get("sourceFileChecksum")
+        .is_none());
     let chunk = records.iter().find(|r| r.uri == "/chunk").unwrap();
     assert_eq!(chunk.bytes, expected);
     assert!(!chunk.headers.contains_key("authorization"));
     assert_eq!(chunk.headers["x-upload"], "chunk-header");
     assert!(records.iter().any(|r| r.method == "PATCH"
-        && r.uri == "/v1/appScreenshots/shot"
-        && r.body()["data"]["attributes"]["uploaded"] == true));
+        && r.uri == "/v1/appAssetLibraryImages/shot"
+        && r.body()["data"]["attributes"] == json!({"uploaded":true})));
+    let processed = records
+        .iter()
+        .position(|r| r.method == "GET" && r.uri == "/v1/appAssetLibraryImages/shot")
+        .unwrap();
+    let removed = records
+        .iter()
+        .position(|r| r.method == "DELETE" && r.uri.starts_with("/v1/appAssetLibraryPlacements/"))
+        .unwrap();
+    let placed = records
+        .iter()
+        .position(|r| r.method == "POST" && r.uri == "/v1/appAssetLibraryPlacements")
+        .unwrap();
+    assert!(processed < removed && removed < placed);
+    assert_eq!(
+        records[placed].body()["data"]["relationships"]["appStoreVersionLocalization"]["data"]
+            ["id"],
+        "version-loc"
+    );
+    assert!(records
+        .iter()
+        .any(|r| r.uri == "/v1/appAssetLibraryPlacementOrderingRequests"
+            && r.body()["data"]["relationships"]["orderedPlacements"]["data"]
+                .as_array()
+                .unwrap()
+                .len()
+                == 1));
+    assert!(!records.iter().any(|r| r.uri.contains("appScreenshot")));
     let upload = records
         .iter()
         .find(|r| r.uri.starts_with("/upload/"))
@@ -628,6 +789,110 @@ async fn image_uploads_reservation_chunks_checksum_completion_and_multipart() {
         .unwrap()
         .starts_with("multipart/related;"));
     assert!(upload.bytes.windows(expected.len()).any(|w| w == expected));
+}
+
+#[tokio::test]
+async fn apple_library_processing_failure_or_spec_mismatch_preserves_existing_placements() {
+    for failed in [true, false] {
+        let image = png();
+        let endpoint = Arc::new(Mutex::new(String::new()));
+        let upstream = endpoint.clone();
+        let fake=Fake::new(move |r| {
+            if r.method=="GET" && r.uri=="/v1/appAssetLibraryImages/shot" {
+                return ok(json!({"data":{"id":"shot","attributes":{"state":if failed {"FAILED"}else{"PREPARE_FOR_SUBMISSION"},"specId":"unexpected-spec"}}}));
+            }
+            apple_upload_base(r,&image,&upstream.lock().unwrap()).or_else(||apple_base(r)).unwrap_or_else(||ok(json!({})))
+        }).await;
+        *endpoint.lock().unwrap() = fake.url.clone();
+        let keys = Keys::new();
+        let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+        let error=gateway.execute(&request(Platform::Ios,Operation::Sync,json!({
+            "operation":"update_app_metadata","version":"1.0","locale":"en-US","syncScopes":["store_images"],
+            "metadata":{"storeImages":{"phone_screenshots":{"urls":[format!("{}/image.png",fake.url)]}}}
+        }))).await.unwrap_err();
+        assert_eq!(error.status, 502);
+        assert!(!fake.records().iter().any(|r| r.method == "DELETE"
+            || r.uri == "/v1/appAssetLibraryPlacements"
+            || r.uri == "/v1/appAssetLibraryPlacementOrderingRequests"));
+    }
+}
+
+#[tokio::test]
+async fn apple_foldable_upload_waits_for_processing_and_orders_both_runtime_groups() {
+    let image = png();
+    let endpoint = Arc::new(Mutex::new(String::new()));
+    let upstream = endpoint.clone();
+    let polls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed = polls.clone();
+    let fake = Fake::new(move |r| {
+        if r.method == "GET"
+            && r.uri == "/v1/appAssetLibraryImages/shot"
+            && observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0
+        {
+            return ok(json!({"data":{"id":"shot","attributes":{"state":"UPLOAD_COMPLETE"}}}));
+        }
+        if r.uri.contains("/placements?") {
+            return ok(apple_image_placements(&[
+                ("old-duo", "duo-inner-profile"),
+                ("keep-phone", "phone-profile"),
+                ("keep-tablet", "tablet-profile"),
+            ]));
+        }
+        apple_upload_base(r, &image, &upstream.lock().unwrap())
+            .or_else(|| apple_base(r))
+            .unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    *endpoint.lock().unwrap() = fake.url.clone();
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    assert_eq!(gateway.execute(&request(Platform::Ios,Operation::Sync,json!({
+        "operation":"update_app_metadata","version":"1.0","locale":"en-US","syncScopes":["store_images"],
+        "metadata":{"storeImages":{"foldable_screenshots":{"urls":[format!("{}/image.png",fake.url)]}}}
+    }))).await.unwrap()["status"],"succeeded");
+    assert_eq!(polls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    let records = fake.records();
+    let deletes = records
+        .iter()
+        .filter(|r| r.method == "DELETE")
+        .collect::<Vec<_>>();
+    assert_eq!(deletes.len(), 1);
+    assert!(deletes[0].uri.ends_with("placement%2Dold%2Dduo"));
+    let placements = records
+        .iter()
+        .filter(|r| r.method == "POST" && r.uri == "/v1/appAssetLibraryPlacements")
+        .map(Record::body)
+        .collect::<Vec<_>>();
+    assert_eq!(placements.len(), 2);
+    assert_eq!(
+        placements[0]["data"]["attributes"]["placementGroup"],
+        "duo-inner-profile"
+    );
+    assert_eq!(
+        placements[1]["data"]["attributes"]["placementGroup"],
+        "duo-outer-profile"
+    );
+    assert!(placements
+        .iter()
+        .all(|placement| placement["data"]["relationships"]["image"]["data"]["id"] == "shot"));
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.uri == "/v1/appAssetLibraryPlacementOrderingRequests")
+            .count(),
+        2
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.method == "POST" && r.uri == "/v1/appAssetLibraryImages")
+            .count(),
+        1
+    );
+    assert!(records
+        .iter()
+        .filter(|r| r.method == "DELETE")
+        .all(|r| r.uri.starts_with("/v1/appAssetLibraryPlacements/")));
 }
 
 #[tokio::test]
@@ -735,6 +1000,340 @@ async fn read_resources_map_all_google_images_releases_and_apple_ppo() {
 }
 
 #[tokio::test]
+async fn apple_image_queries_filter_language_and_device_before_fetching_placements() {
+    let fake = Fake::new(|record| {
+        if record.uri.contains("/appStoreVersionLocalizations?") {
+            return ok(json!({"data":[
+                {"id":"english","attributes":{"locale":"en-US"}},
+                {"id":"japanese","attributes":{"locale":"ja"}}
+            ]}));
+        }
+        if record.uri.contains("/placements?") {
+            // Return extra groups to prove they cannot leak into selected results.
+            return ok(apple_image_placements(&[
+                ("phone", "phone-profile"),
+                ("tablet", "tablet-profile"),
+                ("inner", "duo-inner-profile"),
+                ("outer", "duo-outer-profile"),
+            ]));
+        }
+        apple_base(record).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    for (locale, device, languages, slots, groups) in [
+        (
+            None,
+            None,
+            2,
+            vec![
+                "phone_screenshots",
+                "tablet_screenshots",
+                "foldable_screenshots",
+            ],
+            vec![
+                "duo-inner-profile",
+                "duo-outer-profile",
+                "phone-profile",
+                "tablet-profile",
+            ],
+        ),
+        (
+            Some("  EN-us  "),
+            Some("phone"),
+            1,
+            vec!["phone_screenshots"],
+            vec!["phone-profile"],
+        ),
+        (
+            Some("ja"),
+            Some("tablet"),
+            1,
+            vec!["tablet_screenshots"],
+            vec!["tablet-profile"],
+        ),
+        (
+            Some("en-US"),
+            Some("foldable"),
+            1,
+            vec!["foldable_screenshots"],
+            vec!["duo-inner-profile", "duo-outer-profile"],
+        ),
+        (
+            Some("zz-ZZ"),
+            Some("foldable"),
+            0,
+            vec!["foldable_screenshots"],
+            vec!["duo-inner-profile", "duo-outer-profile"],
+        ),
+        (
+            Some("  "),
+            Some("  "),
+            2,
+            vec![
+                "phone_screenshots",
+                "tablet_screenshots",
+                "foldable_screenshots",
+            ],
+            vec![
+                "duo-inner-profile",
+                "duo-outer-profile",
+                "phone-profile",
+                "tablet-profile",
+            ],
+        ),
+    ] {
+        let start = fake.records().len();
+        let mut payload = json!({"version":"1.0"});
+        if let Some(locale) = locale {
+            payload["locale"] = json!(locale);
+        }
+        if let Some(device) = device {
+            payload["device"] = json!(device);
+        }
+        let reply = gateway
+            .execute(&request(Platform::Ios, Operation::StoreImages, payload))
+            .await
+            .unwrap();
+        let rows = reply["locales"].as_array().unwrap();
+        assert_eq!(rows.len(), languages);
+        for row in rows {
+            let images = row["images"].as_object().unwrap();
+            assert_eq!(images.len(), slots.len());
+            for slot in &slots {
+                let images = images[*slot].as_array().unwrap();
+                assert_eq!(
+                    images.len(),
+                    if *slot == "foldable_screenshots" {
+                        2
+                    } else {
+                        1
+                    }
+                );
+                assert!(images
+                    .iter()
+                    .all(|image| groups.contains(&image["placementGroup"].as_str().unwrap())));
+            }
+            if let Some(locale) = locale.filter(|locale| !locale.trim().is_empty()) {
+                assert!(row["locale"]
+                    .as_str()
+                    .unwrap()
+                    .eq_ignore_ascii_case(locale.trim()));
+            }
+        }
+        let records = fake.records();
+        let reads: Vec<_> = records[start..]
+            .iter()
+            .filter(|record| record.uri.contains("/placements?"))
+            .collect();
+        assert_eq!(reads.len(), languages);
+        for read in reads {
+            let url = reqwest::Url::parse(&format!("{}{}", fake.url, read.uri)).unwrap();
+            assert!(url
+                .query_pairs()
+                .any(|(key, value)| key == "filter[placementGroup]" && value == groups.join(",")));
+            assert!(url
+                .query_pairs()
+                .any(|(key, value)| key == "sort" && value == "placementGroupPosition"));
+            if locale.is_some_and(|locale| locale.trim().eq_ignore_ascii_case("en-US")) {
+                assert!(read.uri.contains("/english/placements?"));
+            }
+        }
+    }
+    assert!(fake.records().iter().all(|record| record.method == "GET"));
+}
+
+#[tokio::test]
+async fn google_image_queries_filter_language_and_device_and_discard_edits() {
+    let fake = Fake::new(|record| {
+        if record.uri.ends_with("/listings") {
+            return ok(json!({"listings":[{"language":"en-US"},{"language":"ja"}]}));
+        }
+        if record.uri.contains("/listings/") {
+            return ok(json!({"images":[{"id":"image","url":"https://cdn.test/image"}]}));
+        }
+        google_base(record).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    for (locale, device, languages, kinds) in [
+        (
+            None,
+            None,
+            2,
+            vec![
+                "featureGraphic",
+                "phoneScreenshots",
+                "sevenInchScreenshots",
+                "tenInchScreenshots",
+                "tvScreenshots",
+                "wearScreenshots",
+            ],
+        ),
+        (
+            Some("  EN-us  "),
+            Some("phone"),
+            1,
+            vec!["phoneScreenshots"],
+        ),
+        (
+            Some("ja"),
+            Some("tablet"),
+            1,
+            vec!["sevenInchScreenshots", "tenInchScreenshots"],
+        ),
+        (Some("zz-ZZ"), Some("phone"), 0, vec!["phoneScreenshots"]),
+        (
+            Some("  "),
+            Some("  "),
+            2,
+            vec![
+                "featureGraphic",
+                "phoneScreenshots",
+                "sevenInchScreenshots",
+                "tenInchScreenshots",
+                "tvScreenshots",
+                "wearScreenshots",
+            ],
+        ),
+    ] {
+        let start = fake.records().len();
+        let mut payload = json!({});
+        if let Some(locale) = locale {
+            payload["locale"] = json!(locale);
+        }
+        if let Some(device) = device {
+            payload["device"] = json!(device);
+        }
+        let reply = gateway
+            .execute(&request(Platform::Android, Operation::StoreImages, payload))
+            .await
+            .unwrap();
+        let rows = reply["locales"].as_array().unwrap();
+        assert_eq!(rows.len(), languages);
+        for row in rows {
+            assert_eq!(row["images"].as_object().unwrap().len(), kinds.len());
+            if let Some(locale) = locale.filter(|locale| !locale.trim().is_empty()) {
+                assert!(row["locale"]
+                    .as_str()
+                    .unwrap()
+                    .eq_ignore_ascii_case(locale.trim()));
+            }
+        }
+        let records = fake.records();
+        let reads: Vec<_> = records[start..]
+            .iter()
+            .filter(|record| record.uri.contains("/listings/"))
+            .collect();
+        assert_eq!(reads.len(), languages * kinds.len());
+        assert!(reads
+            .iter()
+            .all(|record| kinds.iter().any(|kind| record.uri.ends_with(kind))));
+        assert_eq!(
+            records[start..]
+                .iter()
+                .filter(|record| record.method == "DELETE" && record.uri.ends_with("/edits/edit"))
+                .count(),
+            1
+        );
+        assert!(!records[start..]
+            .iter()
+            .any(|record| record.uri.contains(":commit")));
+    }
+}
+
+#[tokio::test]
+async fn invalid_image_read_selectors_fail_before_any_upstream_request() {
+    let fake = Fake::new(|_| panic!("Invalid image selectors reached upstream")).await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    for platform in [Platform::Ios, Platform::Android] {
+        for payload in [
+            json!({"device":"desktop"}),
+            json!({"device":null}),
+            json!({"device":1}),
+            json!({"locale":[]}),
+        ] {
+            assert_eq!(
+                gateway
+                    .execute(&request(platform, Operation::StoreImages, payload))
+                    .await
+                    .unwrap_err()
+                    .status,
+                422
+            );
+        }
+    }
+    assert_eq!(
+        gateway
+            .execute(&request(
+                Platform::Android,
+                Operation::StoreImages,
+                json!({"device":"foldable"})
+            ))
+            .await
+            .unwrap_err()
+            .code,
+        "unsupported_image_device"
+    );
+    assert!(fake.records().is_empty());
+}
+
+#[tokio::test]
+async fn apple_image_pagination_preserves_order_and_rejects_unrelated_next_links() {
+    for next in [
+        "?cursor=second",
+        "https://untrusted.test/steal",
+        "/v1/apps?steal=1",
+        "?cursor=first",
+    ] {
+        let fake = Fake::new(move |record| {
+            if record.uri.contains("/placements?") {
+                if record.uri.ends_with("cursor=second") {
+                    return ok(apple_image_placements(&[("second", "phone-profile")]));
+                }
+                let mut page = apple_image_placements(&[("first", "phone-profile")]);
+                // A loop is detected before sending its duplicate request.
+                page["links"] = json!({"next":next});
+                return ok(page);
+            }
+            apple_base(record).unwrap_or_else(|| ok(json!({})))
+        })
+        .await;
+        let keys = Keys::new();
+        let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+        let result = gateway
+            .execute(&request(
+                Platform::Ios,
+                Operation::StoreImages,
+                json!({"version":"1.0","device":"phone"}),
+            ))
+            .await;
+        if next == "?cursor=second" {
+            let reply = result.unwrap();
+            let images = reply["locales"][0]["images"]["phone_screenshots"]
+                .as_array()
+                .unwrap();
+            assert_eq!(
+                images
+                    .iter()
+                    .map(|image| image["id"].as_str().unwrap())
+                    .collect::<Vec<_>>(),
+                vec!["first", "second"]
+            );
+        } else {
+            assert_eq!(result.unwrap_err().status, 502);
+        }
+        assert!(!fake
+            .records()
+            .iter()
+            .any(|record| record.uri.contains("steal")));
+    }
+}
+
+#[tokio::test]
 async fn review_filters_are_page_local_validate_timezone_and_keep_cursor() {
     let fake=Fake::new(|r|{
         if r.uri.contains("/customerReviews?"){return ok(json!({"data":[
@@ -769,19 +1368,22 @@ async fn review_filters_are_page_local_validate_timezone_and_keep_cursor() {
 #[tokio::test]
 async fn invalid_apple_upload_range_is_rejected_before_uploaded_completion() {
     let image = png();
-    let fake=Fake::new(move|r|{
-        if r.uri=="/image.png"{return(StatusCode::OK,vec![],image.clone());}
-        if r.uri.contains("/appScreenshotSets?"){return ok(json!({"data":[{"id":"set","attributes":{"screenshotDisplayType":"APP_IPHONE_67"}}]}));}
-        if r.uri=="/v1/appScreenshots"&&r.method=="POST"{return ok(json!({"data":{"id":"shot","attributes":{"uploadOperations":[{"method":"PUT","url":"http://127.0.0.1:1/never","offset":0,"length":999999}]}}}));}
+    let fake=Fake::new(move |r| {
+        if r.uri=="/image.png" { return (StatusCode::OK,vec![],image.clone()); }
+        if r.method=="POST" && r.uri=="/v1/appAssetLibraryImages" {
+            return ok(json!({"data":{"id":"shot","attributes":{"uploadOperations":[{"method":"PUT","url":"http://127.0.0.1:1/never","offset":0,"length":999999}]}}}));
+        }
         apple_base(r).unwrap_or_else(||ok(json!({})))
     }).await;
     let keys = Keys::new();
     let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
-    assert!(gateway.execute(&request(Platform::Ios,Operation::Sync,json!({"operation":"update_app_metadata","version":"1.0","locale":"en-US","syncScopes":["store_images"],"metadata":{"storeImages":{"phone_screenshots":{"urls":[format!("{}/image.png",fake.url)]}}}}))).await.is_err());
-    assert!(!fake
-        .records()
-        .iter()
-        .any(|r| r.method == "PATCH" && r.uri == "/v1/appScreenshots/shot"));
+    assert!(gateway.execute(&request(Platform::Ios,Operation::Sync,json!({
+        "operation":"update_app_metadata","version":"1.0","locale":"en-US","syncScopes":["store_images"],
+        "metadata":{"storeImages":{"phone_screenshots":{"urls":[format!("{}/image.png",fake.url)]}}}
+    }))).await.is_err());
+    assert!(!fake.records().iter().any(|r| r.method == "DELETE"
+        || r.uri == "/v1/appAssetLibraryPlacements"
+        || r.method == "PATCH" && r.uri == "/v1/appAssetLibraryImages/shot"));
 }
 
 #[tokio::test]
@@ -865,23 +1467,29 @@ async fn apple_info_localization_creation_supplies_selected_name_and_validates_b
 }
 
 #[tokio::test]
-async fn apple_version_and_cpp_screenshot_queries_use_vendor_limit_and_cpp_locale_schema() {
+async fn apple_version_reads_and_cpp_uploads_use_asset_library_and_correct_localization() {
     let image = png();
     let endpoint = Arc::new(Mutex::new(String::new()));
     let upstream = endpoint.clone();
     let fake = Fake::new(move |r| {
-        if r.uri == "/image.png" { return (StatusCode::OK, vec![], image.clone()); }
-        if r.uri == "/v1/appCustomProductPages/page/app" { return ok(json!({"data":{"id":"resolved-app"}})); }
-        if r.uri.contains("/appCustomProductPageVersions?") { return ok(json!({"data":[{"id":"cpp-version"}]})); }
-        if r.uri.contains("/appCustomProductPageLocalizations?") { return ok(json!({"data":[]})); }
-        if r.method == "POST" && r.uri == "/v1/appCustomProductPageLocalizations" { return ok(json!({"data":{"id":"cpp-loc"}})); }
-        if r.uri.contains("/appScreenshotSets?") { return ok(json!({"data":[]})); }
-        if r.method == "POST" && r.uri == "/v1/appScreenshotSets" { return ok(json!({"data":{"id":"cpp-set"}})); }
-        if r.method == "POST" && r.uri == "/v1/appScreenshots" {
-            return ok(json!({"data":{"id":"cpp-shot","attributes":{"uploadOperations":[{"method":"PUT","url":format!("{}/chunk",upstream.lock().unwrap()),"offset":0,"length":image.len()}]}}}));
+        if let Some(reply) = apple_upload_base(r, &image, &upstream.lock().unwrap()) {
+            return reply;
+        }
+        if r.uri == "/v1/appCustomProductPages/page/app" {
+            return ok(json!({"data":{"id":"resolved-app"}}));
+        }
+        if r.uri.contains("/appCustomProductPageVersions?") {
+            return ok(json!({"data":[{"id":"cpp-version"}]}));
+        }
+        if r.uri.contains("/appCustomProductPageLocalizations?") {
+            return ok(json!({"data":[]}));
+        }
+        if r.method == "POST" && r.uri == "/v1/appCustomProductPageLocalizations" {
+            return ok(json!({"data":{"id":"cpp-loc"}}));
         }
         apple_base(r).unwrap_or_else(|| ok(json!({})))
-    }).await;
+    })
+    .await;
     *endpoint.lock().unwrap() = fake.url.clone();
     let keys = Keys::new();
     let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
@@ -893,26 +1501,17 @@ async fn apple_version_and_cpp_screenshot_queries_use_vendor_limit_and_cpp_local
         ))
         .await
         .unwrap();
-    gateway.execute(&request(Platform::Ios, Operation::Sync, json!({
-        "operation":"update_marketing_page", "locale":"fr-FR", "syncScopes":["store_images"],
-        "marketingPage":{"pageName":"Page", "applePageId":"page", "storeImages":{"phone_screenshots":{"urls":[format!("{}/image.png",fake.url)]}}}
+    gateway.execute(&request(Platform::Ios,Operation::Sync,json!({
+        "operation":"update_marketing_page","locale":"fr-FR","syncScopes":["store_images"],
+        "marketingPage":{"pageName":"Page","applePageId":"page","storeImages":{"phone_screenshots":{"urls":[format!("{}/image.png",fake.url)]}}}
     }))).await.unwrap();
     let records = fake.records();
-    for owner in [
-        "appStoreVersionLocalizations",
-        "appCustomProductPageLocalizations",
-    ] {
-        let record = records
-            .iter()
-            .find(|r| {
-                r.uri.starts_with(&format!("/v1/{owner}/")) && r.uri.contains("/appScreenshotSets?")
-            })
-            .unwrap();
-        assert!(reqwest::Url::parse(&format!("{}{}", fake.url, record.uri))
-            .unwrap()
-            .query_pairs()
-            .any(|(key, value)| key == "limit[appScreenshots]" && value == "50"));
-    }
+    assert!(records.iter().any(|record| record
+        .uri
+        .contains("/appStoreVersionLocalizations/version%2Dloc/placements?")));
+    assert!(!records
+        .iter()
+        .any(|record| record.uri.contains("appScreenshot")));
     let localization = records
         .iter()
         .find(|r| r.method == "POST" && r.uri == "/v1/appCustomProductPageLocalizations")
@@ -922,17 +1521,25 @@ async fn apple_version_and_cpp_screenshot_queries_use_vendor_limit_and_cpp_local
         localization["data"]["attributes"],
         json!({"locale":"fr-FR"})
     );
-    let set = records
+    let placement = records
         .iter()
-        .find(|r| r.method == "POST" && r.uri == "/v1/appScreenshotSets")
+        .find(|r| r.method == "POST" && r.uri == "/v1/appAssetLibraryPlacements")
         .unwrap()
         .body();
     assert_eq!(
-        set["data"]["relationships"]["appCustomProductPageLocalization"]["data"]["type"],
-        "appCustomProductPageLocalizations"
+        placement["data"]["relationships"]["appCustomProductPageLocalization"]["data"],
+        json!({"type":"appCustomProductPageLocalizations","id":"cpp-loc"})
     );
+    assert!(placement["data"]["relationships"]
+        .get("appStoreVersionLocalization")
+        .is_none());
+    let order = records
+        .iter()
+        .find(|r| r.uri == "/v1/appAssetLibraryPlacementOrderingRequests")
+        .unwrap()
+        .body();
     assert_eq!(
-        set["data"]["relationships"]["appCustomProductPageLocalization"]["data"]["id"],
+        order["data"]["relationships"]["appCustomProductPageLocalization"]["data"]["id"],
         "cpp-loc"
     );
 }
@@ -1119,14 +1726,18 @@ async fn malformed_image_selectors_never_reach_upstream_or_delete_existing_image
 #[tokio::test]
 async fn explicit_empty_image_arrays_clear_only_the_selected_slot() {
     let fake = Fake::new(|r| {
-        if r.uri.contains("/appScreenshotSets?") {
-            return ok(json!({"data":[
-                {"id":"phone-set", "attributes":{"screenshotDisplayType":"APP_IPHONE_67"}, "relationships":{"appScreenshots":{"data":[{"id":"old-phone"}]}}},
-                {"id":"tablet-set", "attributes":{"screenshotDisplayType":"APP_IPAD_PRO_3GEN_129"}, "relationships":{"appScreenshots":{"data":[{"id":"old-tablet"}]}}}
-            ]}));
+        if r.uri.contains("/placements?") {
+            return ok(apple_image_placements(&[
+                ("old-phone", "phone-profile"),
+                ("old-tablet", "tablet-profile"),
+                ("old-duo", "duo-inner-profile"),
+            ]));
         }
-        apple_base(r).or_else(||google_base(r)).unwrap_or_else(||ok(json!({})))
-    }).await;
+        apple_base(r)
+            .or_else(|| google_base(r))
+            .unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
     let keys = Keys::new();
     let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
     let payload = json!({"operation":"update_app_metadata", "locale":"en-US", "version":"1.0", "syncScopes":["store_images"], "metadata":{"storeImages":{"phone_screenshots":{"urls":[]}}}});
@@ -1140,9 +1751,8 @@ async fn explicit_empty_image_arrays_clear_only_the_selected_slot() {
         );
     }
     let records = fake.records();
-    assert!(records
-        .iter()
-        .any(|r| r.method == "DELETE" && r.uri == "/v1/appScreenshots/old%2Dphone"));
+    assert!(records.iter().any(|r| r.method == "DELETE"
+        && r.uri == "/v1/appAssetLibraryPlacements/placement%2Dold%2Dphone"));
     assert!(!records.iter().any(|r| r.uri.contains("old%2Dtablet")));
     assert_eq!(
         records
@@ -1155,10 +1765,8 @@ async fn explicit_empty_image_arrays_clear_only_the_selected_slot() {
         && (r.uri.ends_with("/sevenInchScreenshots")
             || r.uri.ends_with("/tenInchScreenshots")
             || r.uri.ends_with("/featureGraphic"))));
-    assert!(!records
-        .iter()
-        .any(|r| r.uri.starts_with("/upload/")
-            || (r.method == "POST" && r.uri == "/v1/appScreenshots")));
+    assert!(!records.iter().any(|r| r.uri.starts_with("/upload/")
+        || (r.method == "POST" && r.uri == "/v1/appAssetLibraryImages")));
     assert!(records
         .iter()
         .any(|r| r.uri.contains(":commit?") && r.uri.contains("changesNotSentForReview=true")));

@@ -1,7 +1,10 @@
 //! Credential-local store implementation shared by both Connector transports.
 mod apple;
+mod apple_image_upload;
+mod apple_images;
 pub mod assets;
 mod google;
+mod image_query;
 mod images;
 mod reviews;
 mod validation;

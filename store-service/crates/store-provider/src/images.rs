@@ -100,6 +100,7 @@ pub(super) fn validate(images: &Value, platform: Platform) -> Result<()> {
     }
     for (slot, value) in slots {
         if !(matches!(slot.as_str(), "phone_screenshots" | "tablet_screenshots")
+            || platform == Platform::Ios && slot == "foldable_screenshots"
             || platform == Platform::Android && slot == "feature_graphic_url")
         {
             return Err(invalid("storeImages contains an unsupported image slot"));

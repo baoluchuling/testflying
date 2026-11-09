@@ -111,13 +111,17 @@ impl Gateway {
                     );
                 }
                 let mut locales = Vec::new();
+                let filters = image_query::ImageQuery::new(&r.payload, r.platform)?;
                 for listing in listings {
                     let locale = s(&listing, "language");
-                    if locale.is_empty() {
+                    if locale.is_empty() || !filters.matches_locale(locale) {
                         continue;
                     }
                     let mut images = serde_json::Map::new();
                     for (kind, slot) in IMAGE_TYPES {
+                        if !filters.matches_google_type(kind) {
+                            continue;
+                        }
                         let response = self
                             .api(
                                 Platform::Android,

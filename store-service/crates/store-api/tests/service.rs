@@ -435,6 +435,39 @@ async fn websocket_routes_multiple_apps_and_rejects_duplicate_nodes() {
             .unwrap();
         assert_eq!(pending.await.unwrap()["locales"][0], "en-US");
     }
+    let image_request = client
+        .get(format!("{base}/v1/store-management/apps/ios/com.example.app/store-images?version=1.0&locale=ja&device=foldable"))
+        .bearer_auth(CLIENT);
+    let pending = tokio::spawn(async move {
+        image_request
+            .send()
+            .await
+            .unwrap()
+            .json::<Value>()
+            .await
+            .unwrap()
+    });
+    let received = next_request(&mut socket).await;
+    assert_eq!(received.operation, Operation::StoreImages);
+    assert_eq!(
+        received.payload,
+        json!({"version":"1.0","locale":"ja","device":"foldable"})
+    );
+    let images =
+        json!({"locales":[{"locale":"ja","images":{"foldable_screenshots":[{"id":"duo-image"}]}}]});
+    socket
+        .send(Message::Text(
+            serde_json::to_string(&StoreReply {
+                request_id: received.request_id,
+                status: 200,
+                body: images.clone(),
+            })
+            .unwrap()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(pending.await.unwrap(), images);
     let (_, body) = call(
         store_api::router(state.clone()),
         "PATCH",

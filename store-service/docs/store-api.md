@@ -192,9 +192,18 @@ Android 主要字段：locale、title、shortDescription、fullDescription、des
 
 ```http
 GET /v1/store-management/apps/ios/com.example.reader/store-images?version=1.2.0
+GET /v1/store-management/apps/ios/com.example.reader/store-images?version=1.2.0&locale=en-US&device=phone
+GET /v1/store-management/apps/ios/com.example.reader/store-images?version=1.2.0&locale=ja&device=foldable
 ```
 
 iOS 需要 version 才能查询版本截图，未指定或版本不存在时返回空 locales；Android 不使用 version。
+
+| 参数 | 含义 |
+|---|---|
+| locale | 可选，按商店语言精确筛选，忽略大小写并去首尾空白。省略或空白返回全部语言，不存在时返回空 locales，不自动回退其他语言 |
+| device | 可选，`phone` 手机、`tablet` 平板、`foldable` 折叠屏。省略或空白返回全部已有图片类型，指定时 images 只包含所选设备的槽位 |
+
+两个参数可组合，由新版商店 Connector 在读取图片前筛选，中心沿用转发逻辑。已有节点必须升级程序并重启，不提供旧节点兼容筛选。设备参数非法时返回 422。Android 没有独立折叠屏图片类型，`device=foldable` 返回 422 `unsupported_image_device`。
 
 ```json
 {
@@ -205,14 +214,19 @@ iOS 需要 version 才能查询版本截图，未指定或版本不存在时返�
         "phone_screenshots":[
           {"id":"image-id","fileName":"phone.png","url":"https://assets.example.com/phone.png","width":1284,"height":2778}
         ],
-        "tablet_screenshots":[]
+        "tablet_screenshots":[],
+        "foldable_screenshots":[]
       }
     }
   ]
 }
 ```
 
-iOS 读取手机、平板截图，URL 可能是上游模板地址，需要处理尺寸／格式占位符。Android 读取槽包括：
+iOS 从 Apple Asset Library placements 读取手机、平板和 iPhone Duo 折叠屏截图，使用运行时参考数据区分设备组。折叠屏保留各内外屏组，图片项附带 `placementId`、`placementGroup`、`displayClass`，不会混入普通手机组。URL 可能是上游模板地址，需要处理尺寸／格式占位符。选中的设备没有图片时对应槽位返回空数组。查询依次读取语言、设备参考数据和关联图片，不下载图片二进制，中心不保存图片。
+
+Apple 查询和图片同步使用现有节点 API Key，需要具备 Asset Library 访问权限，权限不足按上游错误返回。[Apple 新资源说明](https://developer.apple.com/documentation/appstoreconnectapi/understanding-the-app-asset-library)。
+
+Android `device=phone` 只读取 phone_screenshots，`device=tablet` 只读取 seven_inch_screenshots 和 ten_inch_screenshots。未指定设备时读取槽包括：
 
 - feature_graphic_url
 - phone_screenshots
@@ -430,6 +444,7 @@ locale 和非空 releaseNotes 必填，iOS 还需 version。Android storeRelease
 |---|---|---|
 | phone_screenshots | 手机截图组 | phoneScreenshots |
 | tablet_screenshots | 平板截图组 | 同时更新七寸和十寸平板组 |
+| foldable_screenshots | iPhone Duo 折叠屏截图组，保留内外屏关联 | 不支持 |
 | feature_graphic_url | 不支持 | featureGraphic |
 
 **图片按选中槽整组替换**，不是追加；未传的槽保留。`{"urls":[]}` 或 `{"assets":[]}` 清空该槽，目前不支持单张追加／删除。
@@ -440,7 +455,11 @@ locale 和非空 releaseNotes 必填，iOS 还需 version。Android storeRelease
 {"assets":[{"downloadUrl":"https://assets.example.com/phone-1.png","fileName":"phone-1.png"}]}
 ```
 
-下载 URL 必须为 HTTP(S)；图片须为 PNG/JPEG，单图最多 64 MiB，具体设备尺寸由上游继续校验。本地文件先通过接口 10、11 上传，再在 assets 中引用 `{"assetId":"上传返回的资产ID"}`，无需先上传对象存储。上传使用原始文件正文，不使用 multipart。没有图片素材库或草稿接口。查询支持的部分图片槽，当前不支持写入。
+下载 URL 必须为 HTTP(S)；图片须为 PNG/JPEG，单图最多 64 MiB。本地文件先通过接口 10、11 上传，再在 assets 中引用 `{"assetId":"上传返回的资产ID"}`，无需先上传对象存储。该上传使用原始文件正文，不使用 multipart。中心不保存图片，也不提供中心图片库或草稿。
+
+iOS 普通版本和 CPP 的图片同步均采用 Apple Asset Library。Connector 读取目标应用的素材库和最新规格，校验图片尺寸、格式、透明通道、文件大小及设备组，再将所有新图片上传到素材库。分块上传不携带节点 Apple JWT，提交时仅设置 `uploaded=true`。每张图片最多等待处理 30 秒，确认成功并验证 Apple 返回的 specId 后，才替换所选设备类别的 placements，并按传入顺序设置每组展示顺序。一个素材可以关联到多个匹配的设备组。
+
+图片处理失败、规格不匹配或等待超时会返回错误并保留原有图片关联。明确空数组只删除目标语言和选中设备类别的关联，不删除素材库图片；其他语言、页面和未选设备保留。Apple 多步写入不是事务，关联替换阶段失败时可能已有部分关联被修改，失败上传也可能留下未关联的库素材。接口不会自动重放商店写入或自动删除库素材。设备规格及每组数量上限以实时参考数据为准。
 
 ### 9.4 创建／更新 Apple CPP
 

@@ -18,6 +18,9 @@ const SYNC_SCOPES: &[&str] = &[
 pub(super) fn validate(request: &StoreRequest) -> Result<()> {
     let payload = &request.payload;
     optional_strings(payload, &["operation", "locale", "version"])?;
+    if request.operation == Operation::StoreImages {
+        image_query::ImageQuery::new(payload, request.platform)?;
+    }
     if let Some(value) = payload.get("syncScopes") {
         let values = value
             .as_array()
