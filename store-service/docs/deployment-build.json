@@ -1,7 +1,7 @@
 {
-  "runId": "8344cffd1b9a4c40aef0a5a4fa69b803",
-  "finishedAt": "2026-11-06T11:26:35.816426+00:00",
-  "sourceCommit": "18401635dab177b48d98bb35a4981758486e5190",
+  "runId": "4fa090cb0d534c7e809b1112459d9d24",
+  "finishedAt": "2026-11-09T14:19:01.798888+00:00",
+  "sourceCommit": "aa5d4e8beeafde9e5125d8d03a949af6685009b6",
   "sourceHashes": {
     "Cargo.lock": "6ac5b7841cd975ae2c50058a5fc6e2b7f8fc47f6c80dde8c8ec51c355ef20967",
     "Cargo.toml": "fd87675617bd5deda3fe4e5fb91d81b194a43536aed5a43234b68c7592778db9",
@@ -24,7 +24,7 @@
     "crates/store-api/src/transport.rs": "323a6b960e2c4cff36e5cf3bd5539643042680a76a8ef511426e8ce72f82818d",
     "crates/store-api/src/uploads.rs": "52674a84c7c1f0c924b1150fcda83847572d27942e1eac2fbe8c11026465f6c0",
     "crates/store-api/tests/screenshots.rs": "38ee23ee48165a77708865703ad1f23c622f4e1ee8af45fbdbae897a764a3443",
-    "crates/store-api/tests/service.rs": "68847172eb9a39767f25e48d788911085362d528b922b1eb7d89ebbd8a091be2",
+    "crates/store-api/tests/service.rs": "be98d791868b670ab8fba0ed2a828eba0050a319e6a2a830b58734a9f980fe49",
     "crates/store-api/tests/setup-package.test.mjs": "616775e20a6da1e4634fc1753b634117f2e3bf36c78996a7e6c11dd8da7c2e3a",
     "crates/store-api/tests/setup.rs": "10081a9c1fc7dbde080981726521952f49dcca73280754d0c14232218a7c36c1",
     "crates/store-api/tests/uploads.rs": "f25cacb548bf1fc264e159e5385f3a09c56bb2626df8d37de35be8509e4f720d",
@@ -43,14 +43,17 @@
     "crates/store-protocol/src/upload.rs": "da23d9a5a4060c0bb6afc8e9f1d86a54e9858bce3c2f8ecd072185a4e9b43d9d",
     "crates/store-protocol/tests/security.rs": "90d7052c2cc474b0e0fabc7bd92adb0b154b1a0e29782956db46f1a8faead00a",
     "crates/store-provider/Cargo.toml": "10075841697b0f6292f4b41b67da029196c68b7d8f52e54f7cd02eb7ae8ec808",
-    "crates/store-provider/src/apple.rs": "1d2de417ed0142949434ca200674c5565dac71ec83f5128f2ebca70b9ca3b016",
+    "crates/store-provider/src/apple.rs": "7c18f2be10f99d7fb251225115ca44c5b9a60f0274385f48fb43383be8e3f39b",
+    "crates/store-provider/src/apple_image_upload.rs": "fef0f00c1916a2ed5a4d9cb9bfee9e3d6a3dd3f021388ed0afc89e8895edeb6e",
+    "crates/store-provider/src/apple_images.rs": "f2ea3811e07a3ed95efa9ef84d6ee494677fb1908ed856c7bf98ea6e4f67e5ca",
     "crates/store-provider/src/assets.rs": "cff3573acfae09777933d67c129542c2f4de85934192ccf4b25bb2c1749d7f49",
-    "crates/store-provider/src/google.rs": "0602ede10a91c86ad3a4500071c3bb17b8d7a2cc50588f64d087887b3d27f671",
-    "crates/store-provider/src/images.rs": "2365723818b59849b5c2ec7aa1d2a8acc827ec96222f0ab4d6d665016411262f",
-    "crates/store-provider/src/lib.rs": "046606b3d950aa2d1dff103949ba474c812d4ab0d86c5e5b7cbf64c202d10056",
+    "crates/store-provider/src/google.rs": "caf7f20b67cc002c150b93cb1e453ea197072c517167edd178f7e2e004564fe9",
+    "crates/store-provider/src/image_query.rs": "3a3b854d55929a2394bc6d22b1b5f7d19c6d74887b0f691bd63163a2f26db1d8",
+    "crates/store-provider/src/images.rs": "a9ab6b46517abc9617296713a2954c93aec65af0e1afb752c30a8d21aa55102b",
+    "crates/store-provider/src/lib.rs": "ad7a67e3b613d624eeace9994b06170a9188d8dff4f0efc50b056abe3a0e6384",
     "crates/store-provider/src/reviews.rs": "f4dd91ff8620eea070cc8a97bfc5d0cab08bf56583d706009793ed5327393f3b",
-    "crates/store-provider/src/validation.rs": "d3c19542c217a28f8890ec5383305ce7ee57a94d107380916dadb75fc73e62c2",
-    "crates/store-provider/tests/live.rs": "7c0361f279b4edc50024baa466b9d597ec7ac9ba6202c6552fbbe4e309d9c46a",
+    "crates/store-provider/src/validation.rs": "e6e93d7350376e72bd75623d988c571374d6ef16c21561a3365b56f848f2bcac",
+    "crates/store-provider/tests/live.rs": "b2c9cdc51d3db103544fddb6e3af4b9cf46f5ecdfa9025cf0e839a0a331b03cf",
     "deploy/testflying-prod-ca.crt": "d6a6874992dd6197da68c43037ab176cd3d7f7ce7be2966706293dc499443296",
     "packaging/connector/install.cmd": "1f617df7fd0d62f05d395ddff7b05d89d0db6d01d0a3f658f1d0a41d167a0b78",
     "packaging/connector/install.ps1": "b968d24306ef08a79974dee295e4c53c089415283767d572ed6d99b4a195e221",
@@ -67,18 +70,18 @@
   "toolchain": "Rust 1.94.0 / cargo-zigbuild 0.20.1 / Zig 0.14.1",
   "outputs": {
     "releases/linux-amd64/store-api": {
-      "sha256": "c374e44c241ab09672d10b1f4b4221251deecc72e6d657bda14c2ab3e8493b07",
+      "sha256": "d903f7d25d6927d88f4b88dfc6fe99b5db1ed0d56c15c7aaedaabf567ad9f771",
       "bytes": 7988328,
       "format": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped"
     },
     "releases/linux-amd64/store-connector": {
-      "sha256": "83e90bc9d188e796a7020f3adfe46e96ff63373f2376c1b34484caf2801244a9",
-      "bytes": 8363568,
+      "sha256": "85d2bd9333a40ed66d30678a09c053edf77b58da13dac61dd243f4d0d45bff40",
+      "bytes": 8717360,
       "format": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped"
     },
     "releases/darwin-arm64/store-connector": {
-      "sha256": "faec6c190b4d86ac7d7a2e259d2eec910a263e358437d0484a815f4d9a4e5c7d",
-      "bytes": 9048736,
+      "sha256": "faf3bda5615a081a1242bff1ab41803f715728adcd4661aa4e35b7ebf81ad6a3",
+      "bytes": 9391776,
       "format": "Mach-O 64-bit executable arm64"
     }
   },
