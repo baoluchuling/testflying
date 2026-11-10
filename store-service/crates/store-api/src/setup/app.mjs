@@ -150,6 +150,7 @@ function updateFields() {
   $("nameRow").hidden = !isNew;
   $("connectorName").disabled = !isNew;
   $("accountSection").hidden = upgrade;
+  $("accountMergeHint").hidden = isNew || upgrade || !installationFiles(target).length;
   $("appleFields").disabled = upgrade || !$("appleEnabled").checked;
   $("googleFields").disabled = upgrade || !$("googleEnabled").checked;
   const system = { "windows-amd64": "Windows", "linux-amd64": "Linux", "darwin-arm64": "macOS" }[target];
@@ -311,7 +312,7 @@ $("setupForm").addEventListener("submit", async (event) => {
     active.signal.throwIfAborted();
     downloadFile(result.bytes, "application/zip", result.fileName);
     const entry = installFiles[0] ?? launcher;
-    const details = upgrade ? "升级会保留本机配置和商店凭据。" : installFiles.length ? "安装会立即启动并设置开机启动。" : "请保持启动进程运行。";
+    const details = upgrade ? "升级会保留本机配置和商店凭据。" : installFiles.length ? "安装会合并本次提供的平台资料，保留其他平台，并设置后台和开机启动。" : "请保持启动进程运行。";
     status(`ZIP 已生成。完整解压后运行 ${entry}。${details}\n节点：${id}`, "success");
   } catch (error) {
     if (!active.signal.aborted) status(error.message || "生成失败，请检查信息后重试", "error");

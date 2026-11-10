@@ -25,6 +25,18 @@ Windows 后台任务从安装的 `data` 目录执行，程序及 CA 证书位于
 
 每台机器安装一个后台节点。Windows 使用计划任务「Testflying Connector」，配置在 `%ProgramFiles%\Testflying Connector\data`。macOS 使用系统 LaunchDaemon `com.testflying.connector`，配置在 `/Library/Application Support/Testflying Connector/data`。暂停自启动可在 Windows 任务计划程序中结束并禁用该任务，macOS 执行 `sudo launchctl disable system/com.testflying.connector` 后再执行 `sudo launchctl bootout system/com.testflying.connector`。
 
+## 自动补充平台或更新账号
+
+Windows、macOS 的完整安装包可更新已安装的同一个节点，无需手动编辑 JSON：
+
+1. 选择原来的节点和对应系统，不勾选「仅升级程序」。
+2. 只勾选本次需要补充或更新的平台，填写该平台资料。例如已有安卓节点补 iOS，只需提供 Apple Issuer ID、Key ID 和 `.p8`；安卓本次不勾选，原安卓配置继续保留。
+3. 下载完整安装包，停止旧的手动实例，再运行 `install.cmd` 或 `sh ./install.sh`。安装器会校验包与已有节点身份，准备合并结果后停止后台任务并应用配置，随后重启。
+
+本次提供的平台凭据会更新，未提供平台的配置和凭据不变；节点 Token、连接密钥、服务器地址、监听设置及应用绑定保持原样。仅 iOS 增加安卓或仅安卓增加 iOS 时，本机 `platformMode` 自动扩展为 `all`；已有 `all` 不会因本次只提供一个平台而缩窄。首装按本次选择设为 `ios`、`android` 或 `all`。此流程用于补充或更新，取消勾选不会移除已安装平台；主动限制平台仍可按下文修改本机 `platformMode`。
+
+输入错误、节点不匹配或缺少所选凭据会在停止旧服务前拒绝。后续安装失败会恢复旧配置、被更新凭据、程序和原任务状态。安装过程中断且恢复失败时保留恢复目录并提示，不自动删除不明状态。仅升级程序包不进入配置合并，继续保留本机配置的原始字节。凭据只在本机合并，不上传中心。Linux 手动运行包不提供这个自动安装流程。
+
 ## 包内目录
 
 ```text

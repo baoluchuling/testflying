@@ -44,10 +44,11 @@ def existing_connector_source_matches(relative: str, digest: str) -> bool:
 
 def main() -> None:
     root = managed_root()
-    if sys.argv[1:] not in ([], ["integrations"], ["api-docs"]):
-        raise RuntimeError("Use integrations or api-docs for an API-only verified rollout")
-    documents_only = sys.argv[1:] == ["api-docs"]
-    integrations_only = sys.argv[1:] in (["integrations"], ["api-docs"])
+    if sys.argv[1:] not in ([], ["integrations"], ["api-docs"], ["config-update"]):
+        raise RuntimeError("Use integrations, api-docs or config-update for a verified rollout")
+    replace_connectors = sys.argv[1:] == ["config-update"]
+    documents_only = sys.argv[1:] in (["api-docs"], ["config-update"])
+    integrations_only = sys.argv[1:] in (["integrations"], ["api-docs"], ["config-update"])
     tmp = root / "tmp"
     tmp.mkdir(exist_ok=True)
     ssh = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o",
@@ -70,7 +71,7 @@ def main() -> None:
                                       "--jq", ".object.sha"], cwd=PROJECT, text=True).strip()
     if pushed != commit:
         raise RuntimeError("Push the deployment commit first")
-    build = json.loads((PROJECT / "docs/setup-api-build.json").read_text())
+    build = json.loads((PROJECT / "docs" / ("deployment-build.json" if replace_connectors else "setup-api-build.json")).read_text())
     verified = json.loads((PROJECT / "docs/verification.json").read_text())
     if source_hashes() != build["sourceHashes"] or source_hashes() != verified["sourceHashes"]:
         raise RuntimeError("API sources differ from the verified release")
@@ -101,10 +102,23 @@ print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdig
 """))
     if snapshot["available"] <= 21474836480:
         raise RuntimeError("Server free-space reserve is insufficient")
+    replacements = {}
+    previous_publication = json.loads((PROJECT / "docs/setup-deployment-verification.json").read_text())
     for target, report_name in [("linux-amd64", "deployment-build.json"), ("darwin-arm64", "deployment-build.json"),
                                 ("windows-amd64", "windows-release-build.json")]:
         old = json.loads((PROJECT / "docs" / report_name).read_text())
         binary_name = "store-connector.exe" if target.startswith("windows") else "store-connector"
+        if replace_connectors:
+            if snapshot["binaries"][target] != previous_publication["storeConnectorPublication"]["downloadVerified"][target]:
+                raise RuntimeError("Published Connector differs from the previous verified publication")
+            if old["sourceHashes"] != verified["sourceHashes"]:
+                raise RuntimeError("Connector replacement sources differ from the verified center release")
+            relative = f"releases/{target}/{binary_name}"
+            expected = old["outputs"][relative]["sha256"]
+            if hashlib.sha256((PROJECT / relative).read_bytes()).hexdigest() != expected:
+                raise RuntimeError("Connector replacement checksum mismatch")
+            replacements[target] = {"relative": relative, "sha256": expected, "name": binary_name}
+            continue
         if snapshot["binaries"][target] != old["outputs"][f"releases/{target}/{binary_name}"]["sha256"]:
             raise RuntimeError("An existing Connector binary changed")
         for relative, digest in old["sourceHashes"].items():
@@ -126,6 +140,12 @@ print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdig
         if worker:
             executable = PROJECT / worker_relative
             member = tarfile.TarInfo("bin/screenshot-connector")
+            member.size, member.mode = executable.stat().st_size, 0o755
+            with executable.open("rb") as stream:
+                output.addfile(member, stream)
+        for target, replacement in replacements.items():
+            executable = PROJECT / replacement["relative"]
+            member = tarfile.TarInfo("bin/connector-" + target)
             member.size, member.mode = executable.stat().st_size, 0o755
             with executable.open("rb") as stream:
                 output.addfile(member, stream)
@@ -158,6 +178,11 @@ if worker_sha:
  target=os.path.join(p,'releases/darwin-arm64')
  os.makedirs(target,exist_ok=True)
  os.replace(staged,os.path.join(target,'screenshot-connector'))
+replacements=""" + repr(replacements) + """
+for target,entry in replacements.items():
+ staged=os.path.join(p,'bin/connector-'+target)
+ assert hashlib.sha256(open(staged,'rb').read()).hexdigest()==entry['sha256']
+ os.replace(staged,os.path.join(p,entry['relative']))
 """, payload)
     checks = []
     connections = {}
@@ -258,10 +283,21 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
         check(request("/health", scheme="https")[0] == 200, "HTTPS health with certificate verification")
         if documents_only:
             docs = "/v1/store-management/api-docs"
-            for asset in ("start.cmd", "install.ps1"):
+            for asset in ("start.cmd", "install.ps1", "install.sh"):
                 status, content = request("/connector-setup/" + asset)
                 check(status == 200 and content == (PROJECT / "packaging/connector" / asset).read_bytes(),
-                      "exact deployed Windows installation asset " + asset)
+                      "exact deployed installation asset " + asset)
+            if replacements:
+                status, body = request("/v1/connectors", snapshot["admin"])
+                check(status == 200, "existing Connector inventory available for download verification")
+                connector_id = next(node["connectorId"] for node in json.loads(body)["connectors"]
+                                    if node["enabled"] and node.get("kind", "store") == "store")
+                for target, replacement in replacements.items():
+                    status, package = request(f"/v1/connectors/{connector_id}/installer/{target}", snapshot["admin"])
+                    check(status == 200, target + " updated installation package available")
+                    with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                        check(hashlib.sha256(archive.read(replacement["name"])).hexdigest() == replacement["sha256"],
+                              target + " downloaded native installer preparation program verified")
             for scheme in ("http", "https"):
                 status, body = request(docs, snapshot["token"], scheme=scheme)
                 catalog = json.loads(body)
@@ -305,14 +341,15 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
             check(after["environmentSha256"] == snapshot["environmentSha256"]
                   and after["proxySha256"] == snapshot["proxySha256"],
                   "persistent service and HTTP HTTPS proxy configuration preserved")
-            check(after["binaries"] == snapshot["binaries"]
+            expected_connectors = {target: entry["sha256"] for target, entry in replacements.items()} if replacements else snapshot["binaries"]
+            check(after["binaries"] == expected_connectors
                   and after["screenshotConnectorSha256"] == snapshot["screenshotConnectorSha256"],
-                  "latest store and screenshot Connector binaries preserved")
+                  "store Connector release hashes and preserved screenshot Connector verified")
             previous_report = json.loads(report_path.read_text())
             report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
                       "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                       "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],
-                      "apiSha256": expected_api, "connectorBinarySha256": snapshot["binaries"],
+                      "apiSha256": expected_api, "connectorBinarySha256": expected_connectors,
                       "screenshotConnectorSha256": snapshot["screenshotConnectorSha256"],
                       "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
@@ -322,6 +359,11 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                       "cleanup": "See the supervisor cleanup report for this runId"}
             if "storeConnectorPublication" in previous_report:
                 report["storeConnectorPublication"] = previous_report["storeConnectorPublication"]
+            if replacements:
+                report["storeConnectorPublication"] = {"runId": root.name, "sourceCommit": commit,
+                    "downloadVerified": expected_connectors, "serviceConfigPreserved": True,
+                    "screenshotBinaryPreserved": True, "configurationMergeSupported": True,
+                    "actualStoreAccountsUsed": False}
             report_path.write_text(json.dumps(report, indent=2) + "\n")
             success = True
             return

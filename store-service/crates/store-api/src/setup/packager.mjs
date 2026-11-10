@@ -106,6 +106,7 @@ export async function buildInstaller(installerBytes, { target, account, upgrade 
       if (Object.hasOwn(source, key)) config[key] = source[key];
     }
     config.provider = validated.provider;
+    config.platformMode = account.apple && account.google ? "all" : account.apple ? "ios" : "android";
     zip.file("connector.json", JSON.stringify(config, null, 2) + "\n", { unixPermissions: 0o600 });
     for (const file of validated.files) zip.file(file.path, file.bytes, { unixPermissions: 0o600 });
   }
@@ -127,7 +128,8 @@ export async function buildInstaller(installerBytes, { target, account, upgrade 
   const instructions = upgrade
     ? "升级已安装节点时，解压后运行 " + entry + "，本机配置会保留。\n" +
       "如果旧版是手动运行的，把本包解压覆盖到旧目录，保留原 connector.json 和 credentials，再运行安装。\n"
-    : "解压整个安装包后运行 " + entry + (installFiles.length ? "，确认系统授权后会立即启动并设置开机启动。\n" : "。\n") +
+    : "解压整个安装包后运行 " + entry + (installFiles.length ? "，确认系统授权后会立即启动并设置开机启动。\n" +
+      "已有相同节点时，自动补充或更新本次提供的平台资料，未提供的平台继续保留。\n" : "。\n") +
       "凭据位于 credentials 目录，请只保存在可信设备。\n";
   zip.file("README.md", "# Connector\n\n" + instructions, { unixPermissions: 0o600 });
   const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", platform: "UNIX" });

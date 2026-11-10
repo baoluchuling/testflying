@@ -1,12 +1,22 @@
+mod install;
+
 use std::{env, time::Duration};
 use store_connector::{ConnectorConfig, Executor};
 use tokio::sync::watch;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let path = env::args()
-        .nth(1)
-        .unwrap_or_else(|| "connector.json".into());
+    let mut arguments = env::args_os().skip(1);
+    let first = arguments.next();
+    if first.as_deref() == Some(std::ffi::OsStr::new("--prepare-install")) {
+        let paths: Vec<_> = arguments.map(std::path::PathBuf::from).collect();
+        if paths.len() != 3 {
+            return Err("Installation preparation requires package, installed-data and prepared directories".into());
+        }
+        install::prepare(&paths[0], &paths[1], &paths[2])?;
+        return Ok(());
+    }
+    let path = first.unwrap_or_else(|| "connector.json".into());
     let config: ConnectorConfig = serde_json::from_slice(&std::fs::read(path)?)?;
     let executor = Executor::new(config.clone())?;
     let (stop, stopped) = watch::channel(false);

@@ -43,6 +43,7 @@ def main() -> int:
            "CARGO_BUILD_JOBS": "4", "TMPDIR": str(temporary), "RUST_BACKTRACE": "1"}
     commands = [
         ["node", "--test", "crates/store-api/tests/setup-package.test.mjs"],
+        ["cargo", "build", "--locked", "--package", "store-connector"],
         [sys.executable, "-B", "scripts/verify_connector_install.py"],
         ["/bin/sh", "-n", "packaging/screenshot-connector/run.sh"],
         ["/bin/sh", "-n", "packaging/screenshot-connector/install.sh"],

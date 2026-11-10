@@ -41,6 +41,7 @@ test("one Windows node contains both accounts, safe relative paths and unchanged
   assert.equal(actual.provider.applePrivateKeyPath, "credentials/apple-private-key.p8");
   assert.equal(actual.provider.googleServiceAccountPath, "credentials/google-service-account.json");
   assert.equal(actual.provider.appleIssuerId, "test-issuer");
+  assert.equal(actual.platformMode, "all");
   assert.equal(digest(await zip.file(actual.provider.applePrivateKeyPath).async("string")), digest(appleKey));
   assert.equal(digest(JSON.parse(await zip.file(actual.provider.googleServiceAccountPath).async("string")).private_key), digest(googleKey));
   assert.deepEqual(await zip.file("store-connector.exe").async("uint8array"), executable);
@@ -62,6 +63,7 @@ test("Apple-only configuration does not bundle or retain Google credentials", as
   const zip = await JSZip.loadAsync(result.bytes);
   const actual = JSON.parse(await zip.file("connector.json").async("string"));
   assert.equal(actual.provider.googleServiceAccountPath, undefined);
+  assert.equal(actual.platformMode, "ios");
   assert.equal(zip.file("credentials/google-service-account.json"), null);
 });
 
@@ -71,6 +73,7 @@ test("Google-only Unix package uses the same identity and a working-directory-aw
     const zip = await JSZip.loadAsync(result.bytes);
     const actual = JSON.parse(await zip.file("connector.json").async("string"));
     assert.equal(actual.connectorId, config.connectorId);
+    assert.equal(actual.platformMode, "android");
     assert.equal(actual.provider.applePrivateKeyPath, undefined);
     assert.equal(zip.file("credentials/apple-private-key.p8"), null);
     assert.match(await zip.file("start.sh").async("string"), /CDPATH=/);

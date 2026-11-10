@@ -27,7 +27,7 @@ function Assert-RegularFile([string] $file) {
 
 function Read-NodeId([string] $file) {
     Assert-RegularFile $file
-    $configuration = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+    $configuration = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
     return [string] $configuration.connectorId
 }
 
@@ -74,6 +74,9 @@ try {
         }
         [void] [IO.Directory]::CreateDirectory($root, $security)
     }
+    if (Get-ChildItem -LiteralPath $root -Directory -Force -Filter '.install-*') {
+        throw 'An earlier installation needs recovery. Its backup directory was preserved.'
+    }
 
     $config = Join-Path $PSScriptRoot 'connector.json'
     $idFile = Join-Path $PSScriptRoot 'node-id.txt'
@@ -104,20 +107,30 @@ try {
         throw 'An existing scheduled task does not match this installation.'
     }
 
-    if ($hasData) {
-        Write-Host '[2/5] Keeping the installed node configuration and shop credentials.'
+    $updateConfiguration = Test-Path -LiteralPath $config
+    if ($updateConfiguration) {
+        Assert-RegularFile $config
+        Write-Host '[2/5] Preparing selected platform settings; other installed settings will be kept.'
     } else {
-        Write-Host '[2/5] Preparing the node configuration and shop credentials.'
+        Write-Host '[2/5] Keeping the installed node configuration and shop credentials unchanged.'
     }
 
     $stage = Join-Path $root ('.install-' + [guid]::NewGuid().ToString('N'))
     [void] [IO.Directory]::CreateDirectory($stage)
     $newProgram = Join-Path $stage 'new-program'
     $oldProgram = Join-Path $stage 'old-program'
+    $prepared = Join-Path $stage 'prepared-data'
+    $oldData = Join-Path $stage 'old-data'
+    $appliedFiles = [Collections.Generic.List[string]]::new()
+    $updates = @()
+    $createdData = $false
+    $createdCredentials = $false
     $changedProgram = $false
     $registeredTask = $false
     $taskChanged = $false
     $keepStage = $false
+    $finished = $false
+    $rollbackFinished = $false
     try {
         Write-Host '[3/5] Preparing the updated program files...'
         [void] [IO.Directory]::CreateDirectory($newProgram)
@@ -126,30 +139,57 @@ try {
             Assert-RegularFile $source
             Copy-Item -LiteralPath $source -Destination $newProgram
         }
-        if (-not $hasData) {
+        if ($updateConfiguration) {
             $credentials = Join-Path $PSScriptRoot 'credentials'
             Assert-RegularDirectory $credentials
-            $newData = Join-Path $stage 'data'
-            $newCredentials = Join-Path $newData 'credentials'
-            [void] [IO.Directory]::CreateDirectory($newCredentials)
-            Copy-Item -LiteralPath $config -Destination $newData
-            $count = 0
-            foreach ($name in 'apple-private-key.p8', 'google-service-account.json') {
-                $source = Join-Path $credentials $name
-                if (Test-Path -LiteralPath $source) {
-                    Assert-RegularFile $source
-                    Copy-Item -LiteralPath $source -Destination $newCredentials
-                    $count++
+            $prepareArguments = '--prepare-install "{0}" "{1}" "{2}"' -f $PSScriptRoot, $data, $prepared
+            $preparation = Start-Process -FilePath (Join-Path $newProgram 'store-connector.exe') `
+                -ArgumentList $prepareArguments -NoNewWindow -Wait -PassThru
+            if ($preparation.ExitCode -ne 0) {
+                throw 'Cannot prepare platform settings. The installed configuration was preserved.'
+            }
+            $updates = @('connector.json')
+            foreach ($relative in 'credentials\apple-private-key.p8', 'credentials\google-service-account.json') {
+                if (Test-Path -LiteralPath (Join-Path $prepared $relative)) { $updates += $relative }
+            }
+            foreach ($relative in $updates) {
+                Assert-RegularFile (Join-Path $prepared $relative)
+                $target = Join-Path $data $relative
+                if ($hasData -and (Test-Path -LiteralPath $target)) {
+                    if ($relative -ne 'connector.json') { Assert-RegularDirectory (Join-Path $data 'credentials') }
+                    Assert-RegularFile $target
+                    $backup = Join-Path $oldData $relative
+                    [void] [IO.Directory]::CreateDirectory((Split-Path -Parent $backup))
+                    Copy-Item -LiteralPath $target -Destination $backup
                 }
             }
-            if ($count -eq 0) { throw 'The package has no shop credentials.' }
-            Move-Item -LiteralPath $newData -Destination $data
+        }
+        if (-not $hasData -and -not $updateConfiguration) {
+            throw 'No full configuration is available for the initial installation.'
         }
 
         Write-Host '[4/5] Updating the background task and program...'
         if ($oldTask) {
             Stop-ConnectorTask
             $taskChanged = $true
+        }
+        if ($updateConfiguration) {
+            if (-not $hasData) {
+                Move-Item -LiteralPath $prepared -Destination $data
+                $createdData = $true
+            } else {
+                $credentials = Join-Path $data 'credentials'
+                if (Test-Path -LiteralPath $credentials) { Assert-RegularDirectory $credentials }
+                else {
+                    [void] [IO.Directory]::CreateDirectory($credentials)
+                    $createdCredentials = $true
+                }
+                # The task is stopped; replace only selected files and preserve everything else.
+                foreach ($relative in $updates) {
+                    $appliedFiles.Add($relative)
+                    Move-Item -LiteralPath (Join-Path $prepared $relative) -Destination (Join-Path $data $relative) -Force
+                }
+            }
         }
         if (Test-Path -LiteralPath $program) { Move-Item -LiteralPath $program -Destination $oldProgram }
         Move-Item -LiteralPath $newProgram -Destination $program
@@ -171,11 +211,28 @@ try {
         Start-ScheduledTask -TaskName $taskName -TaskPath $taskPath
         Write-Host 'Installation complete. Background startup requested; startup at system boot is configured.'
         Write-Host 'This does not confirm a connection. Check the node connection status in the center.'
+        $finished = $true
     } catch {
         $failure = $_
         try {
             if ($registeredTask -or ($taskChanged -and $changedProgram)) { Stop-ConnectorTask }
             if ($registeredTask) { Unregister-ScheduledTask -TaskName $taskName -TaskPath $taskPath -Confirm:$false }
+            if ($createdData) {
+                Assert-RegularDirectory $data
+                Move-Item -LiteralPath $data -Destination (Join-Path $stage 'failed-data')
+            } else {
+                foreach ($relative in $appliedFiles) {
+                    $target = Join-Path $data $relative
+                    $backup = Join-Path $oldData $relative
+                    if (Test-Path -LiteralPath $backup) {
+                        Move-Item -LiteralPath $backup -Destination $target -Force
+                    } elseif (Test-Path -LiteralPath $target) {
+                        Assert-RegularFile $target
+                        Remove-Item -LiteralPath $target -Force
+                    }
+                }
+                if ($createdCredentials) { Remove-Item -LiteralPath (Join-Path $data 'credentials') }
+            }
             if ($changedProgram) { Move-Item -LiteralPath $program -Destination (Join-Path $stage 'failed-program') }
             if (Test-Path -LiteralPath $oldProgram) { Move-Item -LiteralPath $oldProgram -Destination $program }
             if ($taskChanged -and $oldTask.State -eq 'Disabled') {
@@ -183,12 +240,18 @@ try {
             } elseif ($taskChanged -and $oldTask.State -in 'Running', 'Queued') {
                 Start-ScheduledTask -TaskName $taskName -TaskPath $taskPath
             }
+            $rollbackFinished = $true
         } catch {
             $keepStage = $true
             Write-Warning "Installer rollback needs attention: $stage"
         }
         throw $failure
     } finally {
+        if (-not $finished -and -not $rollbackFinished -and
+            ($changedProgram -or $taskChanged -or $createdData -or $appliedFiles.Count -gt 0)) {
+            $keepStage = $true
+            Write-Warning "Installation interrupted; recovery files were preserved: $stage"
+        }
         if (-not $keepStage) { Remove-Item -LiteralPath $stage -Recurse -Force }
     }
 } finally {

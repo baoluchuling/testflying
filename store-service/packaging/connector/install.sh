@@ -31,6 +31,8 @@ old_loaded=false
 new_loaded=false
 new_plist=false
 new_program=false
+new_data=false
+new_credentials=false
 cleanup() {
     result=$?
     trap - EXIT HUP INT TERM
@@ -38,6 +40,21 @@ cleanup() {
     if [ "$result" -ne 0 ]; then
         if $new_loaded && launchctl print "$job" >/dev/null 2>&1; then
             launchctl bootout "$job" || recovered=false
+        fi
+        if $recovered && $new_data; then
+            mv "$data" "$lock/failed-data" || recovered=false
+        elif $recovered; then
+            for relative in connector.json credentials/apple-private-key.p8 credentials/google-service-account.json; do
+                name=$(basename "$relative")
+                if [ -f "$lock/applied-$name" ]; then
+                    if [ -f "$lock/old-data/$relative" ]; then
+                        mv "$lock/old-data/$relative" "$data/$relative" || recovered=false
+                    else
+                        rm -f -- "$data/$relative" || recovered=false
+                    fi
+                fi
+            done
+            if $new_credentials; then rmdir "$data/credentials" || recovered=false; fi
         fi
         if $recovered && $new_program; then
             mv "$program" "$lock/failed-program" || recovered=false
@@ -78,7 +95,9 @@ fi
 valid_id "$expected" || fail 'Invalid node ID.'
 [ ! -L "$data" ] && [ ! -L "$program" ] && [ ! -L "$plist" ] || fail 'Unexpected installation paths.'
 
+has_data=false
 if [ -e "$data" ]; then
+    has_data=true
     current=$(node_id "$data/connector.json") || fail 'Cannot read the installed configuration.'
     [ "$current" = "$expected" ] || fail 'This package is for a different node. The installed configuration was preserved.'
     run_user=$(stat -f '%Su' "$data")
@@ -91,30 +110,41 @@ fi
 case "$run_user" in ''|*[!a-zA-Z0-9_.-]*) fail 'Cannot identify the local installation user.' ;; esac
 [ "$(id -u "$run_user")" -ne 0 ] || fail 'Run this installer from a normal macOS user account.'
 
-if [ ! -e "$data" ]; then
-    [ -d "$source_dir/credentials" ] && [ ! -L "$source_dir/credentials" ] ||
-        fail 'The package is missing the credentials directory.'
-    install -d -m 700 -o "$run_user" "$lock/data"
-    install -d -m 700 -o "$run_user" "$lock/data/credentials"
-    install -m 600 -o "$run_user" "$source_dir/connector.json" "$lock/data/connector.json"
-    for name in apple-private-key.p8 google-service-account.json; do
-        src="$source_dir/credentials/$name"
-        if [ -e "$src" ] || [ -L "$src" ]; then
-            regular "$src" || fail 'A credential file is not a regular file.'
-            install -m 600 -o "$run_user" "$src" "$lock/data/credentials/$name"
-        fi
-    done
-    [ -f "$lock/data/credentials/apple-private-key.p8" ] ||
-        [ -f "$lock/data/credentials/google-service-account.json" ] || fail 'The package has no shop credentials.'
-    mv "$lock/data" "$data"
-fi
-
 for name in store-connector testflying-prod-ca.crt; do
     regular "$source_dir/$name" || fail "The package is missing $name."
 done
 install -d -m 755 "$lock/program"
 install -m 755 "$source_dir/store-connector" "$lock/program/store-connector"
 install -m 644 "$source_dir/testflying-prod-ca.crt" "$lock/program/testflying-prod-ca.crt"
+
+update_configuration=false
+if [ -e "$source_dir/connector.json" ] || [ -L "$source_dir/connector.json" ]; then
+    regular "$source_dir/connector.json" || fail 'The package configuration is not a regular file.'
+    printf '%s\n' 'Preparing selected platform settings; other installed settings will be kept.'
+    "$lock/program/store-connector" --prepare-install "$source_dir" "$data" "$lock/prepared" ||
+        fail 'Cannot prepare platform settings. The installed configuration was preserved.'
+    update_configuration=true
+    chown "$run_user" "$lock/prepared" "$lock/prepared/credentials"
+    install -d -m 700 "$lock/old-data/credentials"
+    for relative in connector.json credentials/apple-private-key.p8 credentials/google-service-account.json; do
+        if [ -e "$lock/prepared/$relative" ]; then
+            regular "$lock/prepared/$relative" || fail 'Invalid prepared configuration file.'
+            chown "$run_user" "$lock/prepared/$relative"
+            chmod 600 "$lock/prepared/$relative"
+            if $has_data && { [ -e "$data/$relative" ] || [ -L "$data/$relative" ]; }; then
+                if [ "$relative" != connector.json ]; then
+                    [ -d "$data/credentials" ] && [ ! -L "$data/credentials" ] || fail 'Invalid installed credentials directory.'
+                fi
+                regular "$data/$relative" || fail 'Invalid installed configuration file.'
+                cp -p "$data/$relative" "$lock/old-data/$relative"
+            fi
+        fi
+    done
+elif ! $has_data; then
+    fail 'No full configuration is available for the initial installation.'
+else
+    printf '%s\n' 'Keeping the installed node configuration and shop credentials unchanged.'
+fi
 
 if [ -e "$plist" ]; then
     regular "$plist" && [ "$(stat -f '%u' "$plist")" = 0 ] &&
@@ -143,6 +173,26 @@ if launchctl print "$job" >/dev/null 2>&1; then
     [ -f "$plist" ] || fail 'A launchd job already uses the Connector label.'
     launchctl bootout "$job"
     old_loaded=true
+fi
+if $update_configuration; then
+    if ! $has_data; then
+        mv "$lock/prepared" "$data"
+        new_data=true
+    else
+        if [ -e "$data/credentials" ] || [ -L "$data/credentials" ]; then
+            [ -d "$data/credentials" ] && [ ! -L "$data/credentials" ] || fail 'Invalid installed credentials directory.'
+        else
+            install -d -m 700 -o "$run_user" "$data/credentials"
+            new_credentials=true
+        fi
+        for relative in connector.json credentials/apple-private-key.p8 credentials/google-service-account.json; do
+            if [ -f "$lock/prepared/$relative" ]; then
+                name=$(basename "$relative")
+                : > "$lock/applied-$name"
+                mv "$lock/prepared/$relative" "$data/$relative"
+            fi
+        done
+    fi
 fi
 if [ -e "$program" ]; then
     [ -d "$program" ] || fail 'The installed program path is not a directory.'
