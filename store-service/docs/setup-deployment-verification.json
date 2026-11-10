@@ -1,15 +1,15 @@
 {
-  "runId": "45e624f3d03240c3b9dc764f38ec10ca",
+  "runId": "168966315ea147a9983441f5583048bb",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-10T04:08:55.132337+00:00",
-  "deploymentCommit": "49a4699bff28fcfe165c730171ad0191f0047aab",
-  "binarySourceCommit": "517749357f766a842c1691cc3c7c37ae50aeac40",
-  "apiSha256": "9c2045ab3406c426074d1b2f2486630420f810f4accd1cac8f3aa8be48a0d019",
+  "finishedAt": "2026-11-10T12:11:32.014121+00:00",
+  "deploymentCommit": "48b280245e504c897597929c96855c5a9026ae2f",
+  "binarySourceCommit": "d0c4f94df52af32569214598386804010d15b1ec",
+  "apiSha256": "401a70530081356d9392ac6ce31fd87602ab047255104008a63b98cdfb5e8a9e",
   "connectorBinarySha256": {
-    "linux-amd64": "85d2bd9333a40ed66d30678a09c053edf77b58da13dac61dd243f4d0d45bff40",
-    "darwin-arm64": "faf3bda5615a081a1242bff1ab41803f715728adcd4661aa4e35b7ebf81ad6a3",
-    "windows-amd64": "187fbf622c05d92fb2e99bd43be28b5ce2a4061c37bbaefc296590faaf66b86f"
+    "linux-amd64": "4a188680e784850b31b81143548f93ce2ead2dad4437611d787179f086d6e698",
+    "darwin-arm64": "ac279fdf395e5ab4816b9c4c36dddb0ba4ffef8958d1d0c2b68ba10c087668e9",
+    "windows-amd64": "ffef9345e09d37bff0f44d51546c6e7729519d2da43a445e49fccfce77501fbc"
   },
   "screenshotConnectorSha256": "a41f8006b9502f3f540a5d735f8eb92bc903910078c7ce42bb980e44f221f776",
   "screenshotUploadConfigured": false,
@@ -18,8 +18,16 @@
     "existing credential retrieved for continuity check",
     "HTTP health after API-only rollout",
     "HTTPS health with certificate verification",
-    "exact deployed Windows installation asset start.cmd",
-    "exact deployed Windows installation asset install.ps1",
+    "exact deployed installation asset start.cmd",
+    "exact deployed installation asset install.ps1",
+    "exact deployed installation asset install.sh",
+    "existing Connector inventory available for download verification",
+    "linux-amd64 updated installation package available",
+    "linux-amd64 downloaded native installer preparation program verified",
+    "darwin-arm64 updated installation package available",
+    "darwin-arm64 downloaded native installer preparation program verified",
+    "windows-amd64 updated installation package available",
+    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
     "http nine store and two node endpoints plus upload helpers",
     "http language and device options with platform limits",
@@ -37,7 +45,8 @@
     "integration documentation access still requires HTTPS",
     "verified center release selected",
     "persistent service and HTTP HTTPS proxy configuration preserved",
-    "latest store and screenshot Connector binaries preserved"
+    "store Connector release hashes and preserved screenshot Connector verified",
+    "native macOS release installer configuration merge and rollback"
   ],
   "testNodesCreated": 0,
   "appBindingsWritten": 0,
@@ -53,21 +62,16 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "aaccbe15449844fe88bec71ae6298698",
-    "sourceCommit": "41ce80466de7bf02a5bdc7a1b5b2fbaeac06be12",
+    "runId": "168966315ea147a9983441f5583048bb",
+    "sourceCommit": "48b280245e504c897597929c96855c5a9026ae2f",
     "downloadVerified": {
-      "linux-amd64": "85d2bd9333a40ed66d30678a09c053edf77b58da13dac61dd243f4d0d45bff40",
-      "darwin-arm64": "faf3bda5615a081a1242bff1ab41803f715728adcd4661aa4e35b7ebf81ad6a3",
-      "windows-amd64": "187fbf622c05d92fb2e99bd43be28b5ce2a4061c37bbaefc296590faaf66b86f"
+      "linux-amd64": "4a188680e784850b31b81143548f93ce2ead2dad4437611d787179f086d6e698",
+      "darwin-arm64": "ac279fdf395e5ab4816b9c4c36dddb0ba4ffef8958d1d0c2b68ba10c087668e9",
+      "windows-amd64": "ffef9345e09d37bff0f44d51546c6e7729519d2da43a445e49fccfce77501fbc"
     },
-    "processPreserved": true,
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": true,
-    "features": [
-      "localized-image-reads",
-      "device-image-reads",
-      "apple-asset-library-uploads-and-placements"
-    ],
+    "configurationMergeSupported": true,
     "actualStoreAccountsUsed": false
   }
 }
