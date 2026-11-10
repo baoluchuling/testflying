@@ -74,6 +74,23 @@
         </section>
         <p id="integrationStatus" role="status" aria-live="polite"></p>
       </details>
+      <details id="logWorkspace" class="card" hidden>
+        <summary>中心商店日志 · 最近七天</summary>
+        <p class="muted">查看请求、节点转发和错误。文案仅记录字段长度与摘要，凭据及图片内容不会写入日志。超过七天自动清理。</p>
+        <form id="logFilters">
+          <div class="grid">
+            <div><label for="logRequestId">请求 ID</label><input id="logRequestId" maxlength="128" autocomplete="off" placeholder="响应头 X-Testflying-Request-Id"></div>
+            <div><label for="logIdentifier">应用标识</label><input id="logIdentifier" maxlength="180" autocomplete="off" placeholder="例如 com.cfs.amberia"></div>
+            <div><label for="logPlatform">平台</label><select id="logPlatform"><option value="">全部</option><option value="ios">iOS</option><option value="android">Android</option></select></div>
+            <div><label for="logConnectorId">节点 ID</label><input id="logConnectorId" maxlength="128" autocomplete="off"></div>
+          </div>
+          <label class="toggle"><input id="logErrorsOnly" type="checkbox"><span>仅看失败事件</span></label>
+          <button id="logSearch" type="submit">查询日志</button>
+        </form>
+        <p id="logStatus" role="status" aria-live="polite"></p>
+        <div id="logEntries"></div>
+        <button id="logMore" class="quiet" type="button" hidden>加载更早日志</button>
+      </details>
       <details id="screenshotWorkspace" class="card" hidden>
         <summary>截图 Connector 部署</summary>
         <p class="muted">下载绑定截图节点的 macOS · Apple Silicon（arm64）部署包。项目与模拟器在对应 Mac 上配置。</p>

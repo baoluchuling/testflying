@@ -19,6 +19,7 @@ def source_hashes() -> dict[str, str]:
     files = sorted([PROJECT / "Cargo.toml", PROJECT / "Cargo.lock", Path(__file__).resolve(),
                     PROJECT / "docs/store-api.md", PROJECT / "docs/openapi.yaml",
                     PROJECT / "scripts/verify_connector_install.py",
+                    PROJECT / "scripts/verify_setup_ui.py", PROJECT / "scripts/verify_setup_ui.mjs",
                     PROJECT / "scripts/managed_workspace.py",
                     PROJECT / "deploy/testflying-prod-ca.crt",
                     PROJECT / "packaging/connector/start.cmd", PROJECT / "packaging/connector/start.sh",

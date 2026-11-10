@@ -2,7 +2,10 @@ use hmac::{Hmac, Mac};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use std::{path::Path, sync::Mutex};
+use std::{
+    path::Path,
+    sync::{Arc, Mutex},
+};
 use store_protocol::{validate_identifier, Platform, StoreError};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
@@ -49,7 +52,8 @@ pub struct Connector {
 }
 
 pub struct Registry {
-    db: Mutex<Connection>,
+    pub(crate) db: Arc<Mutex<Connection>>,
+    pub logs: Arc<crate::logs::LogStore>,
     signing_key: Vec<u8>,
 }
 
@@ -86,8 +90,11 @@ impl Registry {
         )
         .map_err(database_error)?;
         screenshots::create_schema(&db)?;
+        let db = Arc::new(Mutex::new(db));
+        let logs = crate::logs::LogStore::new(db.clone())?;
         Ok(Self {
-            db: Mutex::new(db),
+            db,
+            logs,
             signing_key: signing_key.as_bytes().to_vec(),
         })
     }

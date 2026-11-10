@@ -1,5 +1,6 @@
 mod api_docs;
 mod integrations;
+pub mod logs;
 pub mod registry;
 mod screenshots;
 mod setup;
@@ -12,7 +13,7 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post, put},
-    Json, Router,
+    Extension, Json, Router,
 };
 use registry::{Connector, ConnectorInput, ConnectorKind, Registry};
 pub use screenshots::ScreenshotUploader;
@@ -31,11 +32,16 @@ impl From<StoreError> for ApiError {
 }
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (
+        let body = self.0.body();
+        let summary = logs::error_summary(&self.0.code, &self.0.message);
+        let mut response = (
             StatusCode::from_u16(self.0.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
-            Json(self.0.body()),
+            Json(body.clone()),
         )
-            .into_response()
+            .into_response();
+        response.extensions_mut().insert(summary);
+        response.extensions_mut().insert(logs::ErrorBody(body));
+        response
     }
 }
 type Result<T> = std::result::Result<T, ApiError>;
@@ -89,9 +95,10 @@ impl ApiState {
                 "Store API public URL must be HTTP(S) without credentials",
             ));
         }
+        let transport = Arc::new(Transport::with_logs(timeout, registry.logs.clone())?);
         Ok(Arc::new(Self {
             registry,
-            transport: Arc::new(Transport::new(timeout)?),
+            transport,
             admin_token,
             setup_sessions: setup::Sessions::default(),
             api_token,
@@ -118,6 +125,10 @@ async fn authorize_admin(
         return Err(StoreError::new(401, "unauthorized", "Administrator token required").into());
     }
     let mut response = next.run(request).await;
+    response.extensions_mut().insert(logs::Actor {
+        kind: "administrator",
+        id: None,
+    });
     response.headers_mut().insert(
         header::CACHE_CONTROL,
         "no-store".parse().expect("static header"),
@@ -130,15 +141,25 @@ async fn authorize_client(
     next: Next,
 ) -> Result<Response> {
     let token = bearer(request.headers());
+    let mut actor = logs::Actor {
+        kind: "business",
+        id: None,
+    };
     if !registry::secret_eq(&state.api_token, token) {
         if !token.starts_with(registry::TOKEN_PREFIX) {
             return Err(StoreError::new(401, "unauthorized", "Store API token required").into());
         }
         integrations::require_https(&request)?;
         let access = state.registry.authenticate_integration(token)?;
+        actor = logs::Actor {
+            kind: "integration",
+            id: Some(access.id.clone()),
+        };
         request.extensions_mut().insert(access);
     }
-    Ok(integrations::no_store(next.run(request).await))
+    let mut response = integrations::no_store(next.run(request).await);
+    response.extensions_mut().insert(actor);
+    Ok(response)
 }
 
 pub fn router(state: Arc<ApiState>) -> Router {
@@ -150,6 +171,7 @@ pub fn router_with_screenshots(
     uploader: Option<ScreenshotUploader>,
 ) -> Router {
     let management = Router::new()
+        .route("/v1/logs", get(logs::read))
         .route(
             "/v1/connectors",
             get(list_connectors).post(create_connector),
@@ -196,7 +218,22 @@ pub fn router_with_screenshots(
             authorize_client,
         ));
     Router::new()
-        .route("/health", get(|| async { Json(json!({"status":"ok"})) }))
+        .route(
+            "/health",
+            get(|State(state): State<Arc<ApiState>>| async move {
+                let healthy = state.registry.logs.healthy();
+                (
+                    if healthy {
+                        StatusCode::OK
+                    } else {
+                        StatusCode::SERVICE_UNAVAILABLE
+                    },
+                    Json(
+                        json!({"status":if healthy {"ok"} else {"degraded"},"logsHealthy":healthy}),
+                    ),
+                )
+            }),
+        )
         .route("/v1/apps/{platform}/{identifier}/connector", binding)
         .route("/v1/connectors/{id}/ws", get(connect_ws))
         .route(
@@ -209,6 +246,7 @@ pub fn router_with_screenshots(
         .merge(setup::routes(state.clone()))
         .merge(screenshots::routes(state.clone(), uploader))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(state.clone(), logs::observe))
         .with_state(state)
 }
 
@@ -404,14 +442,23 @@ async fn connect_ws(
 
 async fn execute(
     state: Arc<ApiState>,
+    context: logs::RequestContext,
     platform: Platform,
     identifier: String,
     operation: Operation,
     payload: Value,
 ) -> Result<Response> {
+    logs::business_event(
+        &state.registry,
+        &context,
+        platform,
+        &identifier,
+        operation,
+        &payload,
+    );
     let node = state.registry.resolve(platform, &identifier)?;
     let request = StoreRequest {
-        request_id: Uuid::new_v4().to_string(),
+        request_id: context.0.clone(),
         platform,
         bundle_identifier: identifier,
         operation,
@@ -422,14 +469,29 @@ async fn execute(
         .transport
         .dispatch(&node, &state.registry.token(&node), request)
         .await?;
-    Ok((
+    let mut body = reply.body;
+    let error = (reply.status >= 400).then(|| {
+        logs::error_summary(
+            body["error"]["code"].as_str().unwrap_or("request_failed"),
+            body["error"]["message"].as_str().unwrap_or(""),
+        )
+    });
+    if let Some(object) = body.get_mut("error").and_then(Value::as_object_mut) {
+        object.insert("requestId".into(), json!(context.0));
+    }
+    let mut response = (
         StatusCode::from_u16(reply.status).unwrap_or(StatusCode::BAD_GATEWAY),
-        Json(reply.body),
+        Json(body),
     )
-        .into_response())
+        .into_response();
+    if let Some(error) = error {
+        response.extensions_mut().insert(error);
+    }
+    Ok(response)
 }
 async fn read_store(
     State(state): State<Arc<ApiState>>,
+    Extension(context): Extension<logs::RequestContext>,
     Path((platform, identifier, resource)): Path<(Platform, String, String)>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Response> {
@@ -457,10 +519,11 @@ async fn read_store(
             })
             .collect(),
     );
-    execute(state, platform, identifier, operation, payload).await
+    execute(state, context, platform, identifier, operation, payload).await
 }
 async fn write_store(
     State(state): State<Arc<ApiState>>,
+    Extension(context): Extension<logs::RequestContext>,
     Path((platform, identifier, resource)): Path<(Platform, String, String)>,
     Json(payload): Json<Value>,
 ) -> Result<Response> {
@@ -470,7 +533,7 @@ async fn write_store(
         "product-page-optimizations" => Operation::CreateProductPageOptimization,
         _ => return Err(StoreError::new(404, "not_found", "Unknown store resource").into()),
     };
-    execute(state, platform, identifier, operation, payload).await
+    execute(state, context, platform, identifier, operation, payload).await
 }
 
 async fn installer(

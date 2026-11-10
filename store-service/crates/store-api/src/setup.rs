@@ -109,11 +109,17 @@ async fn authorize_setup(
         )
         .into());
     }
-    Ok(next.run(request).await)
+    let mut response = next.run(request).await;
+    response.extensions_mut().insert(super::logs::Actor {
+        kind: "administrator-session",
+        id: None,
+    });
+    Ok(response)
 }
 
 pub(super) fn routes(state: Arc<super::ApiState>) -> Router<Arc<super::ApiState>> {
     let setup_api = Router::new()
+        .route("/connector-setup/api/logs", get(super::logs::read))
         .route(
             "/connector-setup/api/connectors",
             get(super::list_connectors).post(super::create_connector),
@@ -191,6 +197,10 @@ async fn asset(Path(name): Path<String>) -> Response {
         "integrations.mjs" => (
             "text/javascript; charset=utf-8",
             include_bytes!("setup/integrations.mjs"),
+        ),
+        "logs.mjs" => (
+            "text/javascript; charset=utf-8",
+            include_bytes!("setup/logs.mjs"),
         ),
         "packager.mjs" => (
             "text/javascript; charset=utf-8",

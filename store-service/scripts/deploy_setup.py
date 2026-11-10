@@ -253,6 +253,9 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
     mapped = []
     report_path = PROJECT / "docs/setup-deployment-verification.json"
     try:
+        status, body = request("/v1/connectors", snapshot["admin"])
+        check(status == 200, "node connection inventory readable before rollout")
+        previously_connected = {node["connectorId"] for node in json.loads(body)["connectors"] if node["connected"]}
         management = "/v1/integrations"
         existing_token = None
         if integrations_only:
@@ -282,6 +285,28 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
         check(healthy, "HTTP health after API-only rollout")
         check(request("/health", scheme="https")[0] == 200, "HTTPS health with certificate verification")
         if documents_only:
+            status, body = request("/v1/logs?limit=20", snapshot["admin"])
+            logs = json.loads(body)
+            check(status == 200 and logs["retentionDays"] == 7 and logs["storageHealthy"],
+                  "seven-day persistent center log store available")
+            check(any(row["event"] == "service.started" for row in logs["entries"]),
+                  "center startup and subsequent HTTP requests recorded")
+            check(request("/v1/logs", snapshot["token"])[0] == 401,
+                  "business credentials cannot read administrator logs")
+            for asset in ("logs.mjs", "app.mjs", "index.html"):
+                path = "/connector-setup/" + ("" if asset == "index.html" else asset)
+                status, content = request(path)
+                check(status == 200 and content == (PROJECT / "crates/store-api/src/setup" / asset).read_bytes(),
+                      "exact deployed log viewer asset " + asset)
+            recovered = not previously_connected
+            for _ in range(40):
+                status, body = request("/v1/connectors", snapshot["admin"])
+                connected = {node["connectorId"] for node in json.loads(body)["connectors"] if node["connected"]}
+                if previously_connected <= connected:
+                    recovered = True
+                    break
+                time.sleep(0.5)
+            check(recovered, "previously connected nodes recovered after center restart")
             docs = "/v1/store-management/api-docs"
             for asset in ("start.cmd", "install.ps1", "install.sh"):
                 status, content = request("/connector-setup/" + asset)

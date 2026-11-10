@@ -28,6 +28,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     println!("Store API listening on {}", listener.local_addr()?);
     let shutdown = state.clone();
+    state.registry.logs.record_service("service.started");
+    let maintenance_logs = state.registry.logs.clone();
+    let maintenance = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let logs = maintenance_logs.clone();
+            let _ = tokio::task::spawn_blocking(move || logs.prune()).await;
+        }
+    });
     let uploader = ScreenshotUploader::from_environment().unwrap_or_else(|error| {
         eprintln!("Screenshot delivery unavailable ({})", error.code);
         None
@@ -38,9 +48,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .with_graceful_shutdown(async move {
         shutdown_signal().await;
+        shutdown.registry.logs.record_service("service.stopping");
         shutdown.transport.close_all();
     })
     .await?;
+    maintenance.abort();
+    let _ = maintenance.await;
     Ok(())
 }
 

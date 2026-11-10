@@ -56,6 +56,7 @@ components:
           properties:
             code: {type: string}
             message: {type: string}
+            requestId: {type: string, description: Center-generated correlation ID; also returned in X-Testflying-Request-Id}
     ConnectorInput:
       type: object
       additionalProperties: false
@@ -221,6 +222,22 @@ components:
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
 security: [{integrationToken: []}, {clientToken: []}]
 paths:
+  /v1/logs:
+    get:
+      summary: Administrator-only center logs retained for seven days
+      description: Business tokens cannot read logs. Text is represented by lengths and hashes; credentials and raw bodies are excluded. Responses use Cache-Control no-store.
+      security: [{adminToken: []}]
+      parameters:
+        - {name: requestId, in: query, schema: {type: string}}
+        - {name: connectorId, in: query, schema: {type: string}}
+        - {name: platform, in: query, schema: {type: string, enum: [ios, android]}}
+        - {name: identifier, in: query, schema: {type: string}}
+        - {name: event, in: query, schema: {type: string}}
+        - {name: status, in: query, schema: {type: integer, minimum: 100, maximum: 599}}
+        - {name: errorsOnly, in: query, schema: {type: boolean, default: false}}
+        - {name: before, in: query, schema: {type: integer, minimum: 1}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 100}}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
   /v1/store-management/api-docs:
     get:
       summary: Read the nine store and two node endpoint contract, image query options and full documentation

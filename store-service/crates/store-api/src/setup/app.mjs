@@ -1,5 +1,6 @@
 import { CREDENTIAL_LIMIT, validateAccount, buildInstaller, installationFiles } from "./packager.mjs";
 import { bindIntegrations } from "./integrations.mjs";
+import { bindLogs } from "./logs.mjs";
 
 const $ = (id) => document.getElementById(id);
 const api = new URL("api/", window.location.href);
@@ -8,6 +9,7 @@ let session;
 let nodes = [];
 let automaticKeyId = "";
 const integrations = bindIntegrations(request, () => $("setupForm").hidden ? undefined : session);
+const logs = bindLogs(request, () => $("setupForm").hidden ? undefined : session);
 
 function status(message, kind = "info") {
   $("status").hidden = false;
@@ -181,6 +183,7 @@ function resetSession() {
   $("downloadButton").disabled = false;
   $("adminUnlock").hidden = !securePage;
   integrations.reset();
+  logs.reset();
   $("screenshotWorkspace").open = false;
   $("screenshotWorkspace").hidden = true;
   $("screenshotStatus").textContent = "";
@@ -207,6 +210,7 @@ async function restoreSession(token = "") {
     nodes = result.connectors;
     renderNodes();
     integrations.show();
+    logs.show();
     renderScreenshotNodes();
     $("screenshotWorkspace").hidden = false;
     $("adminUnlock").hidden = true;

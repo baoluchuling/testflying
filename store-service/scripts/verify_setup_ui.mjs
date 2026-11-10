@@ -60,6 +60,7 @@ if (!production) {
     "": [path.join(web, "index.html"), "text/html"],
     "app.mjs": [path.join(web, "app.mjs"), "text/javascript"],
     "integrations.mjs": [path.join(web, "integrations.mjs"), "text/javascript"],
+    "logs.mjs": [path.join(web, "logs.mjs"), "text/javascript"],
     "packager.mjs": [path.join(web, "packager.mjs"), "text/javascript"],
     "style.css": [path.join(web, "style.css"), "text/css"],
     "jszip.min.js": [path.join(web, "vendor/jszip.min.js"), "text/javascript"],
@@ -105,6 +106,13 @@ if (!production) {
         }
       }
       const screenshot = screenshotInstallerPath.exec(url.pathname);
+      if (url.pathname === setupApi + "logs") {
+        res.end(JSON.stringify({retentionDays:7,storageHealthy:true,nextCursor:null,entries:[{
+          id:1,timestampMs:Date.now(),event:"connector.result",status:502,requestId:"fixture-request-id",
+          identifier:"com.cfs.amberia",details:{error:{code:"store_upstream_error",upstreamStatus:400},unsafe:"<img src=x onerror=alert(1)>"}
+        }]}));
+        return;
+      }
       if (screenshot) {
         if (!nodes.some((node) => node.kind === "screenshot" && node.connectorId === screenshot[1])) {
           res.writeHead(422).end("{}");
@@ -353,6 +361,17 @@ try {
   if (!production) assert.equal(nodes.length, 1);
   checks.push("program-only upgrade preserves node identity without including local configuration");
   if (!production) {
+    await page.locator("#logWorkspace summary").click();
+    await page.locator("#logIdentifier").fill("com.cfs.amberia");
+    await page.locator("#logSearch").click();
+    await page.locator("#logEntries details").waitFor();
+    assert.match(await page.locator("#logEntries").textContent(),/store_upstream_error/);
+    assert.equal(await page.locator("#logEntries img").count(),0);
+    await page.locator("#logEntries > details > summary").click();
+    await page.getByRole("button",{name:"查看此请求全过程",exact:true}).click();
+    await page.locator("#logSearch:enabled").waitFor();
+    assert.equal(await page.locator("#logRequestId").inputValue(),"fixture-request-id");
+    checks.push("seven-day logs support application filters and request traces without rendering HTML");
     await Promise.all([
       page.waitForResponse((response) => new URL(response.url()).pathname === setupApi + "integrations"),
       page.getByText("接入凭据", { exact: true }).click(),

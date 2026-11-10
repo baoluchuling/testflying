@@ -1,3 +1,4 @@
+use crate::logs::{self, Event, LogStore};
 use crate::registry::{Connector, Registry};
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
@@ -22,6 +23,7 @@ struct Connection {
 }
 
 pub struct Transport {
+    logs: Option<Arc<LogStore>>,
     client: reqwest::Client,
     connections: Mutex<HashMap<String, Connection>>,
     locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
@@ -49,11 +51,29 @@ impl Transport {
                 StoreError::new(500, "http_client", "Cannot initialize Connector transport")
             })?;
         Ok(Self {
+            logs: None,
             client,
             connections: Mutex::new(HashMap::new()),
             locks: Mutex::new(HashMap::new()),
             timeout,
         })
+    }
+
+    pub(crate) fn with_logs(timeout: Duration, logs: Arc<LogStore>) -> Result<Self> {
+        let mut transport = Self::new(timeout)?;
+        transport.logs = Some(logs);
+        Ok(transport)
+    }
+
+    fn connection_event(&self, id: &str, name: &'static str, reason: &'static str) {
+        if let Some(logs) = &self.logs {
+            logs.record(Event {
+                name,
+                connector_id: Some(id.to_owned()),
+                details: serde_json::json!({"reason":reason}),
+                ..Default::default()
+            });
+        }
     }
 
     pub fn connected(&self, id: &str) -> bool {
@@ -62,6 +82,7 @@ impl Transport {
 
     pub fn disconnect(&self, id: &str) {
         if let Some(connection) = self.connections.lock().unwrap().remove(id) {
+            self.connection_event(id, "connector.disconnected", "center_closed");
             let _ = connection.close.send(true);
             for (_, sender) in connection.pending.lock().unwrap().drain() {
                 let _ = sender.send(Err(disconnected()));
@@ -93,6 +114,67 @@ impl Transport {
     }
 
     pub async fn dispatch_via(
+        &self,
+        node: &Connector,
+        token: &str,
+        request: StoreRequest,
+        websocket: bool,
+    ) -> Result<StoreReply> {
+        let event = Event {
+            name: "connector.dispatch",
+            request_id: Some(request.request_id.clone()),
+            connector_id: Some(node.connector_id.clone()),
+            platform: Some(request.platform),
+            identifier: Some(request.bundle_identifier.clone()),
+            details: serde_json::json!({"operation":request.operation,"transport":if websocket {"wss"} else {"http"}}),
+            ..Default::default()
+        };
+        if let Some(logs) = &self.logs {
+            logs.record(event.clone());
+        }
+        let mut guard = DispatchGuard {
+            logs: self.logs.clone(),
+            event,
+            start: std::time::Instant::now(),
+            completed: false,
+        };
+        let result = self.dispatch_inner(node, token, request, websocket).await;
+        guard.event.name = "connector.result";
+        let (status, error) = match &result {
+            Ok(reply) => (
+                reply.status,
+                (reply.status >= 400).then(|| {
+                    logs::error_summary(
+                        reply.body["error"]["code"]
+                            .as_str()
+                            .unwrap_or("request_failed"),
+                        reply.body["error"]["message"].as_str().unwrap_or(""),
+                    )
+                }),
+            ),
+            Err(error) => (
+                error.status,
+                Some(logs::error_summary(&error.code, &error.message)),
+            ),
+        };
+        guard.event.status = Some(status);
+        guard.event.details["durationMs"] =
+            serde_json::json!(guard.start.elapsed().as_millis() as u64);
+        if let Some(error) = error {
+            guard.event.details["error"] = serde_json::json!(error);
+        }
+        if let Ok(reply) = &result {
+            guard.event.details["response"] = logs::reply_summary(&reply.body);
+        }
+        guard.event.details["outcomeUnknown"] = serde_json::json!(status >= 400 && status != 409);
+        if let Some(logs) = &guard.logs {
+            logs.record(guard.event.clone());
+        }
+        guard.completed = true;
+        result
+    }
+
+    async fn dispatch_inner(
         &self,
         node: &Connector,
         token: &str,
@@ -142,6 +224,16 @@ impl Transport {
                 })?;
             let status = response.status();
             if !status.is_success() {
+                if let Some(logs) = &self.logs {
+                    logs.record(Event {
+                        name: "connector.http_rejected",
+                        request_id: Some(request.request_id.clone()),
+                        connector_id: Some(node.connector_id.clone()),
+                        status: Some(status.as_u16()),
+                        details: serde_json::json!({"transport":"http"}),
+                        ..Default::default()
+                    });
+                }
                 return Err(StoreError::new(
                     if status.as_u16() == 409 { 409 } else { 502 },
                     "connector_rejected",
@@ -235,6 +327,11 @@ impl Transport {
         })
         .await;
         let Ok(Ok((mut channel, endpoint))) = authenticated else {
+            self.connection_event(
+                &id,
+                "connector.handshake_failed",
+                "handshake_rejected_or_timed_out",
+            );
             return;
         };
         let (sender, mut requests) = mpsc::channel(1);
@@ -245,9 +342,11 @@ impl Transport {
         {
             let mut connections = self.connections.lock().unwrap();
             if connections.contains_key(&id) {
+                self.connection_event(&id, "connector.handshake_failed", "duplicate_connection");
                 return;
             }
             if register(endpoint).is_err() {
+                self.connection_event(&id, "connector.handshake_failed", "registration_rejected");
                 return;
             }
             connections.insert(
@@ -261,6 +360,7 @@ impl Transport {
                 },
             );
         }
+        self.connection_event(&id, "connector.connected", "encrypted_handshake_complete");
         let Ok(ready) = channel.encrypt(b"ready") else {
             self.disconnect(&id);
             return;
@@ -278,7 +378,12 @@ impl Transport {
             tokio::select! {
                 _ = closed.changed() => break,
                 _ = heartbeat.tick() => {
-                    if last_seen.elapsed() > Duration::from_secs(35) || !bounded_send(&mut write,Message::Ping(Vec::new().into())).await {break;}
+                    if last_seen.elapsed() > Duration::from_secs(35) {
+                        self.connection_event(&id,"connector.heartbeat_failed","heartbeat_timeout");break;
+                    }
+                    if !bounded_send(&mut write,Message::Ping(Vec::new().into())).await {
+                        self.connection_event(&id,"connector.socket_failed","write_failed_or_timed_out");break;
+                    }
                     // Recover queued work after reconnect or expiration of an abandoned lease.
                     if !screenshot_ready.has_changed().unwrap_or(false)
                         && screenshot_registry.is_some_and(|registry| registry.has_claimable_screenshot(&id).unwrap_or(false)) {
@@ -310,9 +415,15 @@ impl Transport {
                     match message {
                         Message::Binary(bytes) => {
                             if screenshot_registry.is_some() {break;}
-                            let plain=match channel.decrypt(&bytes) {Ok(Some(plain))=>plain,Ok(None)=>continue,Err(_)=>break};
-                            let Ok(reply) = serde_json::from_slice::<StoreReply>(&plain) else {break;};
-                            if !(200..=599).contains(&reply.status) {break;}
+                            let plain=match channel.decrypt(&bytes) {Ok(Some(plain))=>plain,Ok(None)=>continue,Err(_)=>{
+                                self.connection_event(&id,"connector.protocol_failed","decrypt_failed");break;
+                            }};
+                            let Ok(reply) = serde_json::from_slice::<StoreReply>(&plain) else {
+                                self.connection_event(&id,"connector.protocol_failed","invalid_reply_json");break;
+                            };
+                            if !(200..=599).contains(&reply.status) {
+                                self.connection_event(&id,"connector.protocol_failed","invalid_reply_status");break;
+                            }
                             if let Some(sender) = pending.lock().unwrap().remove(&reply.request_id) {let _ = sender.send(Ok(reply));}
                         }
                         Message::Text(_)=>break,
@@ -323,6 +434,7 @@ impl Transport {
                 }
             }
         }
+        self.connection_event(&id, "connector.disconnected", "connection_ended");
         let mut connections = self.connections.lock().unwrap();
         if connections
             .get(&id)
@@ -333,6 +445,27 @@ impl Transport {
         drop(connections);
         for (_, sender) in pending.lock().unwrap().drain() {
             let _ = sender.send(Err(disconnected()));
+        }
+    }
+}
+
+struct DispatchGuard {
+    logs: Option<Arc<LogStore>>,
+    event: Event,
+    start: std::time::Instant,
+    completed: bool,
+}
+impl Drop for DispatchGuard {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.event.name = "connector.cancelled";
+            self.event.status = Some(499);
+            self.event.details["durationMs"] =
+                serde_json::json!(self.start.elapsed().as_millis() as u64);
+            self.event.details["outcomeUnknown"] = serde_json::json!(true);
+            if let Some(logs) = &self.logs {
+                logs.record(self.event.clone());
+            }
         }
     }
 }

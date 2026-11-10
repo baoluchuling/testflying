@@ -9,6 +9,7 @@ use store_protocol::{
 
 pub(super) async fn prepare(
     State(state): State<Arc<ApiState>>,
+    Extension(context): Extension<logs::RequestContext>,
     Path((platform, app)): Path<(Platform, String)>,
     Json(file): Json<UploadInput>,
 ) -> Result<(StatusCode, Json<Value>)> {
@@ -32,6 +33,8 @@ pub(super) async fn prepare(
         file,
     };
     let ticket = upload::sign(&claims, &state.registry.purpose_key(&node, "upload"))?;
+    state.registry.logs.record(logs::Event {name:"upload.prepared",request_id:Some(context.0),connector_id:Some(node.connector_id.clone()),
+        platform:Some(platform),identifier:Some(app.clone()),details:json!({"assetId":claims.asset_id,"sizeBytes":claims.file.size_bytes,"contentType":claims.file.content_type}),..Default::default()});
     let url = format!(
         "{}/v1/store-management/apps/{platform}/{app}/uploads/{}",
         state.public_url, claims.asset_id
@@ -45,6 +48,7 @@ pub(super) async fn prepare(
 }
 
 struct Relay {
+    context: logs::RequestContext,
     state: Arc<ApiState>,
     node: Connector,
     token: String,
@@ -81,11 +85,32 @@ impl Relay {
             operation,
             payload,
         };
-        let reply = self
+        let command_id = request.request_id.clone();
+        let mut event = logs::Event {
+            name: "upload.command",
+            request_id: Some(self.context.0.clone()),
+            connector_id: Some(self.node.connector_id.clone()),
+            platform: Some(self.claims.platform),
+            identifier: Some(self.claims.bundle_identifier.clone()),
+            details: json!({"assetId":self.claims.asset_id,"commandRequestId":command_id,"operation":operation}),
+            ..Default::default()
+        };
+        self.state.registry.logs.record(event.clone());
+        let result = self
             .state
             .transport
             .dispatch_via(&self.node, &self.token, request, self.websocket)
-            .await?;
+            .await;
+        event.name = "upload.command_result";
+        event.status = Some(match &result {
+            Ok(reply) => reply.status,
+            Err(error) => error.status,
+        });
+        if let Err(error) = &result {
+            event.details["error"] = json!(logs::error_summary(&error.code, &error.message));
+        }
+        self.state.registry.logs.record(event);
+        let reply = result?;
         if reply.status != 200 {
             let error = &reply.body["error"];
             return Err(StoreError::new(
@@ -104,6 +129,13 @@ impl Drop for Relay {
         if !self.started || self.finished {
             return;
         }
+        self.state.registry.logs.record(logs::Event {
+            name: "upload.abort_requested",
+            request_id: Some(self.context.0.clone()),
+            connector_id: Some(self.node.connector_id.clone()),
+            details: json!({"assetId":self.claims.asset_id}),
+            ..Default::default()
+        });
         let (state, node, token, claims, websocket, session) = (
             self.state.clone(),
             self.node.clone(),
@@ -135,6 +167,7 @@ impl Drop for Relay {
 
 pub(super) async fn receive(
     State(state): State<Arc<ApiState>>,
+    Extension(context): Extension<logs::RequestContext>,
     Path((platform, app, id)): Path<(Platform, String, String)>,
     headers: HeaderMap,
     body: Body,
@@ -163,6 +196,7 @@ pub(super) async fn receive(
     let token = state.registry.token(&node);
     let websocket = state.transport.connected(&node.connector_id);
     let mut relay = Relay {
+        context,
         state,
         node,
         token,

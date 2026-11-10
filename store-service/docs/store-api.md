@@ -684,7 +684,7 @@ STORE_API_TOKEN="$INTEGRATION_TOKEN" python3 examples/upload-image.py \
 受控错误格式：
 
 ```json
-{"error":{"code":"connector_disconnected","message":"Connector disconnected; trigger a new request when available"}}
+{"error":{"code":"connector_disconnected","message":"Connector disconnected; trigger a new request when available","requestId":"center-generated-uuid"}}
 ```
 
 | HTTP | 常见含义 |
@@ -699,5 +699,31 @@ STORE_API_TOKEN="$INTEGRATION_TOKEN" python3 examples/upload-image.py \
 | 504 | 执行等待超时 |
 
 框架层参数解析、JSON 格式、Content-Type 或体积错误还可能返回 400/413/415/422，响应格式不保证统一。
+
+中心每次请求生成 `X-Testflying-Request-Id` 响应头，受控失败 JSON 的 `error.requestId` 与之相同。排障时保留此 ID；框架解析失败也有响应头。调用方传入的同名请求头不会作为中心 ID 使用。
+
+### 中心日志（管理员专用）
+
+后台「中心商店日志 · 最近七天」可按应用标识、平台、节点和请求 ID 查询，点击「查看此请求全过程」关联开始、参数摘要、节点转发、返回及耗时。普通业务或接入 Token 无权读取日志。
+
+管理员可调用 `GET /v1/logs`（Bearer 管理员 Token）；后台会话使用 HTTPS `GET /connector-setup/api/logs`。日志与中心注册表一起持久化，不依赖运行终端。
+
+| Query | 说明 |
+|---|---|
+| requestId / connectorId | 精确筛选关联请求或节点 |
+| platform / identifier | ios / android；应用 Bundle ID 或包名 |
+| event | 精确事件名，例如 http.completed、store.request、connector.result、connector.connected、connector.disconnected |
+| status | HTTP 状态，例如 502、504；取消为 499 |
+| errorsOnly | true 仅看失败、阻止或不允许同步的事件；不代表商店已回滚 |
+| before | 上页返回的 nextCursor；按 ID 降序继续查询 |
+| limit | 默认 100，范围 1–200 |
+
+响应含 `entries`、`nextCursor`、`retentionDays:7`、`storageHealthy`。每条含 id、timestampMs（Unix 毫秒）、event、requestId、connectorId、platform、identifier、status、details。无对应值时为 null。接口返回 Cache-Control: no-store。
+
+记录请求路由模板、方法、业务选择器（operation、locale、version、device、syncScopes）、已知文案字段的字符数/字节数/SHA-256、图片槽位数量、通道、返回状态、耗时、固定错误码和可识别的上游 HTTP 状态；另有握手、连接、断开、服务启动及停止事件。文案原文、图片字节、上传 URL、Authorization、Cookie、Token、私钥、完整查询字符串和节点原始错误正文不会入日志。未知字段仅计数，查询和提交的原始 JSON 不会原样落盘。
+
+只保留最近七天：启动、写入、读取及每分钟清理过期行，查询始终不返回过期记录；SQLite 开启 secure_delete，空闲页供后续日志复用，文件不会因清理立刻缩小。日志写入异常不自动重放商店请求，`/health` 返回降级状态。业务日志不重复写入可能有不同保留期的系统 journal。
+
+中心仅能记录 Connector 实际返回的内容。旧节点若只传 `Store upstream returned HTTP 400`，可记录上游状态 400，但无法推断 Apple 的具体字段；更新中心不会补回升级前缺失的日志。多步骤失败、超时或调用方取消都不能证明商店未修改。
 
 每个账号同时只执行一条商店请求，商店请求默认等待 60 秒；文件传输使用第 11 节的独立 30 分钟期限。失败、断线不自动重放或重试，没有持久任务或幂等键去重。超时不代表商店未修改，已开始的工作可能继续完成清理，期间保持账号忙碌；用户重新触发前应查询真实状态。Apple 多步骤写入可能部分成功。
