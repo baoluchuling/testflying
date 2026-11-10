@@ -1,7 +1,7 @@
 {
-  "runId": "734310eb2596414ea75a6095900d3d1d",
-  "finishedAt": "2026-11-10T00:51:30.273445+00:00",
-  "sourceCommit": "c2e92c8240ece2f8afbaa30b45309c0566c649b4",
+  "runId": "541c4a0a1a9b42019a1ca555a1f75efc",
+  "finishedAt": "2026-11-10T04:07:15.758835+00:00",
+  "sourceCommit": "517749357f766a842c1691cc3c7c37ae50aeac40",
   "sourceHashes": {
     "Cargo.lock": "6ac5b7841cd975ae2c50058a5fc6e2b7f8fc47f6c80dde8c8ec51c355ef20967",
     "Cargo.toml": "fd87675617bd5deda3fe4e5fb91d81b194a43536aed5a43234b68c7592778db9",
@@ -60,9 +60,9 @@
     "docs/openapi.yaml": "2c4c8f87b9f7fd8d2efcf437120506625c693fb9d9722bacab82492d7de7a9a2",
     "docs/store-api.md": "181eead12c332f7849185fd7f39b3a7f48ca24169aeecb240bc0d1d10c203e2c",
     "packaging/connector/install.cmd": "1f617df7fd0d62f05d395ddff7b05d89d0db6d01d0a3f658f1d0a41d167a0b78",
-    "packaging/connector/install.ps1": "b968d24306ef08a79974dee295e4c53c089415283767d572ed6d99b4a195e221",
+    "packaging/connector/install.ps1": "c4a4c88b175a8ace001ce6ea2c0c633ef24f65938483687c687547a49db77be3",
     "packaging/connector/install.sh": "74a96b17fb8c878583d58d47e37a09105bd870c96782252b30a84c6e7bdaf064",
-    "packaging/connector/start.cmd": "ecc92264b3fd9d4adc9612a3f68cf29da362af32d26b9a822a4fc5aaf80ad5aa",
+    "packaging/connector/start.cmd": "8d004a7f62d2a5028b308d4c6f22d3dcece518ec4eb2f4543614718c5e8ad5e5",
     "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
     "packaging/screenshot-connector/README.md": "3e21e267d18a206eecbe86c06610b897f25d6d04b21ee3a4117092f4cf390586",
     "packaging/screenshot-connector/install.sh": "29a7aafc094792165ccb41fefdb8c715045ed8bcabe80af3bf0b415cd2d6f726",
@@ -74,7 +74,7 @@
   "toolchain": "Rust 1.94.0 / cargo-zigbuild 0.20.1 / Zig 0.14.1",
   "outputs": {
     "releases/linux-amd64/store-api": {
-      "sha256": "a57566ce512acc353dd590fbcac1e9af4a77e0b27af929b5e7807efbc9050a43",
+      "sha256": "9c2045ab3406c426074d1b2f2486630420f810f4accd1cac8f3aa8be48a0d019",
       "bytes": 8100792,
       "format": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped"
     }
