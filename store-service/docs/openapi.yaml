@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Independent Store API
-  version: 0.1.0
+  version: '2026-11-10'
   description: >-
     Pure real-time Apple/Google API. Application identity is platform plus exact
     Bundle ID/package name. Multiple apps map to one account Connector.
@@ -10,6 +10,7 @@ servers:
   - url: http://localhost:8200
 components:
   securitySchemes:
+    integrationToken: {type: http, scheme: bearer, description: 'Integration credential; HTTPS only; all enabled store nodes, bindings and store business calls.'}
     clientToken: {type: http, scheme: bearer, description: STORE_API_TOKEN}
     adminToken: {type: http, scheme: bearer, description: STORE_API_ADMIN_TOKEN}
     nodeToken: {type: http, scheme: bearer, description: Individually provisioned Connector token}
@@ -35,6 +36,16 @@ components:
       in: query
       description: iOS version string; omit for application-level information only.
       schema: {type: string}
+    imageLocale:
+      name: locale
+      in: query
+      description: For store-images only. Exact case-insensitive locale after trimming. Omit or blank for all; no fallback when unmatched. Choose from supported-locales.
+      schema: {type: string}
+    imageDevice:
+      name: device
+      in: query
+      description: For store-images only. Omit or blank for all. iOS supports all three; Android supports phone/tablet and rejects foldable with 422 unsupported_image_device. Do not send all or duo.
+      schema: {type: string, enum: [phone, tablet, foldable, '']}
   schemas:
     Error:
       type: object
@@ -76,7 +87,22 @@ components:
         provider: {type: object, additionalProperties: true}
     Sync:
       type: object
-      required: [operation, locale]
+      required: [operation]
+      allOf:
+        - if:
+            properties:
+              operation: {enum: [update_app_metadata, update_release_notes]}
+          then:
+            required: [locale]
+        - if:
+            properties:
+              operation: {const: update_marketing_page}
+          then:
+            anyOf:
+              - required: [locale]
+              - required: [marketingPage]
+                properties:
+                  marketingPage: {required: [locale]}
       properties:
         operation: {type: string, enum: [update_app_metadata, update_release_notes, update_marketing_page]}
         locale: {type: string, minLength: 1}
@@ -113,30 +139,43 @@ components:
           properties:
             pageName: {type: string}
             applePageId: {type: string}
+            locale: {type: string, minLength: 1, description: Optional override of the top-level locale for CPP.}
             promotionalText: {type: string}
             storeImages: {$ref: '#/components/schemas/StoreImages'}
     StoreImages:
       type: object
-      description: Only present slots are replaced. Assets may reference a temporary uploaded assetId or a downloadUrl/fileName.
-      additionalProperties:
-        type: object
-        properties:
-          urls: {type: array, items: {type: string, format: uri}}
-          assets:
-            type: array
-            items:
-              type: object
-              oneOf:
-                - required: [assetId]
-                  additionalProperties: false
-                  properties:
-                    assetId: {type: string, format: uuid}
-                - required: [downloadUrl]
-                  not: {required: [assetId]}
-              properties:
-                downloadUrl: {type: string, format: uri}
-                fileName: {type: string}
-                assetId: {type: string, format: uuid}
+      description: Only present slots are replaced; explicit empty source arrays clear that slot. iOS uploads into Apple Asset Library, waits for processing/spec validation, then replaces and orders placements. No library asset deletion or automatic mutation replay. Multi-step placement writes are not transactional. Query device is not a sync selector.
+      additionalProperties: false
+      properties:
+        phone_screenshots: {$ref: '#/components/schemas/ImageSlot'}
+        tablet_screenshots: {$ref: '#/components/schemas/ImageSlot'}
+        foldable_screenshots:
+          allOf: [{$ref: '#/components/schemas/ImageSlot'}]
+          description: iOS iPhone Duo only; runtime inner/outer placement groups. Android rejects this slot.
+        feature_graphic_url:
+          allOf: [{$ref: '#/components/schemas/ImageSlot'}]
+          description: Android only.
+    ImageSlot:
+      type: object
+      additionalProperties: false
+      anyOf: [{required: [urls]}, {required: [assets]}]
+      properties:
+        urls: {type: array, items: {type: string, format: uri}}
+        assets:
+          type: array
+          items:
+            oneOf:
+              - type: object
+                required: [assetId]
+                additionalProperties: false
+                properties:
+                  assetId: {type: string, format: uuid}
+              - type: object
+                required: [downloadUrl]
+                not: {required: [assetId]}
+                properties:
+                  downloadUrl: {type: string, format: uri}
+                  fileName: {type: string}
     UploadInput:
       type: object
       additionalProperties: false
@@ -180,8 +219,29 @@ components:
         503 disabled/disconnected node or unavailable binary, 504 deadline.
         A timed-out mutation may already have changed the store; query before retriggering.
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
-security: [{clientToken: []}]
+security: [{integrationToken: []}, {clientToken: []}]
 paths:
+  /v1/store-management/api-docs:
+    get:
+      summary: Read the nine store and two node endpoint contract, image query options and full documentation
+      description: Requires no app binding, node or store account. Describes the center contract, not live node capabilities. Integration tokens require HTTPS; business tokens support HTTP and HTTPS. Cache-Control no-store. Administrator tokens do not authenticate this route.
+      parameters:
+        - name: format
+          in: query
+          schema: {type: string, enum: [json, markdown, openapi], default: json}
+      responses:
+        '200':
+          description: Same deployed contract in JSON catalog, full Markdown or OpenAPI YAML.
+          content:
+            application/json: {schema: {type: object, required: [schemaVersion, contractVersion, endpoints, uploadEndpoints, imageQuery, sync, documentation]}}
+            text/markdown: {schema: {type: string}}
+            application/yaml: {schema: {type: string}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/store-management/connectors:
+    get:
+      summary: List every enabled store Connector available to the external system
+      description: Returns connectorId, name, enabled and connected. connected reports WSS state; a registered HTTP fallback can still be used when WSS is disconnected.
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
   /health:
     get:
       security: []
@@ -287,7 +347,7 @@ paths:
       security: [{adminToken: []}]
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
     put:
-      security: [{adminToken: []}]
+      security: [{integrationToken: []}, {adminToken: []}]
       summary: Set or replace exact application mapping, many applications to one Connector
       requestBody:
         required: true
@@ -318,7 +378,11 @@ paths:
         - {name: translationLanguage, in: query, schema: {type: string}}
         - {name: sort, in: query, schema: {type: string}}
         - {name: rating, in: query, schema: {type: integer, minimum: 1, maximum: 5}}
-        - {name: locale, in: query, schema: {type: string}}
+        - name: locale
+          in: query
+          description: store-images uses exact case-insensitive matching after trimming, omit/blank for all with no fallback; store-reviews filters the current page. Other resources do not filter by locale.
+          schema: {type: string}
+        - {$ref: '#/components/parameters/imageDevice'}
         - {name: territory, in: query, schema: {type: string}}
         - {name: date, in: query, schema: {type: string, format: date}}
         - {name: startDate, in: query, schema: {type: string, format: date}}

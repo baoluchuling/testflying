@@ -44,9 +44,10 @@ def existing_connector_source_matches(relative: str, digest: str) -> bool:
 
 def main() -> None:
     root = managed_root()
-    if sys.argv[1:] not in ([], ["integrations"]):
-        raise RuntimeError("Use integrations for read-only node verification and temporary token checks")
-    integrations_only = sys.argv[1:] == ["integrations"]
+    if sys.argv[1:] not in ([], ["integrations"], ["api-docs"]):
+        raise RuntimeError("Use integrations or api-docs for an API-only verified rollout")
+    documents_only = sys.argv[1:] == ["api-docs"]
+    integrations_only = sys.argv[1:] in (["integrations"], ["api-docs"])
     tmp = root / "tmp"
     tmp.mkdir(exist_ok=True)
     ssh = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o",
@@ -255,6 +256,71 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             time.sleep(0.5)
         check(healthy, "HTTP health after API-only rollout")
         check(request("/health", scheme="https")[0] == 200, "HTTPS health with certificate verification")
+        if documents_only:
+            docs = "/v1/store-management/api-docs"
+            for scheme in ("http", "https"):
+                status, body = request(docs, snapshot["token"], scheme=scheme)
+                catalog = json.loads(body)
+                check(status == 200 and catalog["contractVersion"] == "2026-11-10",
+                      scheme + " business-token documentation available")
+                endpoints = catalog["endpoints"]
+                check(len(endpoints) == 11
+                      and sum(row["group"] == "store" for row in endpoints) == 9
+                      and sum(row["group"] == "node" for row in endpoints) == 2
+                      and len(catalog["uploadEndpoints"]) == 2,
+                      scheme + " nine store and two node endpoints plus upload helpers")
+                check(catalog["imageQuery"]["parameters"][2]["enum"] == ["phone", "tablet", "foldable"]
+                      and "foldable" not in catalog["imageQuery"]["android"]["devices"],
+                      scheme + " language and device options with platform limits")
+                for format_name, relative in (("markdown", "docs/store-api.md"), ("openapi", "docs/openapi.yaml")):
+                    status, content = request(docs + "?format=" + format_name, snapshot["token"], scheme=scheme)
+                    check(status == 200 and content == (PROJECT / relative).read_bytes(),
+                          scheme + " exact deployed " + format_name + " document")
+                check(request(docs, scheme=scheme)[0] == 401,
+                      scheme + " anonymous documentation denied")
+            status, body = request(docs + "?format=html", snapshot["token"])
+            check(status == 422 and json.loads(body)["error"]["code"] == "invalid_document_format",
+                  "unsupported documentation format rejected")
+            if existing_token:
+                check(request(docs, existing_token)[0] == 200,
+                      "existing HTTPS integration token can discover API documentation")
+                check(request(docs, existing_token, scheme="http")[0] == 403,
+                      "integration documentation access still requires HTTPS")
+            after = json.loads(remote("""
+import json,hashlib,os
+p=os.path.realpath('/opt/testflying-store-api/current')
+sha=lambda p:hashlib.sha256(open(p,'rb').read()).hexdigest()
+print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
+ 'environmentSha256':sha('/etc/testflying-store-api/service.env'),
+ 'proxySha256':sha('/etc/bugsmith/zentao-tls/nginx.conf'),
+ 'screenshotConnectorSha256':sha(p+'/releases/darwin-arm64/screenshot-connector'),
+ 'binaries':{t:sha(p+'/releases/'+t+'/'+n) for t,n in [('linux-amd64','store-connector'),('darwin-arm64','store-connector'),('windows-amd64','store-connector.exe')]}}))
+"""))
+            check(after["current"] == release and after["apiSha256"] == expected_api,
+                  "verified center release selected")
+            check(after["environmentSha256"] == snapshot["environmentSha256"]
+                  and after["proxySha256"] == snapshot["proxySha256"],
+                  "persistent service and HTTP HTTPS proxy configuration preserved")
+            check(after["binaries"] == snapshot["binaries"]
+                  and after["screenshotConnectorSha256"] == snapshot["screenshotConnectorSha256"],
+                  "latest store and screenshot Connector binaries preserved")
+            previous_report = json.loads(report_path.read_text())
+            report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
+                      "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                      "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],
+                      "apiSha256": expected_api, "connectorBinarySha256": snapshot["binaries"],
+                      "screenshotConnectorSha256": snapshot["screenshotConnectorSha256"],
+                      "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
+                      "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
+                      "actualStoreAccountsUsed": False,
+                      "apiDocumentation": {"contractVersion": "2026-11-10", "formats": ["json", "markdown", "openapi"],
+                                           "existingIntegrationTokenVerified": bool(existing_token)},
+                      "cleanup": "See the supervisor cleanup report for this runId"}
+            if "storeConnectorPublication" in previous_report:
+                report["storeConnectorPublication"] = previous_report["storeConnectorPublication"]
+            report_path.write_text(json.dumps(report, indent=2) + "\n")
+            success = True
+            return
         for suffix in ("", "app.mjs", "integrations.mjs", "packager.mjs", "style.css", "jszip.min.js", "ca.crt", "start.cmd", "start.sh",
                        "install.cmd", "install.ps1", "install.sh"):
             check(request("/connector-setup/" + suffix)[0] == 200, "setup asset " + (suffix or "index"))

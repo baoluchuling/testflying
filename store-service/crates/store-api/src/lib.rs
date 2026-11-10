@@ -1,3 +1,4 @@
+mod api_docs;
 mod integrations;
 pub mod registry;
 mod screenshots;
@@ -177,6 +178,7 @@ pub fn router_with_screenshots(
             )),
         );
     let public = Router::new()
+        .route("/v1/store-management/api-docs", get(api_docs::read))
         .route(
             "/v1/store-management/connectors",
             get(integrations::list_nodes),

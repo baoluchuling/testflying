@@ -1,6 +1,34 @@
 # 商店业务与节点接入接口
 
-外部后台用同一枚接入 Token 查询可用节点、绑定应用，再调用商店查询、同步和图片上传接口。管理员可单独查询节点详情与应用的当前绑定。 [生产部署记录](production-deployment.md)
+外部后台用同一枚接入 Token 查询可用节点、绑定应用，再调用商店查询、同步和图片上传接口。本文完整覆盖 **9 个商店业务接口、2 个外部节点查询／绑定接口**，另附图片上传配套接口与管理员查询接口。契约版本：`2026-11-10`。
+
+## 在线获取文档和功能目录
+
+```http
+GET /v1/store-management/api-docs
+Authorization: Bearer INTEGRATION_TOKEN
+```
+
+无需先绑定应用或连接节点。使用与商店查询相同的接入 Token（HTTPS）或业务 API Token（HTTP／HTTPS）；管理 Token 不用于该接口。响应带 `Cache-Control: no-store`。
+
+| format 参数 | 响应类型 | 内容 |
+|---|---|---|
+| 省略或 json | application/json | schemaVersion、contractVersion、11 个核心接口的 endpoints、2 个配套 uploadEndpoints、imageQuery、sync、limitations 及完整 Markdown 文档 |
+| markdown | text/markdown | 本文完整内容 |
+| openapi | application/yaml | 可导入工具的完整 OpenAPI 定义 |
+
+```sh
+curl --fail "$BASE_URL/v1/store-management/api-docs" \
+  -H "Authorization: Bearer $INTEGRATION_TOKEN"
+curl --fail "$BASE_URL/v1/store-management/api-docs?format=markdown" \
+  -H "Authorization: Bearer $INTEGRATION_TOKEN"
+curl --fail "$BASE_URL/v1/store-management/api-docs?format=openapi" \
+  -H "Authorization: Bearer $INTEGRATION_TOKEN"
+```
+
+`BASE_URL` 使用下文中心基础地址，私有 CA 认证方式同其他 HTTPS 调用。未知 format 返回 `422 invalid_document_format`，未认证或已撤销 Token 返回 401。JSON 中路径为相对中心基础地址的路径，`{platform}`、`{bundleIdentifier}` 等为调用时需要替换的占位符。
+
+该接口说明的是中心公开契约，不会调用商店、修改绑定或探测节点本地平台配置。节点需运行新版商店 Connector；实际调用仍受节点 `all`／`ios`／`android` 平台配置、在线状态、商店凭据权限和目标版本状态影响。中心不保存节点的平台模式。文档随中心程序发布，三个格式来自同一部署版本。
 
 ## 通用约定
 
@@ -60,9 +88,6 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 |---|---|---|---|
 | — | GET | /v1/store-management/connectors | 读取全部启用的商店节点 |
 | — | PUT | /v1/apps/{platform}/{bundleIdentifier}/connector | 设置或更换应用绑定 |
-| — | GET | /v1/apps/{platform}/{bundleIdentifier}/connector | 用管理 Token 查询应用当前绑定 |
-| — | GET | /v1/connectors | 用管理 Token 查询节点列表 |
-| — | GET | /v1/connectors/{connectorId} | 用管理 Token 查询节点详情 |
 | 1 | GET | {APP}/supported-locales | 查询现有商店语言 |
 | 2 | GET | {APP}/store-listings | 查询商店文案 |
 | 3 | GET | {APP}/store-images | 查询图片和截图 |
@@ -72,8 +97,30 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 | 7 | POST | {APP}/product-page-optimizations | 创建 Apple PPO 实验 |
 | 8 | POST | {APP}/preflight | 检查当前写入条件 |
 | 9 | POST | {APP}/sync | 单项或多字段同步内容 |
+
+图片上传配套接口（不计入上述 9 个商店业务接口）：
+
+| 序号 | 方法 | 路径 | 用途 |
+|---|---|---|---|
 | 10 | POST | {APP}/uploads | 申请图片上传凭据 |
 | 11 | PUT | {APP}/uploads/{assetId} | 经中心上传图片文件字节 |
+
+功能与平台范围：
+
+| 功能 | iOS | Android |
+|---|---|---|
+| 语言、文案查询 | 支持，版本号影响返回字段 | 支持 |
+| 图片按语言筛选 | locale | locale |
+| 图片按手机／平板筛选 | phone／tablet | phone／tablet；平板返回七寸与十寸两组 |
+| 图片按折叠屏筛选 | foldable，iPhone Duo | 不支持，返回 422，不回退为手机 |
+| 版本列表 | 未实现，返回空 releases | 支持 |
+| 评论查询、分页和当前页筛选 | 支持 | 支持 |
+| PPO 实验查询／创建 | 支持 | 查询为空，创建不支持 |
+| 文案、版本说明同步 | 支持 | 支持 |
+| CPP 宣传文本和截图同步 | 支持 | 不支持 |
+| 图片上传和替换 | Asset Library、关联及排序；手机／平板／折叠屏 | 手机／平板／feature graphic |
+
+当前不提供通用送审、发布、评论回复、CPP 列表／删除或 PPO 启停功能。管理员专用节点和绑定查询见下节附录，不属于外部的两个接入接口。
 
 ## 列出节点和绑定应用
 
@@ -204,6 +251,19 @@ iOS 需要 version 才能查询版本截图，未指定或版本不存在时返�
 | device | 可选，`phone` 手机、`tablet` 平板、`foldable` 折叠屏。省略或空白返回全部已有图片类型，指定时 images 只包含所选设备的槽位 |
 
 两个参数可组合，由新版商店 Connector 在读取图片前筛选，中心沿用转发逻辑。已有节点必须升级程序并重启，不提供旧节点兼容筛选。设备参数非法时返回 422。Android 没有独立折叠屏图片类型，`device=foldable` 返回 422 `unsupported_image_device`。
+
+`locale` 的候选值可先从接口 1 `supported-locales` 取得，按商店原始值传入，例如 `en-US`、`zh-Hans`、`ja`。它返回当前应用已有语言，不是全球语言字典。参数不传表示全部，`device` 不接受 `all` 或 `duo`，折叠屏统一传 `foldable`。
+
+| 查询意图 | Query 示例 |
+|---|---|
+| iOS 指定版本的全部语言、全部设备 | version=1.2.0 |
+| iOS 英文的全部设备 | version=1.2.0&locale=en-US |
+| iOS 全部语言的平板截图 | version=1.2.0&device=tablet |
+| iOS 日语折叠屏截图 | version=1.2.0&locale=ja&device=foldable |
+| Android 英文手机截图 | locale=en-US&device=phone |
+| Android 中文平板截图 | locale=zh-CN&device=tablet |
+
+没有匹配语言时返回 `{"locales":[]}`；语言存在但设备暂无图片时，保留该语言并返回所选槽位空数组。`device` 只用于 `store-images`，不筛选文案、评论或同步内容；评论的 locale 是独立的当前页筛选参数。不要假定其他读取接口支持语言筛选。
 
 ```json
 {
@@ -439,6 +499,18 @@ locale 和非空 releaseNotes 必填，iOS 还需 version。Android storeRelease
 ```
 
 写入槽：
+
+图片读取的 `device` 不作为 sync 的 Query 或正文选择器。写入时通过顶层 `locale` 选语言，通过下列槽位选设备，并显式设置 `syncScopes:["store_images"]`。例如写入日语折叠屏截图：
+
+```json
+{
+  "operation":"update_app_metadata",
+  "version":"1.2.0",
+  "locale":"ja",
+  "syncScopes":["store_images"],
+  "metadata":{"storeImages":{"foldable_screenshots":{"urls":["https://assets.example.com/duo-1.png"]}}}
+}
+```
 
 | 槽 | iOS | Android |
 |---|---|---|
