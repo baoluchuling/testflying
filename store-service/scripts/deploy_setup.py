@@ -258,6 +258,10 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
         check(request("/health", scheme="https")[0] == 200, "HTTPS health with certificate verification")
         if documents_only:
             docs = "/v1/store-management/api-docs"
+            for asset in ("start.cmd", "install.ps1"):
+                status, content = request("/connector-setup/" + asset)
+                check(status == 200 and content == (PROJECT / "packaging/connector" / asset).read_bytes(),
+                      "exact deployed Windows installation asset " + asset)
             for scheme in ("http", "https"):
                 status, body = request(docs, snapshot["token"], scheme=scheme)
                 catalog = json.loads(body)

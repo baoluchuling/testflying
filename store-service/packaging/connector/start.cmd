@@ -5,7 +5,7 @@ if not exist connector.json (
   if /i not "%~1"=="--background" pause
   exit /b 1
 )
-if not defined SSL_CERT_FILE if exist testflying-prod-ca.crt set "SSL_CERT_FILE=%~dp0testflying-prod-ca.crt"
+if not defined SSL_CERT_FILE if exist "%~dp0testflying-prod-ca.crt" set "SSL_CERT_FILE=%~dp0testflying-prod-ca.crt"
 "%~dp0store-connector.exe" connector.json
 set "result=%errorlevel%"
 if /i not "%~1"=="--background" if not "%result%"=="0" pause

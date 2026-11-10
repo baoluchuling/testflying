@@ -2,11 +2,13 @@ $ErrorActionPreference = 'Stop'
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host 'Requesting administrator permission...'
     $powershell = Join-Path $PSHOME 'powershell.exe'
     $arguments = '-NoLogo -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $PSCommandPath
     $elevated = Start-Process -FilePath $powershell -ArgumentList $arguments -Verb RunAs -Wait -PassThru
     exit $elevated.ExitCode
 }
+Write-Host '[1/5] Checking installation paths and node configuration...'
 
 $root = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'Testflying Connector'
 $data = Join-Path $root 'data'
@@ -102,6 +104,12 @@ try {
         throw 'An existing scheduled task does not match this installation.'
     }
 
+    if ($hasData) {
+        Write-Host '[2/5] Keeping the installed node configuration and shop credentials.'
+    } else {
+        Write-Host '[2/5] Preparing the node configuration and shop credentials.'
+    }
+
     $stage = Join-Path $root ('.install-' + [guid]::NewGuid().ToString('N'))
     [void] [IO.Directory]::CreateDirectory($stage)
     $newProgram = Join-Path $stage 'new-program'
@@ -111,6 +119,7 @@ try {
     $taskChanged = $false
     $keepStage = $false
     try {
+        Write-Host '[3/5] Preparing the updated program files...'
         [void] [IO.Directory]::CreateDirectory($newProgram)
         foreach ($name in 'store-connector.exe', 'start.cmd', 'testflying-prod-ca.crt') {
             $source = Join-Path $PSScriptRoot $name
@@ -137,6 +146,7 @@ try {
             Move-Item -LiteralPath $newData -Destination $data
         }
 
+        Write-Host '[4/5] Updating the background task and program...'
         if ($oldTask) {
             Stop-ConnectorTask
             $taskChanged = $true
@@ -157,8 +167,10 @@ try {
                 -Principal $account -Settings $settings | Out-Null
             $registeredTask = $true
         }
+        Write-Host '[5/5] Requesting the background task to start...'
         Start-ScheduledTask -TaskName $taskName -TaskPath $taskPath
-        Write-Host 'Connector installed. It starts now and at system boot.'
+        Write-Host 'Installation complete. Background startup requested; startup at system boot is configured.'
+        Write-Host 'This does not confirm a connection. Check the node connection status in the center.'
     } catch {
         $failure = $_
         try {

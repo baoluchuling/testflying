@@ -19,6 +19,10 @@
 2. 已通过安装脚本安装的节点可在任意新目录解压，然后再次运行安装入口。安装器停掉原后台进程、更换程序并重新启动，原 `connector.json` 和商店凭据保留。
 3. 从旧版手动运行包迁移时，先停止旧进程，把升级 ZIP 解压覆盖到旧目录，保留原 `connector.json` 与 `credentials/`，再运行安装入口。
 
+Windows 安装器会显示五个阶段：检查路径和节点配置、保留或准备凭据、准备新版程序、更新后台任务、请求后台启动。最后的安装完成提示表示文件安装完成且已请求任务启动；它不代表中心已经确认连接。计划任务的 Running 状态也只代表任务在执行，连接成功以中心节点 connected 状态为准。
+
+Windows 后台任务从安装的 `data` 目录执行，程序及 CA 证书位于同级 `program` 目录。启动脚本按自身绝对目录检查和设置 CA 路径，不依赖当前目录是否存在证书文件。此前程序在前台显式设置 SSL_CERT_FILE 后可以连接、后台未配置证书的安装，应重新下载最新升级包并运行 install.cmd。显式自定义的 SSL_CERT_FILE 仍保留。
+
 每台机器安装一个后台节点。Windows 使用计划任务「Testflying Connector」，配置在 `%ProgramFiles%\Testflying Connector\data`。macOS 使用系统 LaunchDaemon `com.testflying.connector`，配置在 `/Library/Application Support/Testflying Connector/data`。暂停自启动可在 Windows 任务计划程序中结束并禁用该任务，macOS 执行 `sudo launchctl disable system/com.testflying.connector` 后再执行 `sudo launchctl bootout system/com.testflying.connector`。
 
 ## 包内目录
