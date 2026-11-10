@@ -289,7 +289,8 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             logs = json.loads(body)
             check(status == 200 and logs["retentionDays"] == 7 and logs["storageHealthy"],
                   "seven-day persistent center log store available")
-            check(any(row["event"] == "service.started" for row in logs["entries"]),
+            status, body = request("/v1/logs?event=service.started&limit=1", snapshot["admin"])
+            check(status == 200 and bool(json.loads(body)["entries"]),
                   "center startup and subsequent HTTP requests recorded")
             check(request("/v1/logs", snapshot["token"])[0] == 401,
                   "business credentials cannot read administrator logs")
