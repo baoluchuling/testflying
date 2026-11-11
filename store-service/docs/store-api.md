@@ -1,6 +1,6 @@
 # 商店业务与节点接入接口
 
-外部后台用同一枚接入 Token 查询可用节点、绑定应用，再调用商店查询、同步和图片上传接口。本文完整覆盖 **9 个商店业务接口、2 个外部节点查询／绑定接口**，另附图片上传配套接口与管理员查询接口。契约版本：`2026-11-10`。
+外部后台用同一枚接入 Token 查询可用节点、绑定应用，再调用商店查询、同步和图片上传接口。本文完整覆盖 **9 个商店业务接口、2 个外部节点查询／绑定接口**，另附图片上传配套接口与管理员查询接口。契约版本：`2026-11-11`。
 
 ## 在线获取文档和功能目录
 
@@ -76,7 +76,7 @@ JSON 字段为 camelCase，最大请求体 2 MiB。以下响应均为格式示�
 应用已绑定节点后，使用业务 API Token 调用 HTTP 入口。
 
 ```sh
-curl --fail 'http://store-api.example.com/store-api/v1/store-management/apps/ios/com.example.reader/store-listings?version=1.2.0' \
+curl --fail 'http://store-api.example.com/store-api/v1/store-management/apps/ios/com.example.reader/store-listings' \
   -H "Authorization: Bearer $STORE_API_TOKEN"
 ```
 
@@ -109,7 +109,7 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 
 | 功能 | iOS | Android |
 |---|---|---|
-| 语言、文案查询 | 支持，版本号影响返回字段 | 支持 |
+| 语言、文案查询 | 支持，自动读取最新版本 | 支持 |
 | 图片按语言筛选 | locale | locale |
 | 图片按手机／平板筛选 | phone／tablet | phone／tablet；平板返回七寸与十寸两组 |
 | 图片按折叠屏筛选 | foldable，iPhone Duo | 不支持，返回 422，不回退为手机 |
@@ -176,7 +176,7 @@ Content-Type: application/json
 绑定成功后，商店业务仍使用同一枚接入 Token，中心根据平台和应用标识选择节点。
 
 ```http
-GET /v1/store-management/apps/ios/com.example.reader/store-listings?version=1.2.0
+GET /v1/store-management/apps/ios/com.example.reader/store-listings
 Authorization: Bearer INTEGRATION_TOKEN
 ```
 
@@ -195,26 +195,22 @@ Authorization: Bearer INTEGRATION_TOKEN
 ## 1. 查询语言
 
 ```http
-GET /v1/store-management/apps/ios/com.example.reader/supported-locales?version=1.2.0
+GET /v1/store-management/apps/ios/com.example.reader/supported-locales
 ```
-
-| Query 参数 | 必填 | 说明 |
-|---|---|---|
-| version | 否 | iOS 版本号；Android 不使用 |
 
 ```json
 {"locales":["en-US","zh-Hans"]}
 ```
 
-iOS 找到指定版本时读取版本语言，否则读取应用级语言；Android 读取当前 listings 已有语言。不是平台全部可支持语言的字典。
+iOS 自动查询最新版本的已有语言；最新版本不存在时仅能读取应用级语言。Android 读取当前 listings 已有语言。不是平台全部可支持语言的字典。
 
 ## 2. 查询文案
 
 ```http
-GET /v1/store-management/apps/ios/com.example.reader/store-listings?version=1.2.0
+GET /v1/store-management/apps/ios/com.example.reader/store-listings
 ```
 
-Query 参数：可选 version。iOS 不指定版本时仅返回应用级名称、副标题等内容；指定版本后合并描述、关键词、宣传文本和版本说明。
+无需版本 Query 参数。iOS 由节点自动读取最新版本，并合并应用级名称、副标题与版本级描述、关键词、宣传文本和版本说明。
 
 ```json
 {
@@ -238,12 +234,12 @@ Android 主要字段：locale、title、shortDescription、fullDescription、des
 ## 3. 查询图片和截图
 
 ```http
-GET /v1/store-management/apps/ios/com.example.reader/store-images?version=1.2.0
-GET /v1/store-management/apps/ios/com.example.reader/store-images?version=1.2.0&locale=en-US&device=phone
-GET /v1/store-management/apps/ios/com.example.reader/store-images?version=1.2.0&locale=ja&device=foldable
+GET /v1/store-management/apps/ios/com.example.reader/store-images
+GET /v1/store-management/apps/ios/com.example.reader/store-images?locale=en-US&device=phone
+GET /v1/store-management/apps/ios/com.example.reader/store-images?locale=ja&device=foldable
 ```
 
-iOS 需要 version 才能查询版本截图，未指定或版本不存在时返回空 locales；Android 不使用 version。
+iOS 由节点自动定位最新版本读取截图；没有最新版本时返回空 locales。中心不接收或转发顶层 version 参数，Android 同样无需此参数。
 
 | 参数 | 含义 |
 |---|---|
@@ -256,10 +252,10 @@ iOS 需要 version 才能查询版本截图，未指定或版本不存在时返�
 
 | 查询意图 | Query 示例 |
 |---|---|
-| iOS 指定版本的全部语言、全部设备 | version=1.2.0 |
-| iOS 英文的全部设备 | version=1.2.0&locale=en-US |
-| iOS 全部语言的平板截图 | version=1.2.0&device=tablet |
-| iOS 日语折叠屏截图 | version=1.2.0&locale=ja&device=foldable |
+| iOS 最新版本的全部语言、全部设备 | 无 Query 参数 |
+| iOS 英文的全部设备 | locale=en-US |
+| iOS 全部语言的平板截图 | device=tablet |
+| iOS 日语折叠屏截图 | locale=ja&device=foldable |
 | Android 英文手机截图 | locale=en-US&device=phone |
 | Android 中文平板截图 | locale=zh-CN&device=tablet |
 
@@ -405,13 +401,12 @@ POST /v1/store-management/apps/ios/com.example.reader/preflight
 ```
 
 ```json
-{"operation":"update_app_metadata","version":"1.2.0","locale":"en-US"}
+{"operation":"update_app_metadata","locale":"en-US"}
 ```
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
 | operation | 是 | update_app_metadata / update_release_notes / update_marketing_page |
-| version | 条件必填 | iOS 非 CPP 操作必填 |
 | locale | 否 | 当前预检查不强制要求 |
 
 ```json
@@ -423,9 +418,11 @@ POST /v1/store-management/apps/ios/com.example.reader/preflight
 }
 ```
 
-HTTP 200 不代表允许同步，必须判断 canSync。iOS 检查版本存在性、可编辑状态；Android 通过临时 edit 检查访问能力。它不保证随后所有字段、图片或写入一定通过。
+HTTP 200 不代表允许同步，必须判断 canSync。iOS 检查最新版本存在性、可编辑状态；Android 通过临时 edit 检查访问能力。它不保证随后所有字段、图片或写入一定通过。
 
 ## 9. 同步内容
+
+中心已移除顶层 `version` 参数，不向节点转发。iOS 始终使用 Apple 返回的最新版本（读取 IOS 平台全部分页后按 createdDate 在节点选择最新版本），最新版本不存在或不可编辑时直接返回业务失败，不回退到旧可编辑版本，也不要求调用方选择候选。Android 普通文案无需版本；版本说明的 `storeRelease` 定位字段保持不变。
 
 ```http
 POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
@@ -440,7 +437,6 @@ POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
 ```json
 {
   "operation":"update_app_metadata",
-  "version":"1.2.0",
   "locale":"en-US",
   "syncScopes":["description"],
   "metadata":{"description":"Updated description"}
@@ -451,7 +447,6 @@ POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
 |---|---|---|
 | operation | 是 | 固定 update_app_metadata |
 | locale | 是 | 商店语言 |
-| version | iOS 必填 | 已存在且可编辑的商店版本 |
 | metadata | 是 | 本次内容 |
 | syncScopes | 否 | 省略时同步请求中提供的受支持文字字段；图片需显式选择 store_images |
 
@@ -473,7 +468,7 @@ POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
 iOS：
 
 ```json
-{"operation":"update_release_notes","version":"1.2.0","locale":"en-US","releaseNotes":"Fixes and improvements"}
+{"operation":"update_release_notes","locale":"en-US","releaseNotes":"Fixes and improvements"}
 ```
 
 Android：
@@ -482,7 +477,7 @@ Android：
 {"operation":"update_release_notes","locale":"en-US","releaseNotes":"Fixes and improvements","storeRelease":{"track":"production","versionCode":"123","versionName":"1.2.0"}}
 ```
 
-locale 和非空 releaseNotes 必填，iOS 还需 version。Android storeRelease 可省略；若提供，可用非空字符串 track、versionCode、versionName 组合筛选，versionCode 必须传字符串。条件同时满足才匹配；不指定时选现有最高数值 versionCode，指定部分条件时在匹配范围内选择。保留其他语言和其他 release。
+locale 和非空 releaseNotes 必填，iOS 自动使用最新版本，无需 version。Android storeRelease 可省略；若提供，可用非空字符串 track、versionCode、versionName 组合筛选，versionCode 必须传字符串。条件同时满足才匹配；不指定时选现有最高数值 versionCode，指定部分条件时在匹配范围内选择。保留其他语言和其他 release。
 
 `release_notes` 不是合法 scope，版本说明通过本 operation 更新。Android 提交 edit 不自动送审或发布。
 
@@ -491,7 +486,6 @@ locale 和非空 releaseNotes 必填，iOS 还需 version。Android storeRelease
 ```json
 {
   "operation":"update_app_metadata",
-  "version":"1.2.0",
   "locale":"en-US",
   "syncScopes":["store_images"],
   "metadata":{"storeImages":{"phone_screenshots":{"urls":["https://assets.example.com/phone-1.png"]}}}
@@ -505,7 +499,6 @@ locale 和非空 releaseNotes 必填，iOS 还需 version。Android storeRelease
 ```json
 {
   "operation":"update_app_metadata",
-  "version":"1.2.0",
   "locale":"ja",
   "syncScopes":["store_images"],
   "metadata":{"storeImages":{"foldable_screenshots":{"urls":["https://assets.example.com/duo-1.png"]}}}
@@ -631,7 +624,6 @@ curl --fail \
 ```json
 {
   "operation": "update_app_metadata",
-  "version": "1.2.0",
   "locale": "en-US",
   "syncScopes": ["store_images"],
   "metadata": {
@@ -720,10 +712,30 @@ STORE_API_TOKEN="$INTEGRATION_TOKEN" python3 examples/upload-image.py \
 
 响应含 `entries`、`nextCursor`、`retentionDays:7`、`storageHealthy`。每条含 id、timestampMs（Unix 毫秒）、event、requestId、connectorId、platform、identifier、status、details。无对应值时为 null。接口返回 Cache-Control: no-store。
 
-记录请求路由模板、方法、业务选择器（operation、locale、version、device、syncScopes）、已知文案字段的字符数/字节数/SHA-256、图片槽位数量、通道、返回状态、耗时、固定错误码和可识别的上游 HTTP 状态；另有握手、连接、断开、服务启动及停止事件。文案原文、图片字节、上传 URL、Authorization、Cookie、Token、私钥、完整查询字符串和节点原始错误正文不会入日志。未知字段仅计数，查询和提交的原始 JSON 不会原样落盘。
+记录请求路由模板、方法、业务选择器（operation、locale、device、syncScopes）、已知文案字段的字符数/字节数/SHA-256、图片槽位数量、通道、返回状态、耗时、固定错误码和可识别的上游 HTTP 状态；另有握手、连接、断开、服务启动及停止事件。文案原文、图片字节、上传 URL、Authorization、Cookie、Token、私钥、完整查询字符串和节点原始错误正文不会入日志。未知字段仅计数，查询和提交的原始 JSON 不会原样落盘。
 
 只保留最近七天：启动、写入、读取及每分钟清理过期行，查询始终不返回过期记录；SQLite 开启 secure_delete，空闲页供后续日志复用，文件不会因清理立刻缩小。日志写入异常不自动重放商店请求，`/health` 返回降级状态。业务日志不重复写入可能有不同保留期的系统 journal。
 
 中心仅能记录 Connector 实际返回的内容。旧节点若只传 `Store upstream returned HTTP 400`，可记录上游状态 400，但无法推断 Apple 的具体字段；更新中心不会补回升级前缺失的日志。多步骤失败、超时或调用方取消都不能证明商店未修改。
 
 每个账号同时只执行一条商店请求，商店请求默认等待 60 秒；文件传输使用第 11 节的独立 30 分钟期限。失败、断线不自动重放或重试，没有持久任务或幂等键去重。超时不代表商店未修改，已开始的工作可能继续完成清理，期间保持账号忙碌；用户重新触发前应查询真实状态。Apple 多步骤写入可能部分成功。
+
+
+## 商店 Connector 本机日志
+
+新版商店节点在 `connector.json` 同目录的 `logs` 文件夹中写入 UTF-8 JSONL，前台及开机后台运行均生效。Windows 安装位置为 `C:\Program Files\Testflying Connector\data\logs`；macOS 为 `/Library/Application Support/Testflying Connector/data/logs`；手动部署位于实际配置文件旁。仅升级程序也会保留既有配置和凭据，并为 Windows 后台账号配置日志目录写权限。
+
+日志按小时分文件，例如 `store-connector-0000498420.jsonl`，按时间保留最多七天，不按文件大小轮转。每分钟和启动时清理；过期按小时起点判断，七天边界最多提前一小时。不删除无归属标记的文件或链接。后台关闭时不运行清理，下一次启动继续清理。
+
+记录请求 ID、平台、应用、任务接收/回复/实际执行完成、超时、连接/重连，以及每个上游 HTTP 步骤（如 `edit_commit`、`edit_discard`、`oauth_token`）、脱敏路径模板、方法、状态和耗时。`contentLengthHeader` 是构造请求时显式声明的 Content-Length；null 表示未显式声明，不等于抓包证明线上缺失。`bodyBytes` 是已知正文长度，流式未知时为 null。无正文 POST 明确声明 0，保持空体，不发送 `{}`，不会自动重试。
+
+文案仅记已知字段字符数/字节数/SHA-256；不记录文案原文、Token、Cookie、JWT、私钥、账号正文、图片字节、完整 URL、查询或签名上传链接。HTTP 失败不会保存未经脱敏的商店响应正文。调用方超时后，已启动任务的最终执行和清理结果仍会记录。
+
+Windows 可在管理员 PowerShell 查看最新文件：
+
+```powershell
+$logFile = Get-ChildItem -LiteralPath 'C:\Program Files\Testflying Connector\data\logs' -Filter 'store-connector-*.jsonl' | Sort-Object Name | Select-Object -Last 1
+Get-Content -LiteralPath $logFile.FullName -Tail 50 -Wait
+```
+
+按小时切换文件后，重新执行上述两行。macOS 可用 `ls -t` 找到最新日志，再用 `tail -f` 查看。需要重新下载安装商店 Connector 的「仅升级程序」包并运行安装器，本机旧程序不会由中心自动替换。

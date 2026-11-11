@@ -37,8 +37,6 @@ pub(super) async fn read(Query(query): Query<DocumentQuery>) -> Result<Response>
 }
 
 fn catalog() -> Value {
-    let version = json!({"name":"version","in":"query","type":"string","required":false,
-        "description":"iOS 商店版本号；图片查询需提供，Android 不使用"});
     let locale = json!({"name":"locale","in":"query","type":"string","required":false,
         "description":"商店语言，去首尾空白、忽略大小写精确匹配；省略或空白查全部，未命中不回退"});
     let device = json!({"name":"device","in":"query","type":"string","required":false,
@@ -50,23 +48,16 @@ fn catalog() -> Value {
             "GET",
             "supported-locales",
             "查询现有商店语言",
-            json!([version]),
+            json!([]),
             None,
         ),
-        endpoint(
-            2,
-            "GET",
-            "store-listings",
-            "查询商店文案",
-            json!([version]),
-            None,
-        ),
+        endpoint(2, "GET", "store-listings", "查询商店文案", json!([]), None),
         endpoint(
             3,
             "GET",
             "store-images",
             "按语言和设备查询图片、截图",
-            json!([version, locale, device]),
+            json!([locale, device]),
             None,
         ),
         endpoint(
@@ -139,7 +130,7 @@ fn catalog() -> Value {
         "authentication":["integrationToken","adminToken"],"requiresBinding":false,
         "requestBody":{"required":["connectorId"],"properties":{"connectorId":{"type":"string","format":"uuid"}}}}));
     json!({
-        "schemaVersion":1,"contractVersion":"2026-11-10","title":"商店业务与节点接入接口",
+        "schemaVersion":1,"contractVersion":"2026-11-11","title":"商店业务与节点接入接口",
         "scope":"center-api-contract","requiresConnectorUpgrade":true,
         "description":"中心公开接口契约；不是对节点在线状态、本地平台配置或商店账号权限的实时探测",
         "authentication":{"integrationToken":{"transport":["https"],"header":"Authorization: Bearer INTEGRATION_TOKEN"},
@@ -151,13 +142,13 @@ fn catalog() -> Value {
             {"method":"POST","path":format!("{APP}/uploads"),"summary":"申请图片上传凭据","requestSchema":"#/components/schemas/UploadInput","authentication":["integrationToken","businessToken"]},
             {"method":"PUT","path":format!("{APP}/uploads/{{assetId}}"),"summary":"按返回的 uploadUrl 上传原始文件字节","authentication":["uploadToken"],"contentTypes":["image/png","image/jpeg"],"maxBytes":67108864}
         ],
-        "imageQuery":{"resource":"store-images","parameters":[version,locale,device],
+        "imageQuery":{"resource":"store-images","parameters":[locale,device],
             "localeSource":"supported-locales 返回当前应用已有语言，不是平台全量语言字典",
-            "ios":{"versionRequired":true,"devices":{"phone":["phone_screenshots"],"tablet":["tablet_screenshots"],"foldable":["foldable_screenshots"]},"provider":"apple-asset-library-placements"},
+            "ios":{"versionRequired":false,"devices":{"phone":["phone_screenshots"],"tablet":["tablet_screenshots"],"foldable":["foldable_screenshots"]},"provider":"apple-asset-library-placements"},
             "android":{"versionRequired":false,"devices":{"phone":["phone_screenshots"],"tablet":["seven_inch_screenshots","ten_inch_screenshots"]},"unsupportedDevice":{"foldable":{"status":422,"code":"unsupported_image_device"}}},
-            "examples":[format!("{APP}/store-images?version=1.2.0&locale=en-US&device=phone"),format!("{APP}/store-images?version=1.2.0&locale=zh-Hans&device=tablet"),format!("{APP}/store-images?version=1.2.0&locale=ja&device=foldable")]
+            "examples":[format!("{APP}/store-images?locale=en-US&device=phone"),format!("{APP}/store-images?locale=zh-Hans&device=tablet"),format!("{APP}/store-images?locale=ja&device=foldable")]
         },
-        "sync":{"operations":["update_app_metadata","update_release_notes","update_marketing_page"],
+        "sync":{"versionSelection":"iOS 节点自动定位最新版本；顶层 version 不接收或转发，最新版本不可编辑直接失败，不回退到旧版本","operations":["update_app_metadata","update_release_notes","update_marketing_page"],
             "syncScopes":["metadata","description","keywords","promotional_text","short_description","title","subtitle","video","store_images","marketing_text"],
             "imageSlots":{"ios":["phone_screenshots","tablet_screenshots","foldable_screenshots"],"android":["phone_screenshots","tablet_screenshots","feature_graphic_url"]},
             "selection":"读取用 query device，写入用 metadata.storeImages 或 marketingPage.storeImages 中的槽位；未传槽位保留、显式空数组清空所选槽位",

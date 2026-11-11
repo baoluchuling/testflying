@@ -48,9 +48,7 @@ impl Gateway {
                 self.apple_marketing(app, &r.payload).await
             }
             _ => {
-                let version = self
-                    .apple_version(app, s(&r.payload, "version"), false)
-                    .await?;
+                let version = self.apple_version(app).await?;
                 match r.operation {
                     Operation::Preflight => {
                         if s(&r.payload, "operation") == "update_marketing_page" {
@@ -145,34 +143,81 @@ impl Gateway {
             }
         }
     }
-    async fn apple_version(&self, app: &str, version: &str, latest: bool) -> Result<Option<Value>> {
-        if version.is_empty() && !latest {
-            return Ok(None);
-        }
-        let pairs = if latest {
-            vec![
-                ("limit", "1"),
-                ("sort", "-createdDate"),
+    async fn apple_version(&self, app: &str) -> Result<Option<Value>> {
+        let path = format!("/v1/apps/{}/appStoreVersions", escape(app));
+        let mut next = query(
+            &path,
+            &[
+                ("limit", "200"),
                 ("filter[platform]", "IOS"),
-            ]
-        } else {
-            vec![
-                ("filter[versionString]", version),
-                ("filter[platform]", "IOS"),
-                ("limit", "10"),
-            ]
-        };
-        let response = self
-            .apple(
-                Method::GET,
-                &query(
-                    &format!("/v1/apps/{}/appStoreVersions", escape(app)),
-                    &pairs,
+                (
+                    "fields[appStoreVersions]",
+                    "versionString,createdDate,appStoreState,platform",
                 ),
-                None,
-            )
-            .await?;
-        Ok(arr(&response, "data").first().cloned())
+            ],
+        );
+        let expected = Url::parse(&format!(
+            "{}{}",
+            self.inner.config.apple_base_url.trim_end_matches('/'),
+            path
+        ))
+        .map_err(|_| upstream("Invalid Apple version endpoint"))?;
+        let mut seen = std::collections::HashSet::new();
+        let mut version: Option<Value> = None;
+        loop {
+            if seen.len() >= 100 || !seen.insert(next.clone()) {
+                return Err(upstream("Apple version pagination did not finish"));
+            }
+            let response = self.apple(Method::GET, &next, None).await?;
+            for item in arr(&response, "data") {
+                if !s(&item["attributes"], "platform").is_empty()
+                    && s(&item["attributes"], "platform") != "IOS"
+                {
+                    continue;
+                }
+                if version
+                    .as_ref()
+                    .is_none_or(|current| version_order(item) > version_order(current))
+                {
+                    version = Some(item.clone());
+                }
+            }
+            let link = s(&response["links"], "next");
+            if link.is_empty() {
+                break;
+            }
+            if link.len() > 8192 {
+                return Err(upstream("Apple version pagination link exceeded limit"));
+            }
+            let parsed = expected
+                .join(link)
+                .map_err(|_| upstream("Invalid Apple version pagination"))?;
+            if parsed.origin() != expected.origin()
+                || parsed.path() != expected.path()
+                || !parsed.username().is_empty()
+                || parsed.password().is_some()
+                || parsed.fragment().is_some()
+            {
+                return Err(upstream("Invalid Apple version pagination"));
+            }
+            next = format!(
+                "{path}{}",
+                parsed.query().map(|q| format!("?{q}")).unwrap_or_default()
+            );
+        }
+        if let Some(log) = &self.inner.log {
+            let number = version
+                .as_ref()
+                .map(|v| s(&v["attributes"], "versionString"))
+                .filter(|s| {
+                    s.len() <= 80
+                        && s.bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+                });
+            log.context("apple.latest_version",json!({"versionString":number,"exists":version.is_some(),
+                "editable":version.as_ref().is_some_and(|v|editable(s(&v["attributes"],"appStoreState")))}));
+        }
+        Ok(version)
     }
     async fn apple_localizations(
         &self,
@@ -545,7 +590,7 @@ impl Gateway {
         let mut localization = None;
         if created {
             let version = self
-                .apple_version(app, "", true)
+                .apple_version(app)
                 .await?
                 .ok_or_else(|| invalid("Custom pages require an existing store version"))?;
             let mut attrs = json!({"locale":locale});
@@ -665,6 +710,17 @@ fn editable(state: &str) -> bool {
             | "INVALID_BINARY"
             | "READY_FOR_REVIEW"
     )
+}
+fn version_order(value: &Value) -> (Option<i64>, Vec<u64>) {
+    let attributes = &value["attributes"];
+    let time = chrono::DateTime::parse_from_rfc3339(s(attributes, "createdDate"))
+        .ok()
+        .map(|d| d.timestamp_millis());
+    let number = s(attributes, "versionString")
+        .split('.')
+        .map(|n| n.parse::<u64>().unwrap_or(0))
+        .collect();
+    (time, number)
 }
 fn ppo(v: &Value) -> Value {
     let a = &v["attributes"];

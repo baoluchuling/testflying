@@ -3,6 +3,7 @@ mod apple;
 mod apple_image_upload;
 mod apple_images;
 pub mod assets;
+pub mod diagnostics;
 mod google;
 mod image_query;
 mod images;
@@ -71,6 +72,7 @@ pub struct Gateway {
     inner: Arc<Inner>,
 }
 struct Inner {
+    log: Option<Arc<diagnostics::Log>>,
     assets: Option<Arc<assets::AssetStore>>,
     config: ProviderConfig,
     client: Client,
@@ -98,6 +100,14 @@ impl Gateway {
     pub fn with_assets(
         config: ProviderConfig,
         assets: Option<Arc<assets::AssetStore>>,
+    ) -> Result<Self> {
+        Self::with_log(config, assets, None)
+    }
+
+    pub fn with_log(
+        config: ProviderConfig,
+        assets: Option<Arc<assets::AssetStore>>,
+        log: Option<Arc<diagnostics::Log>>,
     ) -> Result<Self> {
         if !matches!(config.mode.as_str(), "live" | "mock") {
             return Err(invalid("mode must be live or mock"));
@@ -163,6 +173,7 @@ impl Gateway {
             .map_err(|_| invalid("Cannot configure store HTTP client"))?;
         Ok(Self {
             inner: Arc::new(Inner {
+                log,
                 assets,
                 config,
                 client,
@@ -179,6 +190,9 @@ impl Gateway {
         })
     }
     pub async fn execute(&self, request: &StoreRequest) -> Result<Value> {
+        diagnostics::scope(request, self.execute_inner(request)).await
+    }
+    async fn execute_inner(&self, request: &StoreRequest) -> Result<Value> {
         request.validate()?;
         validation::validate(request)?;
         let uses_assets =
@@ -315,17 +329,17 @@ impl Gateway {
             let assertion = encode(&Header::new(Algorithm::RS256), &json!({"iss":account.email,
                 "scope":"https://www.googleapis.com/auth/androidpublisher", "aud":self.inner.config.google_token_url,
                 "iat":now,"exp":now+3600}), &account.key).map_err(|_| credential("Cannot sign Google assertion"))?;
-            let response = self
+            let request = self
                 .inner
                 .client
                 .post(&self.inner.config.google_token_url)
                 .form(&[
                     ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
                     ("assertion", &assertion),
-                ])
-                .send()
-                .await
-                .map_err(|_| upstream("Google token request failed"))?;
+                ]);
+            let response = self
+                .send_logged(request, Some(Platform::Android), "oauth_token")
+                .await?;
             let value = bounded_json(response).await?;
             let token = s(&value, "access_token");
             if token.is_empty() {
@@ -358,6 +372,7 @@ impl Gateway {
             Platform::Ios => &self.inner.config.apple_base_url,
             Platform::Android => &self.inner.config.google_base_url,
         };
+        let empty_post = method == Method::POST && body.is_none();
         let mut request = self
             .inner
             .client
@@ -365,11 +380,19 @@ impl Gateway {
             .bearer_auth(token);
         if let Some(body) = body {
             request = request.json(&body);
+        } else if empty_post {
+            request = request.header(reqwest::header::CONTENT_LENGTH, 0);
         }
-        let response = request
-            .send()
-            .await
-            .map_err(|_| upstream("Store request failed"))?;
+        let step = if path
+            .split('?')
+            .next()
+            .is_some_and(|s| s.ends_with(":commit"))
+        {
+            "edit_commit"
+        } else {
+            "store_api"
+        };
+        let response = self.send_logged(request, Some(platform), step).await?;
         if platform == Platform::Ios {
             if let Some(value) = response
                 .headers()
@@ -392,6 +415,22 @@ impl Gateway {
             }
         }
         bounded_json(response).await
+    }
+
+    async fn send_logged(
+        &self,
+        builder: reqwest::RequestBuilder,
+        platform: Option<Platform>,
+        step: &'static str,
+    ) -> Result<Response> {
+        let request = builder
+            .build()
+            .map_err(|_| upstream("Cannot build store request"))?;
+        let mut guard =
+            diagnostics::HttpGuard::start(self.inner.log.clone(), platform, step, &request);
+        let result = self.inner.client.execute(request).await;
+        guard.finish(&result);
+        result.map_err(|_| upstream("Store request failed"))
     }
 }
 async fn bounded_json(mut response: Response) -> Result<Value> {

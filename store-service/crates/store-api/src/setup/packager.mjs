@@ -131,7 +131,10 @@ export async function buildInstaller(installerBytes, { target, account, upgrade 
     : "解压整个安装包后运行 " + entry + (installFiles.length ? "，确认系统授权后会立即启动并设置开机启动。\n" +
       "已有相同节点时，自动补充或更新本次提供的平台资料，未提供的平台继续保留。\n" : "。\n") +
       "凭据位于 credentials 目录，请只保存在可信设备。\n";
-  zip.file("README.md", "# Connector\n\n" + instructions, { unixPermissions: 0o600 });
+  const logGuide = "\n节点日志保存在 connector.json 同目录的 logs 文件夹，按小时分文件、最多保留七天。\n" +
+    "Windows 安装后位于 C:\\Program Files\\Testflying Connector\\data\\logs；macOS 位于 /Library/Application Support/Testflying Connector/data/logs。\n" +
+    "日志包含任务关联、上游调用步骤、状态、耗时和请求长度，不记录凭据、文案原文或图片。\n";
+  zip.file("README.md", "# Connector\n\n" + instructions + logGuide, { unixPermissions: 0o600 });
   const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", platform: "UNIX" });
   return { bytes, connectorId, fileName: `connector-${target}-${connectorId.slice(0, 8)}${upgrade ? "-upgrade" : ""}.zip` };
 }

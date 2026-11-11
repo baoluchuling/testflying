@@ -493,7 +493,7 @@ async fn read_store(
     State(state): State<Arc<ApiState>>,
     Extension(context): Extension<logs::RequestContext>,
     Path((platform, identifier, resource)): Path<(Platform, String, String)>,
-    Query(query): Query<HashMap<String, String>>,
+    Query(mut query): Query<HashMap<String, String>>,
 ) -> Result<Response> {
     let operation = match resource.as_str() {
         "supported-locales" => Operation::SupportedLocales,
@@ -504,6 +504,7 @@ async fn read_store(
         "product-page-optimizations" => Operation::ProductPageOptimizations,
         _ => return Err(StoreError::new(404, "not_found", "Unknown store resource").into()),
     };
+    query.remove("version");
     let payload = Value::Object(
         query
             .into_iter()
@@ -525,7 +526,7 @@ async fn write_store(
     State(state): State<Arc<ApiState>>,
     Extension(context): Extension<logs::RequestContext>,
     Path((platform, identifier, resource)): Path<(Platform, String, String)>,
-    Json(payload): Json<Value>,
+    Json(mut payload): Json<Value>,
 ) -> Result<Response> {
     let operation = match resource.as_str() {
         "sync" => Operation::Sync,
@@ -533,6 +534,9 @@ async fn write_store(
         "product-page-optimizations" => Operation::CreateProductPageOptimization,
         _ => return Err(StoreError::new(404, "not_found", "Unknown store resource").into()),
     };
+    if let Some(object) = payload.as_object_mut() {
+        object.remove("version");
+    }
     execute(state, context, platform, identifier, operation, payload).await
 }
 

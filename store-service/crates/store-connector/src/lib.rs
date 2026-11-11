@@ -10,7 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
 use store_protocol::{crypto, upload, Operation, Platform, StoreError, StoreReply, StoreRequest};
-use store_provider::{assets::AssetStore, Gateway, ProviderConfig};
+use store_provider::{
+    assets::AssetStore,
+    diagnostics::{self, Log},
+    Gateway, ProviderConfig,
+};
 use subtle::ConstantTimeEq;
 use tokio::sync::{mpsc, oneshot, watch, Semaphore};
 use tokio_tungstenite::{
@@ -65,6 +69,7 @@ fn request_timeout() -> u64 {
 }
 
 pub struct Executor {
+    log: Option<Arc<Log>>,
     config: ConnectorConfig,
     gateway: Gateway,
     capacity: Arc<Semaphore>,
@@ -72,7 +77,13 @@ pub struct Executor {
 }
 
 impl Executor {
-    pub fn new(mut config: ConnectorConfig) -> Result<Arc<Self>, StoreError> {
+    pub fn new(config: ConnectorConfig) -> Result<Arc<Self>, StoreError> {
+        Self::with_log(config, None)
+    }
+    pub fn with_log(
+        mut config: ConnectorConfig,
+        log: Option<Arc<Log>>,
+    ) -> Result<Arc<Self>, StoreError> {
         if config.connector_id.is_empty()
             || !config
                 .connector_id
@@ -135,8 +146,9 @@ impl Executor {
             }
         }
         let assets = AssetStore::new(config.connector_id.clone(), config.upload_key.clone());
-        let gateway = Gateway::with_assets(provider, Some(assets.clone()))?;
+        let gateway = Gateway::with_log(provider, Some(assets.clone()), log.clone())?;
         Ok(Arc::new(Self {
+            log,
             config,
             gateway,
             capacity: Arc::new(Semaphore::new(1)),
@@ -145,6 +157,35 @@ impl Executor {
     }
 
     pub async fn execute(self: Arc<Self>, request: StoreRequest) -> StoreReply {
+        let start = std::time::Instant::now();
+        let log = self.log.clone();
+        let meta = StoreRequest {
+            request_id: request.request_id.clone(),
+            platform: request.platform,
+            bundle_identifier: request.bundle_identifier.clone(),
+            operation: request.operation,
+            payload: serde_json::Value::Null,
+        };
+        if let Some(log) = &log {
+            log.task(
+                &request,
+                "task.received",
+                diagnostics::summary(&request.payload),
+            );
+        }
+        let reply = self.execute_inner(request).await;
+        if let Some(log) = &log {
+            log.task(
+                &meta,
+                "task.reply",
+                json!({"status":reply.status,"durationMs":diagnostics::elapsed(start),
+            "errorCode":reply.body["error"]["code"].as_str().or_else(||reply.body["errorCode"].as_str()),
+            "businessStatus":reply.body["status"].as_str().filter(|v|matches!(*v,"succeeded"|"failed")),"outcomeUnknown":reply.status>=500}),
+            );
+        }
+        reply
+    }
+    async fn execute_inner(self: Arc<Self>, request: StoreRequest) -> StoreReply {
         if let Err(error) = request.validate() {
             return StoreReply::from_result(request.request_id, Err(error));
         }
@@ -181,7 +222,24 @@ impl Executor {
         // The permit stays held until completion; the result is then discarded, never retried/replayed.
         tokio::spawn(async move {
             let _permit = permit;
+            let start = std::time::Instant::now();
+            if let Some(log) = &self.log {
+                log.task(&request, "task.execution_started", json!({}));
+            }
             let result = self.gateway.execute(&request).await;
+            if let Some(log) = &self.log {
+                let (status, code, business) = match &result {
+                    Ok(value) => (
+                        200,
+                        value["errorCode"].as_str(),
+                        value["status"]
+                            .as_str()
+                            .filter(|v| matches!(*v, "succeeded" | "failed")),
+                    ),
+                    Err(error) => (error.status, Some(error.code.as_str()), None),
+                };
+                log.task(&request,"task.execution_completed",json!({"status":status,"errorCode":code,"businessStatus":business,"durationMs":diagnostics::elapsed(start)}));
+            }
             let _ = sender.send(StoreReply::from_result(request.request_id, result));
         });
         match tokio::time::timeout(timeout, receiver).await {
@@ -443,6 +501,9 @@ async fn connection(
     })
     .await
     .map_err(|_| crypto::error())??;
+    if let Some(log) = &executor.log {
+        log.event("connection.connected", json!({"protocol":"noise-v2"}));
+    }
     let (mut write, mut read) = socket.split();
     let mut uploads = Vec::<UploadGuard>::new();
     let (results, mut result_receiver) = mpsc::channel::<StoreReply>(1);
@@ -509,11 +570,17 @@ pub async fn run_active(executor: Arc<Executor>, mut shutdown: watch::Receiver<b
             return;
         }
         let started = tokio::time::Instant::now();
+        if let Some(log) = &executor.log {
+            log.event("connection.attempt", json!({}));
+        }
         let connection_shutdown = shutdown.clone();
         tokio::select! {
             _ = shutdown.changed() => return,
             result = connection(executor.clone(),connection_shutdown) => {
-                if let Err(error)=result {eprintln!("{}",error.code);}
+                if let Err(error)=result {
+                    if let Some(log)=&executor.log {log.event("connection.disconnected",json!({"code":error.code}));}
+                    eprintln!("{}",error.code);
+                }
             }
         }
         if *shutdown.borrow() {

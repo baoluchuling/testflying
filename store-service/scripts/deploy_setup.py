@@ -327,7 +327,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             for scheme in ("http", "https"):
                 status, body = request(docs, snapshot["token"], scheme=scheme)
                 catalog = json.loads(body)
-                check(status == 200 and catalog["contractVersion"] == "2026-11-10",
+                check(status == 200 and catalog["contractVersion"] == "2026-11-11",
                       scheme + " business-token documentation available")
                 endpoints = catalog["endpoints"]
                 check(len(endpoints) == 11
@@ -335,7 +335,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                       and sum(row["group"] == "node" for row in endpoints) == 2
                       and len(catalog["uploadEndpoints"]) == 2,
                       scheme + " nine store and two node endpoints plus upload helpers")
-                check(catalog["imageQuery"]["parameters"][2]["enum"] == ["phone", "tablet", "foldable"]
+                check(catalog["imageQuery"]["parameters"][1]["enum"] == ["phone", "tablet", "foldable"]
                       and "foldable" not in catalog["imageQuery"]["android"]["devices"],
                       scheme + " language and device options with platform limits")
                 for format_name, relative in (("markdown", "docs/store-api.md"), ("openapi", "docs/openapi.yaml")):
@@ -380,7 +380,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                       "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
                       "actualStoreAccountsUsed": False,
-                      "apiDocumentation": {"contractVersion": "2026-11-10", "formats": ["json", "markdown", "openapi"],
+                      "apiDocumentation": {"contractVersion": "2026-11-11", "formats": ["json", "markdown", "openapi"],
                                            "existingIntegrationTokenVerified": bool(existing_token)},
                       "cleanup": "See the supervisor cleanup report for this runId"}
             if "storeConnectorPublication" in previous_report:

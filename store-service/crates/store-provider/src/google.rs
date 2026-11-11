@@ -70,7 +70,7 @@ impl Gateway {
             .or_default()
             .push_back(Instant::now());
         let token = self.token(Platform::Android).await?;
-        let response = self
+        let request = self
             .inner
             .client
             .delete(format!(
@@ -78,10 +78,10 @@ impl Gateway {
                 self.inner.config.google_base_url.trim_end_matches('/'),
                 path
             ))
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(|_| upstream("Google edit cleanup request failed"))?;
+            .bearer_auth(token);
+        let response = self
+            .send_logged(request, Some(Platform::Android), "edit_discard")
+            .await?;
         bounded_json(response).await?;
         Ok(())
     }
@@ -305,7 +305,7 @@ impl Gateway {
                 let mut body=format!("--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{{}}\r\n--{boundary}\r\nContent-Type: {}\r\n\r\n",image.mime).into_bytes();
                 body.extend_from_slice(&image.bytes);
                 body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-                let response = self
+                let request = self
                     .inner
                     .client
                     .post(endpoint)
@@ -314,10 +314,10 @@ impl Gateway {
                         "content-type",
                         format!("multipart/related; boundary={boundary}"),
                     )
-                    .body(body)
-                    .send()
-                    .await
-                    .map_err(|_| upstream("Google image upload failed"))?;
+                    .body(body);
+                let response = self
+                    .send_logged(request, Some(Platform::Android), "google_image_upload")
+                    .await?;
                 bounded_json(response).await?;
             }
             changed = true;

@@ -191,6 +191,15 @@ try {
                 }
             }
         }
+        $logs = Join-Path $data 'logs'
+        if (Test-Path -LiteralPath $logs) { Assert-RegularDirectory $logs }
+        else { [void] [IO.Directory]::CreateDirectory($logs) }
+        $logSecurity = Get-Acl -LiteralPath $logs
+        $logRule = [Security.AccessControl.FileSystemAccessRule]::new(
+            [Security.Principal.SecurityIdentifier]::new('S-1-5-19'), 'Modify',
+            'ContainerInherit,ObjectInherit', 'None', 'Allow')
+        $logSecurity.SetAccessRule($logRule)
+        Set-Acl -LiteralPath $logs -AclObject $logSecurity
         if (Test-Path -LiteralPath $program) { Move-Item -LiteralPath $program -Destination $oldProgram }
         Move-Item -LiteralPath $newProgram -Destination $program
         $changedProgram = $true

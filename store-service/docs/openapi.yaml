@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Independent Store API
-  version: '2026-11-10'
+  version: '2026-11-11'
   description: >-
     Pure real-time Apple/Google API. Application identity is platform plus exact
     Bundle ID/package name. Multiple apps map to one account Connector.
@@ -31,11 +31,6 @@ components:
       in: path
       required: true
       schema: {type: string, format: uuid}
-    version:
-      name: version
-      in: query
-      description: iOS version string; omit for application-level information only.
-      schema: {type: string}
     imageLocale:
       name: locale
       in: query
@@ -107,7 +102,6 @@ components:
       properties:
         operation: {type: string, enum: [update_app_metadata, update_release_notes, update_marketing_page]}
         locale: {type: string, minLength: 1}
-        version: {type: string, description: Required for iOS non-CPP updates.}
         syncScopes:
           type: array
           minItems: 1
@@ -207,7 +201,6 @@ components:
       required: [operation]
       properties:
         operation: {type: string, enum: [update_app_metadata, update_release_notes, update_marketing_page]}
-        version: {type: string, description: Required for iOS non-CPP operations.}
         locale: {type: string, description: Optional in current preflight implementation.}
   responses:
     Data:
@@ -388,7 +381,6 @@ paths:
         supported-locales/store-listings/store-images/store-releases/store-reviews/
         product-page-optimizations only. Other resources return 404.
       parameters:
-        - {$ref: '#/components/parameters/version'}
         - {name: pageSize, in: query, schema: {type: integer, minimum: 1, maximum: 200}}
         - {name: pageToken, in: query, schema: {type: string}}
         - {name: startIndex, in: query, schema: {type: string}}
@@ -410,7 +402,7 @@ paths:
       description: >-
         sync/preflight/product-page-optimizations only. Other resources return 404.
         Body is request content, never a reference to persisted drafts.
-        Preflight uses operation/locale/version; PPO uses the PPO schema.
+        Preflight uses operation/locale; iOS resolves the latest version on the node. Top-level version is removed and never forwarded. PPO uses the PPO schema.
       requestBody:
         required: true
         content:

@@ -255,10 +255,9 @@ impl Gateway {
             for header in headers {
                 request = request.header(s(&header, "name"), s(&header, "value"));
             }
-            let response = request
-                .send()
-                .await
-                .map_err(|_| upstream("Apple image chunk upload failed"))?;
+            let response = self
+                .send_logged(request, Some(Platform::Ios), "apple_image_chunk")
+                .await?;
             if !response.status().is_success() {
                 return Err(upstream("Apple image chunk upload failed"));
             }

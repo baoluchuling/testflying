@@ -449,10 +449,7 @@ async fn websocket_routes_multiple_apps_and_rejects_duplicate_nodes() {
     });
     let received = next_request(&mut socket).await;
     assert_eq!(received.operation, Operation::StoreImages);
-    assert_eq!(
-        received.payload,
-        json!({"version":"1.0","locale":"ja","device":"foldable"})
-    );
+    assert_eq!(received.payload, json!({"locale":"ja","device":"foldable"}));
     let images =
         json!({"locales":[{"locale":"ja","images":{"foldable_screenshots":[{"id":"duo-image"}]}}]});
     socket

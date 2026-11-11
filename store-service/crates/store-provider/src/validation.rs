@@ -17,7 +17,7 @@ const SYNC_SCOPES: &[&str] = &[
 
 pub(super) fn validate(request: &StoreRequest) -> Result<()> {
     let payload = &request.payload;
-    optional_strings(payload, &["operation", "locale", "version"])?;
+    optional_strings(payload, &["operation", "locale"])?;
     if request.operation == Operation::StoreImages {
         image_query::ImageQuery::new(payload, request.platform)?;
     }
@@ -74,9 +74,6 @@ pub(super) fn validate(request: &StoreRequest) -> Result<()> {
             "update_app_metadata" | "update_release_notes" | "update_marketing_page"
         ) {
             return Err(invalid("Unsupported sync operation"));
-        }
-        if request.platform == Platform::Ios && operation != "update_marketing_page" {
-            required(payload, "version")?;
         }
         if request.operation == Operation::Sync {
             match operation {

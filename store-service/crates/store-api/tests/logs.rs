@@ -84,6 +84,7 @@ async fn node(state: &ApiState, app: Router) -> tokio::task::JoinHandle<()> {
 async fn failed_store_request_has_one_trace_and_safe_request_metadata() {
     let state = state();
     let fake=Router::new().route("/v1/execute",post(|Json(request):Json<StoreRequest>| async move {
+        assert!(request.payload.get("version").is_none());
         Json(StoreReply{request_id:request.request_id,status:502,body:json!({"error":{"code":"store_upstream_error","message":"Store upstream returned HTTP 400","private":"node-secret"}})})
     }));
     let server = node(&state, fake).await;
@@ -237,7 +238,7 @@ async fn successful_and_timed_out_node_calls_are_both_logged_without_retry() {
             let count = count.clone();
             async move {
                 count.fetch_add(1, Ordering::Relaxed);
-                if request.payload["version"] == "slow" {
+                if request.payload["locale"] == "slow" {
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
                 Json(StoreReply {
@@ -279,7 +280,7 @@ async fn successful_and_timed_out_node_calls_are_both_logged_without_retry() {
         "POST",
         "/v1/store-management/apps/ios/com.cfs.amberia/sync",
         CLIENT,
-        json!({"version":"slow"}),
+        json!({"locale":"slow"}),
     )
     .await;
     assert_eq!(status, 504);

@@ -153,12 +153,8 @@ impl Gateway {
             ));
         }
         let mut response = self
-            .inner
-            .client
-            .get(url.clone())
-            .send()
-            .await
-            .map_err(|_| upstream("Image download failed"))?;
+            .send_logged(self.inner.client.get(url.clone()), None, "image_download")
+            .await?;
         if !response.status().is_success() {
             return Err(upstream("Image download returned an error"));
         }

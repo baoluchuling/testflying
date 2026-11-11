@@ -74,7 +74,7 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert!(!raw.contains(ADMIN));
     let catalog: Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(catalog["schemaVersion"], 1);
-    assert_eq!(catalog["contractVersion"], "2026-11-10");
+    assert_eq!(catalog["contractVersion"], "2026-11-11");
     let endpoints = catalog["endpoints"].as_array().unwrap();
     assert_eq!(endpoints.len(), 11);
     assert_eq!(
@@ -123,7 +123,7 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert_eq!(catalog["uploadEndpoints"].as_array().unwrap().len(), 2);
     let query = &catalog["imageQuery"];
     assert_eq!(
-        query["parameters"][2]["enum"],
+        query["parameters"][1]["enum"],
         json!(["phone", "tablet", "foldable"])
     );
     assert_eq!(

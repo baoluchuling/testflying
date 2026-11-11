@@ -214,6 +214,184 @@ fn request(platform: Platform, operation: Operation, payload: Value) -> StoreReq
         payload,
     }
 }
+
+#[tokio::test]
+async fn google_empty_commit_declares_zero_length_and_records_safe_step_logs() {
+    let fake = Fake::new(|r| {
+        if r.uri.contains(":commit?") {
+            if r.headers
+                .get("content-length")
+                .and_then(|v| v.to_str().ok())
+                != Some("0")
+                || !r.bytes.is_empty()
+            {
+                return (
+                    StatusCode::LENGTH_REQUIRED,
+                    vec![],
+                    b"private-vendor-message".to_vec(),
+                );
+            }
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                vec![],
+                b"private-vendor-message".to_vec(),
+            );
+        }
+        google_base(r).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let config_path = keys.dir.path().join("connector.json");
+    std::fs::write(&config_path, "{}").unwrap();
+    let log = store_provider::diagnostics::Log::for_config(&config_path, "test-node").unwrap();
+    let gateway = Gateway::with_log(keys.config(&fake.url), None, Some(log.clone())).unwrap();
+    let mut request = request(
+        Platform::Android,
+        Operation::Sync,
+        json!({"operation":"update_app_metadata","locale":"en-US",
+        "syncScopes":["title"],"metadata":{"title":"private-copy"},"token":"private-caller-token"}),
+    );
+    request.request_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into();
+    assert_eq!(gateway.execute(&request).await.unwrap_err().status, 502);
+    let records = fake.records();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.uri.contains(":commit?"))
+            .count(),
+        1
+    );
+    assert_eq!(records.iter().filter(|r| r.method == "DELETE").count(), 1);
+    let mut entries = Vec::<Value>::new();
+    let mut all = String::new();
+    for entry in std::fs::read_dir(log.directory()).unwrap() {
+        let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+        all.push_str(&text);
+        entries.extend(
+            text.lines()
+                .skip(1)
+                .map(|line| serde_json::from_str::<Value>(line).unwrap()),
+        );
+    }
+    let commit = entries
+        .iter()
+        .find(|entry| {
+            entry["event"] == "upstream.completed" && entry["details"]["step"] == "edit_commit"
+        })
+        .unwrap();
+    assert_eq!(commit["requestId"], request.request_id);
+    assert_eq!(commit["details"]["contentLengthHeader"], 0);
+    assert_eq!(commit["details"]["bodyBytes"], 0);
+    assert_eq!(commit["details"]["status"], 503);
+    assert!(entries
+        .iter()
+        .any(|entry| entry["details"]["step"] == "edit_discard"));
+    assert!(entries
+        .iter()
+        .any(|entry| entry["details"]["step"] == "oauth_token"));
+    for secret in [
+        "private-copy",
+        "private-caller-token",
+        "private-vendor-message",
+        "Bearer ",
+        "assertion",
+        "access_token",
+    ] {
+        assert!(!all.contains(secret), "Leaked {secret}");
+    }
+}
+
+#[tokio::test]
+async fn apple_without_version_reads_and_updates_only_latest_and_never_falls_back() {
+    let locked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let switch = locked.clone();
+    let fake=Fake::new(move |r| {
+        if r.uri.contains("/appStoreVersions?") {
+            let locked=switch.load(std::sync::atomic::Ordering::Relaxed);
+            assert!(!r.uri.contains("sort="));
+            return ok(json!({"data":[{"id":"old","attributes":{"versionString":"2.0","createdDate":"2025-01-01T00:00:00Z","appStoreState":"PREPARE_FOR_SUBMISSION"}},
+                {"id":"latest","attributes":{"versionString":"3.0","createdDate":"2026-01-01T00:00:00Z","appStoreState":if locked{"IN_REVIEW"}else{"PREPARE_FOR_SUBMISSION"}}}]}));
+        }
+        apple_base(r).unwrap_or_else(||ok(json!({})))
+    }).await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let payload = json!({"operation":"update_app_metadata","locale":"en-US","syncScopes":["description"],"metadata":{"description":"new"}});
+    assert_eq!(
+        gateway
+            .execute(&request(Platform::Ios, Operation::Sync, payload.clone()))
+            .await
+            .unwrap()["status"],
+        "succeeded"
+    );
+    let versions: Vec<_> = fake
+        .records()
+        .into_iter()
+        .filter(|r| r.uri.contains("/appStoreVersions?"))
+        .collect();
+    assert!(versions.iter().all(|r| !r.uri.contains("sort=")
+        && r.uri.contains("limit=200")
+        && !r.uri.contains("filter%5BversionString%5D")));
+    assert!(fake
+        .records()
+        .iter()
+        .any(|r| r.uri.contains("/latest/appStoreVersionLocalizations")));
+    assert!(!fake.records().iter().any(|r| r.uri.contains("/old/")));
+    let patches = fake
+        .records()
+        .iter()
+        .filter(|r| r.method == "PATCH")
+        .count();
+    locked.store(true, std::sync::atomic::Ordering::Relaxed);
+    let result = gateway
+        .execute(&request(Platform::Ios, Operation::Sync, payload))
+        .await
+        .unwrap();
+    assert_eq!(result["errorCode"], "store_version_not_editable");
+    assert_eq!(
+        fake.records()
+            .iter()
+            .filter(|r| r.method == "PATCH")
+            .count(),
+        patches
+    );
+    let preflight = gateway
+        .execute(&request(
+            Platform::Ios,
+            Operation::Preflight,
+            json!({"operation":"update_app_metadata"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(preflight["canSync"], false);
+}
+
+#[tokio::test]
+async fn apple_latest_version_is_selected_across_pages_before_editability_check() {
+    let fake=Fake::new(|r| {
+        if r.uri.contains("/appStoreVersions?") {
+            assert!(!r.uri.contains("sort="));
+            if r.uri.contains("cursor=two") {
+                return ok(json!({"data":[{"id":"latest","attributes":{"platform":"IOS","versionString":"3.0","createdDate":"2026-01-01T00:00:00Z","appStoreState":"IN_REVIEW"}}]}));
+            }
+            return ok(json!({"data":[{"id":"old","attributes":{"platform":"IOS","versionString":"2.0","createdDate":"2025-01-01T00:00:00Z","appStoreState":"PREPARE_FOR_SUBMISSION"}}],
+                "links":{"next":format!("{}?cursor=two",r.uri.split('?').next().unwrap())}}));
+        }
+        apple_base(r).unwrap_or_else(||ok(json!({})))
+    }).await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let result=gateway.execute(&request(Platform::Ios,Operation::Sync,json!({"operation":"update_release_notes","locale":"en-US","releaseNotes":"do not change old version"}))).await.unwrap();
+    assert_eq!(result["errorCode"], "store_version_not_editable");
+    assert_eq!(
+        fake.records()
+            .iter()
+            .filter(|r| r.uri.contains("/appStoreVersions?"))
+            .count(),
+        2
+    );
+    assert!(fake.records().iter().all(|r| r.method == "GET"));
+}
 struct Keys {
     dir: tempfile::TempDir,
     apple_public: String,
@@ -513,6 +691,8 @@ async fn google_oauth_cache_targeted_release_and_safe_commit() {
         json!([{"language":"ja","text":"preserve"},{"language":"en-US","text":"New notes"}])
     );
     let commit = records.iter().find(|r| r.uri.contains(":commit?")).unwrap();
+    assert_eq!(commit.headers.get("content-length").unwrap(), "0");
+    assert!(commit.bytes.is_empty());
     assert!(commit.uri.contains("changesNotSentForReview=true"));
     assert!(commit
         .uri
@@ -1596,7 +1776,6 @@ async fn malformed_sync_selectors_fail_before_any_upstream_request() {
             ("operation", json!(7)),
             ("locale", json!(null)),
             ("locale", json!("")),
-            ("version", json!(8)),
         ] {
             let mut payload = metadata.clone();
             payload[field] = value;
@@ -1612,7 +1791,7 @@ async fn malformed_sync_selectors_fail_before_any_upstream_request() {
     }
     for payload in [
         json!({"locale":"en-US", "version":"1.0", "metadata":{"title":"Selected"}}),
-        json!({"operation":"update_app_metadata", "locale":"en-US", "metadata":{"title":"Selected"}}),
+        json!({"operation":"update_app_metadata", "locale":"en-US", "metadata":null}),
         json!({"operation":"update_release_notes", "locale":"en-US", "version":"1.0"}),
         json!({"operation":"update_marketing_page", "locale":"en-US", "marketingPage":{"pageName":7}}),
     ] {
