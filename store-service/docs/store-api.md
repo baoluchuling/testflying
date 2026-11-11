@@ -811,7 +811,7 @@ Get-Content -LiteralPath $logFile.FullName -Tail 50 -Wait
 | GET | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 查询当前截图绑定 |
 | DELETE | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 解除截图绑定 |
 | POST | /v1/screenshot-jobs | 按平台、包名触发截图 |
-| GET | /v1/screenshot-jobs?jobId={触发响应中的ID} | 可选：查询任务状态与结果 |
+| GET | /v1/screenshot-jobs/{jobId} | 可选：查询任务状态与结果 |
 
 ### 1. 列出截图节点
 
@@ -900,11 +900,11 @@ Content-Type: application/json
 ### 4. 可选：查询状态和结果
 
 ```http
-GET /v1/screenshot-jobs?jobId=22222222-2222-4222-8222-222222222222
+GET /v1/screenshot-jobs/22222222-2222-4222-8222-222222222222
 Authorization: Bearer INTEGRATION_TOKEN
 ```
 
-仅在需要核对时查询，`jobId` 参数使用触发响应里的 UUID。必须使用创建任务的同一枚接入 Token；其他 Token 即使有权使用同一节点，也返回 404 screenshot_job_not_found。上例三个目标均上传确认后的结果：
+沿用原有查询路径，仅在需要核对时调用，`jobId` 使用触发响应里的 UUID。必须使用创建任务的同一枚接入 Token；其他 Token 即使有权使用同一节点，也返回 404 screenshot_job_not_found。上例三个目标均上传确认后的结果：
 
 ```json
 {

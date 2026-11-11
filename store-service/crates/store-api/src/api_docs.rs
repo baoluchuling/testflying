@@ -143,7 +143,7 @@ fn catalog() -> Value {
         json!({"id":"read-screenshot-binding","group":"screenshot","method":"GET","path":"/v1/apps/{platform}/{bundleIdentifier}/screenshot-connector","summary":"查询应用当前截图节点绑定","authentication":["integrationToken","adminToken"],"transport":["https"],"requiresBinding":false}),
         json!({"id":"unbind-screenshot-connector","group":"screenshot","method":"DELETE","path":"/v1/apps/{platform}/{bundleIdentifier}/screenshot-connector","summary":"解除截图绑定；已创建任务保留原节点","authentication":["integrationToken","adminToken"],"transport":["https"],"requiresBinding":false}),
         json!({"id":"submit-screenshot-job","group":"screenshot","method":"POST","path":"/v1/screenshot-jobs","summary":"按平台和包名触发截图，中心选择已绑定的 Mac","authentication":["integrationToken"],"transport":["https"],"requiresBinding":true,"bindingResource":"screenshot-connector","requestSchema":"#/components/schemas/ScreenshotJobInput"}),
-        json!({"id":"read-screenshot-job","group":"screenshot","method":"GET","path":"/v1/screenshot-jobs","queryParameters":[{"name":"jobId","required":true,"type":"string","format":"uuid"}],"summary":"可选排障：用触发接口返回的 jobId 查询结果","authentication":["integrationToken"],"transport":["https"],"requiresBinding":false}),
+        json!({"id":"read-screenshot-job","group":"screenshot","method":"GET","path":"/v1/screenshot-jobs/{jobId}","summary":"可选排障：用触发接口返回的 jobId 查询结果","authentication":["integrationToken"],"transport":["https"],"requiresBinding":false}),
     ]);
     json!({
         "schemaVersion":1,"contractVersion":"2026-11-11","title":"中心统一接口文档：商店、节点与截图任务",
@@ -157,7 +157,7 @@ fn catalog() -> Value {
         "endpointCounts":{"store":10,"node":2,"screenshot":6,"uploads":2},
         "screenshots":{"requiresConnectorUpgrade":true,"taskProtocol":3,"uploadProtocol":"direct-oss-v2","settingsAdminPath":"/v1/screenshot-settings","notificationProtocol":"pending","centerReceivesImage":false,"routing":"exact platform + bundleIdentifier screenshot binding; no random node selection; existing jobs keep their assigned node",
             "required":["platform","bundleIdentifier","prompt","target"],"connectorIdInSubmit":false,"requiresStoreBinding":false,"requiresStoreCredentials":false,
-            "jobId":{"generatedBy":"center","format":"uuid","callerSupplies":false,"returnedBy":"POST /v1/screenshot-jobs","lookupQuery":"jobId","queryRequiredForExecution":false,"submitReplay":"creates another job; do not automatically retry"},
+            "jobId":{"generatedBy":"center","format":"uuid","callerSupplies":false,"returnedBy":"POST /v1/screenshot-jobs","lookupPath":"/v1/screenshot-jobs/{jobId}","queryRequiredForExecution":false,"submitReplay":"creates another job; do not automatically retry"},
             "target":{"type":"array","minItems":1,"maxItems":256,"maxUtf8Bytes":65536,"required":["locale","page","device"],"optional":["theme"],"localeMaxBytes":80,"pageMaxUtf8Bytes":128,"device":["phone","tablet","foldable"],"theme":["light","dark"],"duplicatesAllowed":false,"expandsCartesianProduct":false},
             "states":["queued","running","uploading","succeeded","failed"],"taskVisibility":"same issuing integration token only",
             "prompt":{"maxUtf8Bytes":16384,"preservedVerbatim":true,"appIdentityProvidedToWorker":true,"structuredContextTool":"get_capture_task"},

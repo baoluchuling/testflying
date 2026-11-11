@@ -504,7 +504,7 @@ async fn old_screenshot_jobs_survive_schema_migration_with_their_original_prompt
             send(
                 &app,
                 "GET",
-                &format!("/v1/screenshot-jobs?jobId={id}"),
+                &format!("/v1/screenshot-jobs/{id}"),
                 &token,
                 Value::Null
             )
@@ -645,7 +645,7 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
     let job = value(response).await;
     let id = job["jobId"].as_str().unwrap();
-    let status = format!("{submit}?jobId={id}");
+    let status = format!("{submit}/{id}");
     assert_eq!(
         send_legacy(&database_path, &app, "GET", &status, &peer, Value::Null)
             .await
@@ -797,7 +797,7 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
             .status(),
         502
     );
-    let failed_status = format!("{submit}?jobId={failed_id}");
+    let failed_status = format!("{submit}/{failed_id}");
     let failed = value(
         send_legacy(
             &database_path,
@@ -852,7 +852,7 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     .await;
     assert_eq!(next.status(), 202);
     let next = value(next).await;
-    let next_status = format!("{submit}?jobId={}", next["jobId"].as_str().unwrap());
+    let next_status = format!("{submit}/{}", next["jobId"].as_str().unwrap());
     let pending = value(
         send_legacy(
             &database_path,
@@ -1075,7 +1075,7 @@ async fn jobs_run_without_a_destination_and_only_image_delivery_fails() {
         .as_str()
         .unwrap()
         .ends_with("Open settings"));
-    let job_status = format!("{submit}?jobId={id}");
+    let job_status = format!("{submit}/{id}");
     let mut png = Cursor::new(Vec::new());
     image::DynamicImage::new_rgba8(2, 2)
         .write_to(&mut png, image::ImageFormat::Png)
@@ -1195,31 +1195,25 @@ async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids(
         send(&app, "GET", submit, &client, Value::Null)
             .await
             .status(),
-        400
+        405
+    );
+    assert_eq!(
+        send(&app, "GET", "/v1/screenshot-jobs/", &client, Value::Null)
+            .await
+            .status(),
+        404
     );
     assert_eq!(
         send(
             &app,
             "GET",
-            "/v1/screenshot-jobs?jobId=valid&unexpected=value",
+            "/v1/screenshot-jobs/not-a-uuid",
             &client,
             Value::Null
         )
         .await
         .status(),
-        400
-    );
-    assert_eq!(
-        send(
-            &app,
-            "GET",
-            "/v1/screenshot-jobs?jobId=not-a-uuid",
-            &client,
-            Value::Null
-        )
-        .await
-        .status(),
-        422
+        404
     );
     for missing in ["platform", "bundleIdentifier", "prompt", "target"] {
         let mut bad = payload.clone();
@@ -1238,7 +1232,7 @@ async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids(
     assert!(uuid::Uuid::parse_str(repeated["jobId"].as_str().unwrap()).is_ok());
     assert!(repeated.get("taskId").is_none());
     assert_ne!(repeated["jobId"], job["jobId"]);
-    let status_path = format!("{submit}?jobId={id}");
+    let status_path = format!("{submit}/{id}");
     assert_eq!(
         send(&app, "GET", &status_path, &peer, Value::Null)
             .await
@@ -1529,7 +1523,7 @@ async fn direct_oss_ticket_is_bound_to_worker_file_lease_and_verified_before_ide
         send(
             &app,
             "GET",
-            &format!("/v1/screenshot-jobs?jobId={public_job}"),
+            &format!("/v1/screenshot-jobs/{public_job}"),
             &client,
             Value::Null,
         )
@@ -1583,10 +1577,7 @@ async fn unconfigured_oss_fails_at_upload_ticket_after_job_claim() {
         send(
             &app,
             "GET",
-            &format!(
-                "/v1/screenshot-jobs?jobId={}",
-                job["jobId"].as_str().unwrap()
-            ),
+            &format!("/v1/screenshot-jobs/{}", job["jobId"].as_str().unwrap()),
             &client,
             Value::Null,
         )

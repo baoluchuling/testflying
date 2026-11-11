@@ -364,11 +364,12 @@ paths:
       responses:
         '202': {description: 'Job queued; save the returned center-generated jobId', content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotJob'}}}}
         default: {$ref: '#/components/responses/Error'}
+  /v1/screenshot-jobs/{jobId}:
     get:
       summary: Optional diagnostics using the jobId returned by submission
-      description: HTTPS only. Supply the center-generated jobId as a query parameter and use the creating integration token. This query is not part of execution or notification. Other integrations receive 404 even for the same Mac. Result images carry their original target and zero-based targetIndex. All targets must be confirmed for success; partial confirmed images survive a later failure. notificationStatus is not_configured or protocol_pending; no callback is sent yet. Center stores no PNG. Records retained for approximately seven days.
+      description: HTTPS only. Use the existing path with the center-generated jobId and the creating integration token. This query is not part of execution or notification. Other integrations receive 404 even for the same Mac. Result images carry their original target and zero-based targetIndex. All targets must be confirmed for success; partial confirmed images survive a later failure. notificationStatus is not_configured or protocol_pending; no callback is sent yet. Center stores no PNG. Records retained for approximately seven days.
       security: [{integrationToken: []}]
-      parameters: [{name: jobId, in: query, required: true, schema: {type: string, format: uuid}}]
+      parameters: [{name: jobId, in: path, required: true, schema: {type: string, format: uuid}}]
       responses:
         '200': {description: Screenshot job state and result, content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotJob'}}}}
         default: {$ref: '#/components/responses/Error'}

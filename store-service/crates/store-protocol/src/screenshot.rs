@@ -12,17 +12,6 @@ pub struct ScreenshotTarget {
     pub theme: Option<String>,
 }
 
-pub fn validate_job_id(value: &str) -> Result<(), StoreError> {
-    if value.len() != 36 || uuid::Uuid::parse_str(value).is_err() {
-        return Err(StoreError::new(
-            422,
-            "invalid_screenshot_job_id",
-            "jobId must be a center-generated UUID",
-        ));
-    }
-    Ok(())
-}
-
 pub fn validate_targets(targets: &[ScreenshotTarget]) -> Result<(), StoreError> {
     let invalid = || {
         StoreError::new(
@@ -104,15 +93,5 @@ mod tests {
             })
             .collect();
         assert!(validate_targets(&targets).is_err());
-    }
-
-    #[test]
-    fn job_ids_are_uuids() {
-        for id in ["", " a", "a ", "a\n", "a\u{7f}"] {
-            assert!(validate_job_id(id).is_err());
-        }
-        assert!(validate_job_id(&"a".repeat(181)).is_err());
-        assert!(validate_job_id("外部/任务:1").is_err());
-        assert!(validate_job_id("00000000-0000-4000-8000-000000000001").is_ok());
     }
 }

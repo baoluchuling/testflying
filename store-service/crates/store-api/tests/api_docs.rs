@@ -123,7 +123,7 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
             "/v1/apps/{platform}/{bundleIdentifier}/screenshot-connector",
         ),
         ("POST", "/v1/screenshot-jobs"),
-        ("GET", "/v1/screenshot-jobs"),
+        ("GET", "/v1/screenshot-jobs/{jobId}"),
     ] {
         assert!(unique.contains(&(method, path)));
     }

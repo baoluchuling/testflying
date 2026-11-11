@@ -1,8 +1,5 @@
 use super::*;
-use axum::{
-    extract::{Query, Request},
-    Extension,
-};
+use axum::{extract::Request, Extension};
 use futures_util::StreamExt;
 use registry::Integration;
 use reqwest::{multipart, Client, Url};
@@ -158,7 +155,8 @@ pub(super) fn routes(
 ) -> Router<Arc<ApiState>> {
     let external = Router::new()
         .route("/v1/screenshot-connectors", get(list_nodes))
-        .route("/v1/screenshot-jobs", post(submit).get(status))
+        .route("/v1/screenshot-jobs", post(submit))
+        .route("/v1/screenshot-jobs/{jobId}", get(status))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             authorize_client,
@@ -402,21 +400,14 @@ async fn unbind(
     Ok(StatusCode::NO_CONTENT)
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct StatusQuery {
-    job_id: String,
-}
-
 async fn status(
     State(state): State<Arc<ApiState>>,
     access: Option<Extension<Integration>>,
-    Query(query): Query<StatusQuery>,
+    Path(job_id): Path<String>,
 ) -> Result<Json<Value>> {
-    store_protocol::screenshot::validate_job_id(&query.job_id)?;
     Ok(Json(state.registry.screenshot_status(
         &require_integration(access)?,
-        &query.job_id,
+        &job_id,
     )?))
 }
 
