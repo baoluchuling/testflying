@@ -123,16 +123,27 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
             "/v1/apps/{platform}/{bundleIdentifier}/screenshot-connector",
         ),
         ("POST", "/v1/screenshot-jobs"),
-        ("GET", "/v1/screenshot-jobs/{jobId}"),
+        ("GET", "/v1/screenshot-jobs"),
     ] {
         assert!(unique.contains(&(method, path)));
     }
     assert_eq!(
         catalog["screenshots"]["required"],
-        json!(["platform", "bundleIdentifier", "prompt"])
+        json!(["jobId", "platform", "bundleIdentifier", "prompt", "target"])
     );
     assert_eq!(catalog["screenshots"]["connectorIdInSubmit"], false);
     assert_eq!(catalog["screenshots"]["requiresConnectorUpgrade"], true);
+    assert_eq!(catalog["screenshots"]["taskProtocol"], 2);
+    assert_eq!(catalog["screenshots"]["uploadProtocol"], "direct-oss-v2");
+    assert_eq!(
+        catalog["screenshots"]["jobId"]["internalExecutionId"],
+        "taskId"
+    );
+    assert_eq!(catalog["screenshots"]["target"]["maxItems"], 256);
+    assert_eq!(
+        catalog["screenshots"]["target"]["device"],
+        json!(["phone", "tablet", "foldable"])
+    );
     for (method, resource) in [
         ("GET", "supported-locales"),
         ("GET", "store-listings"),

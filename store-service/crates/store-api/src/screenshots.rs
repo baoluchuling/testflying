@@ -1,5 +1,8 @@
 use super::*;
-use axum::{extract::Request, Extension};
+use axum::{
+    extract::{Query, Request},
+    Extension,
+};
 use futures_util::StreamExt;
 use registry::Integration;
 use reqwest::{multipart, Client, Url};
@@ -155,8 +158,7 @@ pub(super) fn routes(
 ) -> Router<Arc<ApiState>> {
     let external = Router::new()
         .route("/v1/screenshot-connectors", get(list_nodes))
-        .route("/v1/screenshot-jobs", post(submit))
-        .route("/v1/screenshot-jobs/{job}", get(status))
+        .route("/v1/screenshot-jobs", post(submit).get(status))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             authorize_client,
@@ -300,6 +302,8 @@ fn installer_archive(config: &[u8], executable: &[u8]) -> zip::result::ZipResult
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Submit {
+    job_id: String,
+    target: Vec<store_protocol::screenshot::ScreenshotTarget>,
     platform: Platform,
     bundle_identifier: String,
     profile: Option<String>,
@@ -339,12 +343,16 @@ async fn submit(
         )
         .into());
     }
-    let job = state.registry.enqueue_screenshot(
+    store_protocol::screenshot::validate_job_id(&input.job_id)?;
+    store_protocol::screenshot::validate_targets(&input.target)?;
+    let job = state.registry.enqueue_screenshot_v2(
         &access,
         input.platform,
         &input.bundle_identifier,
         input.profile.as_deref().unwrap_or_default(),
         &input.prompt,
+        &input.job_id,
+        &input.target,
     )?;
     state.transport.notify_screenshot(
         job["connectorId"]
@@ -397,16 +405,22 @@ async fn unbind(
     Ok(StatusCode::NO_CONTENT)
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct StatusQuery {
+    job_id: String,
+}
+
 async fn status(
     State(state): State<Arc<ApiState>>,
     access: Option<Extension<Integration>>,
-    Path(job): Path<String>,
+    Query(query): Query<StatusQuery>,
 ) -> Result<Json<Value>> {
-    Ok(Json(
-        state
-            .registry
-            .screenshot_status(&require_integration(access)?, &job)?,
-    ))
+    store_protocol::screenshot::validate_job_id(&query.job_id)?;
+    Ok(Json(state.registry.screenshot_status(
+        &require_integration(access)?,
+        &query.job_id,
+    )?))
 }
 
 fn authorize_worker(state: &ApiState, id: &str, headers: &HeaderMap) -> Result<()> {
@@ -428,10 +442,17 @@ async fn claim(
     headers: HeaderMap,
 ) -> Result<Response> {
     authorize_worker(&state, &id, &headers)?;
-    Ok(match state.registry.claim_screenshot(&id)? {
-        Some(job) => Json(job).into_response(),
-        None => StatusCode::NO_CONTENT.into_response(),
-    })
+    Ok(
+        match state.registry.claim_screenshot_protocol(
+            &id,
+            headers
+                .get("x-screenshot-protocol")
+                .is_some_and(|v| v == "2"),
+        )? {
+            Some(job) => Json(job).into_response(),
+            None => StatusCode::NO_CONTENT.into_response(),
+        },
+    )
 }
 
 fn lease(headers: &HeaderMap) -> Result<&str> {
@@ -493,6 +514,15 @@ async fn image(
 ) -> Result<StatusCode> {
     authorize_worker(&state, &id, request.headers())?;
     let lease = lease(request.headers())?.to_owned();
+    // The legacy proxy accepts one image only; structured tasks require indexed OSS tickets.
+    if state.registry.screenshot_target_index(&job, None).is_err() {
+        return Err(StoreError::new(
+            409,
+            "screenshot_connector_upgrade_required",
+            "Structured tasks require indexed OSS upload tickets",
+        )
+        .into());
+    }
     if request
         .headers()
         .get(header::CONTENT_TYPE)

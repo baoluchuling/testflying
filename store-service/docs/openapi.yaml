@@ -48,26 +48,61 @@ components:
       required: [connectorId]
       properties:
         connectorId: {type: string, format: uuid}
+    ScreenshotTarget:
+      type: object
+      additionalProperties: false
+      required: [locale, page, device]
+      properties:
+        locale: {type: string, minLength: 1, maxLength: 80, pattern: '^[A-Za-z0-9_-]+$', description: 'Explicit ASCII language identifier, preserved verbatim without trimming.'}
+        page: {type: string, minLength: 1, maxLength: 128, description: 'Caller page identifier, at most 128 UTF-8 bytes; no control characters or surrounding whitespace.'}
+        device: {type: string, enum: [phone, tablet, foldable]}
+        theme: {type: string, enum: [light, dark], description: 'Optional; omit when no theme is specified.'}
+      description: One explicit screenshot combination; no Cartesian expansion. Device is a form factor, not a fixed simulator ID. Codex manages the local project and simulator.
     ScreenshotJobInput:
       type: object
       additionalProperties: false
-      required: [platform, bundleIdentifier, prompt]
+      required: [jobId, platform, bundleIdentifier, prompt, target]
       properties:
+        jobId: {type: string, minLength: 1, maxLength: 180, description: 'External management system job ID, at most 180 UTF-8 bytes; no control characters or surrounding whitespace. Unique per issuing integration during the seven-day retention window; duplicate submission returns 409.'}
         platform: {type: string, enum: [ios, android]}
         bundleIdentifier: {type: string, minLength: 1, maxLength: 180, pattern: '^[A-Za-z0-9_.-]+$', description: 'Exact case-sensitive Bundle ID or package, independently bound to a screenshot node.'}
-        prompt: {type: string, minLength: 1, maxLength: 16384, description: At most 16 KiB UTF-8 bytes; preserved in full. Center prepends target app identity for Codex.}
+        prompt: {type: string, minLength: 1, maxLength: 16384, description: 'At most 16 KiB UTF-8 bytes; forwarded verbatim. App identity and targets are supplied separately through get_capture_task.'}
+        target:
+          type: array
+          minItems: 1
+          maxItems: 256
+          uniqueItems: true
+          items: {$ref: '#/components/schemas/ScreenshotTarget'}
+          description: 'Explicit locale/page/device/theme combinations, at most 64 KiB serialized JSON. Duplicate combinations are rejected.'
         profile: {type: [string, 'null'], minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$', description: Optional task hint; no fixed profiles required.}
-      description: connectorId is not accepted here. No store binding or store credentials required.
+      description: 'jobId is top-level and belongs to the caller. No connectorId, clientRequestId or callback accepted. No store binding or store credentials required. Updated screenshot worker with task protocol 2 is required.'
+    ScreenshotImage:
+      type: object
+      properties:
+        targetIndex: {type: integer, minimum: 0, description: Zero-based position in the submitted target array.}
+        target: {$ref: '#/components/schemas/ScreenshotTarget'}
+        imageUrl: {type: string, format: uri}
+        imageUrlExpiresAt: {type: string, format: date-time}
+        objectKey: {type: string}
+        sizeBytes: {type: integer}
+        sha256: {type: string}
     ScreenshotJob:
       type: object
       properties:
-        jobId: {type: string, format: uuid}
+        jobId: {type: string, description: Caller-provided external job ID.}
+        taskId: {type: string, format: uuid, description: Center-generated internal execution ID; not the external job ID.}
         connectorId: {type: string, format: uuid}
-        platform: {type: [string, 'null'], enum: [ios, android, null]}
-        bundleIdentifier: {type: [string, 'null']}
+        platform: {type: string, enum: [ios, android]}
+        bundleIdentifier: {type: string}
         profile: {type: [string, 'null']}
+        target: {type: array, items: {$ref: '#/components/schemas/ScreenshotTarget'}, description: Original target order.}
         status: {type: string, enum: [queued, running, uploading, succeeded, failed]}
-        result: {type: [object, 'null'], properties: {imageUrl: {type: string, format: uri}, imageUrlExpiresAt: {type: string, format: date-time}, objectKey: {type: string}, sizeBytes: {type: integer}, sha256: {type: string}, notificationStatus: {type: string, enum: [not_configured, protocol_pending]}}}
+        result:
+          type: [object, 'null']
+          properties:
+            images: {type: array, items: {$ref: '#/components/schemas/ScreenshotImage'}, description: 'Confirmed images in target order; partial results remain visible when a later target fails.'}
+            notificationStatus: {type: string, enum: [not_configured, protocol_pending]}
+          description: All targets must be confirmed before status becomes succeeded.
         error: {type: [string, 'null']}
     CreateStoreRelease:
       type: object
@@ -322,21 +357,21 @@ paths:
       responses: {'204': {description: Screenshot binding removed or already absent}, default: {$ref: '#/components/responses/Error'}}
   /v1/screenshot-jobs:
     post:
-      summary: Trigger a screenshot with platform, package and prompt; no connectorId
-      description: HTTPS only; exact screenshot binding required. No random fallback. Offline enabled nodes may queue. At most 20 queued and one running per node. 202 means queued, not completed; no submit deduplication or automatic replay. Missing external upload destination does not block execution. Direct OSS upload requires the updated Screenshot Connector.
+      summary: Trigger screenshot targets using an external jobId, platform, package and prompt
+      description: HTTPS only; exact screenshot binding required. No random fallback. Offline enabled nodes may queue. At most 20 queued and one running per node. 202 means queued, not completed. Reusing jobId with the same integration returns 409 without enqueueing another task; reconcile with GET instead of replay. Missing OSS or notification configuration does not block execution. Task protocol 2 and per-target direct OSS upload require the updated Screenshot Connector; old nodes cannot claim new tasks.
       security: [{integrationToken: []}]
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotJobInput'}}}
       responses:
-        '202': {description: Job queued with jobId and resolved connector/app identity, content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotJob'}}}}
+        '202': {description: 'Job queued with external jobId, internal taskId and resolved connector/app identity', content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotJob'}}}}
+        '409': {description: 'External jobId already exists for this integration; no second task is created', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
         default: {$ref: '#/components/responses/Error'}
-  /v1/screenshot-jobs/{jobId}:
     get:
-      summary: Read screenshot status using the same integration token that created it
-      description: HTTPS only. Other integrations receive 404 even for the same Mac. Results contain an OSS imageUrl and objectKey after confirmed upload; notificationStatus is not_configured or protocol_pending because the callback protocol has not been connected. Center stores no PNG. Legacy jobs may have null app identity. History retained for approximately seven days.
+      summary: Read screenshot status by external jobId using the creating integration token
+      description: HTTPS only. Supply the external jobId as a URL-encoded query parameter, never a path segment; slash and dot IDs survive proxy normalization. Other integrations receive 404 even for the same Mac. Result images carry their original target and zero-based targetIndex. All targets must be confirmed for success; partial confirmed images survive a later failure. notificationStatus is not_configured or protocol_pending; no callback is sent yet. Center stores no PNG. Records retained for approximately seven days; duplicate protection has the same retention window. This document describes task protocol 2.
       security: [{integrationToken: []}]
-      parameters: [{name: jobId, in: path, required: true, schema: {type: string, format: uuid}}]
+      parameters: [{name: jobId, in: query, required: true, schema: {type: string, minLength: 1, maxLength: 180}}]
       responses:
         '200': {description: Screenshot job state and result, content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotJob'}}}}
         default: {$ref: '#/components/responses/Error'}

@@ -29,6 +29,8 @@ use uuid::Uuid;
 const MAX_IMAGE: usize = 16 * 1024 * 1024;
 const CODEX_STDERR_LIMIT: usize = 8 * 1024;
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+const MAX_CLAIM: usize = 256 * 1024;
+const MAX_CENTER_JSON: usize = 16 * 1024 * 1024;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -98,7 +100,11 @@ impl Config {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Job {
-    job_id: Uuid,
+    task_id: Uuid,
+    job_id: Option<String>,
+    platform: Option<String>,
+    bundle_identifier: Option<String>,
+    target: Option<Vec<store_protocol::screenshot::ScreenshotTarget>>,
     lease: Uuid,
     profile: Option<String>,
     prompt: String,
@@ -163,7 +169,11 @@ impl<'a> Worker<'a> {
 
     pub(super) async fn once(&self, stop: &mut watch::Receiver<bool>) -> Result<bool, Failure> {
         let claim = async {
-            let mut response = self.request(Method::POST, "claim").send().await?;
+            let mut response = self
+                .request(Method::POST, "claim")
+                .header("X-Screenshot-Protocol", "2")
+                .send()
+                .await?;
             match response.status() {
                 StatusCode::NO_CONTENT => return Ok(None),
                 StatusCode::OK => {}
@@ -177,7 +187,7 @@ impl<'a> Worker<'a> {
             }
             let mut body = Vec::new();
             while let Some(chunk) = response.chunk().await? {
-                if chunk.len() > 128 * 1024 - body.len() {
+                if chunk.len() > MAX_CLAIM - body.len() {
                     return Err("Screenshot claim is too large".into());
                 }
                 body.extend_from_slice(&chunk);
@@ -191,8 +201,8 @@ impl<'a> Worker<'a> {
         let Some(job) = job else {
             return Ok(false);
         };
-        let id = Some(job.job_id);
-        self.log.prompt(job.job_id, &job.prompt);
+        let id = Some(job.task_id);
+        self.log.prompt(job.task_id, &job.prompt);
         let outcome = self.run_goal(&job, stop).await;
         let stopping = *stop.borrow();
         let Err(code) = outcome else {
@@ -206,7 +216,7 @@ impl<'a> Worker<'a> {
 
         self.log.event(id, format_args!("job_failed code={code}"));
         let request = self
-            .request(Method::POST, &format!("{}/failure", job.job_id))
+            .request(Method::POST, &format!("{}/failure", job.task_id))
             .header("X-Screenshot-Lease", job.lease.to_string())
             .json(&json!({"code":code}))
             .send();
@@ -243,7 +253,7 @@ impl<'a> Worker<'a> {
             .map_err(|_| "capture_failed")?;
         let result = self.run_goal_in(workspace.path(), job, stop).await;
         if workspace.close().is_err() {
-            self.log.event(Some(job.job_id), "task_cleanup_failed");
+            self.log.event(Some(job.task_id), "task_cleanup_failed");
         }
         result
     }
@@ -254,7 +264,7 @@ impl<'a> Worker<'a> {
         job: &Job,
         stop: &mut watch::Receiver<bool>,
     ) -> Result<(), &'static str> {
-        let id = Some(job.job_id);
+        let id = Some(job.task_id);
         let unavailable = |_| "profile_unavailable";
         let codex = match self
             .config
@@ -293,8 +303,7 @@ impl<'a> Worker<'a> {
             root,
             instructions,
             prompt: &job.prompt,
-            profile: job.profile.as_deref(),
-            job: job.job_id,
+            job: job.task_id,
         };
         let mut tools = JobTools {
             worker: self,
@@ -302,6 +311,8 @@ impl<'a> Worker<'a> {
             root,
             adb: adb.as_deref(),
             screenshot: None,
+            current_target: None,
+            completed_targets: std::collections::BTreeSet::new(),
             upload_attempted: None,
             retry_upload: false,
             center_finished: false,
@@ -332,6 +343,8 @@ struct JobTools<'a, 'config> {
     root: &'a Path,
     adb: Option<&'a Path>,
     screenshot: Option<(Uuid, Vec<u8>)>,
+    current_target: Option<usize>,
+    completed_targets: std::collections::BTreeSet<usize>,
     /// A PUT is replayed only after HEAD definitively confirms absence, on a later tool call.
     upload_attempted: Option<Uuid>,
     retry_upload: bool,
@@ -343,6 +356,7 @@ struct JobTools<'a, 'config> {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct UploadInput {
     screenshot_id: Uuid,
+    target_index: Option<usize>,
 }
 
 impl JobTools<'_, '_> {
@@ -352,6 +366,23 @@ impl JobTools<'_, '_> {
         arguments: Value,
         stop: &mut watch::Receiver<bool>,
     ) -> ToolReply {
+        if name == "get_capture_task" {
+            if arguments
+                .as_object()
+                .is_none_or(|object| !object.is_empty())
+            {
+                return ToolReply::error(
+                    "invalid_arguments",
+                    "get_capture_task accepts an empty object.",
+                    true,
+                    GoalChange::Continue,
+                );
+            }
+            return ToolReply::ok(
+                json!({"taskId":self.job.task_id,"jobId":self.job.job_id,"platform":self.job.platform,"bundleIdentifier":self.job.bundle_identifier,"prompt":self.job.prompt,"target":self.job.target,"profile":self.job.profile,"completedTargetIndices":self.completed_targets}),
+                GoalChange::Continue,
+            );
+        }
         if name == "upload_screenshot" {
             return self.upload(arguments, stop).await;
         }
@@ -363,13 +394,27 @@ impl JobTools<'_, '_> {
                 GoalChange::Continue,
             );
         }
-        if name == "capture_screenshot" && self.upload_attempted.is_some() {
+        if name == "capture_screenshot" && self.screenshot.is_some() {
             return ToolReply::error(
                 "upload_pending",
                 "Retry upload_screenshot with the same screenshotId to confirm its pending upload.",
                 true,
                 GoalChange::Continue,
             );
+        }
+        let mut arguments = arguments;
+        let target_index = arguments
+            .as_object_mut()
+            .and_then(|value| value.remove("targetIndex"));
+        let target_index = match target_index {
+            Some(value) => match value.as_u64().and_then(|value| usize::try_from(value).ok()) {
+                Some(value) => Some(value),
+                None => return self.invalid_target(),
+            },
+            None => None,
+        };
+        if name == "capture_screenshot" && !self.valid_target(target_index) {
+            return self.invalid_target();
         }
         let Some(device) = serde_json::from_value::<DeviceInput>(arguments)
             .ok()
@@ -392,7 +437,7 @@ impl JobTools<'_, '_> {
                 GoalChange::Continue,
             );
         };
-        let id = Some(self.job.job_id);
+        let id = Some(self.job.task_id);
         if device
             .verify_running(scratch.path(), self.adb, stop)
             .await
@@ -411,12 +456,13 @@ impl JobTools<'_, '_> {
                 let screenshot_id = Uuid::new_v4();
                 let size = bytes.len();
                 self.screenshot = Some((screenshot_id, bytes));
+                self.current_target = target_index;
                 self.failure = "capture_failed";
                 self.worker
                     .log
                     .event(id, format_args!("image_ready bytes={size}"));
                 ToolReply::ok(
-                    json!({"screenshotId":screenshot_id,"bytes":size}),
+                    json!({"screenshotId":screenshot_id,"bytes":size,"targetIndex":target_index}),
                     GoalChange::Continue,
                 )
             }
@@ -442,6 +488,9 @@ impl JobTools<'_, '_> {
                 GoalChange::Continue,
             );
         };
+        if !self.valid_target(input.target_index) || input.target_index != self.current_target {
+            return self.invalid_target();
+        }
         let Some((_, bytes)) = self
             .screenshot
             .as_ref()
@@ -454,7 +503,7 @@ impl JobTools<'_, '_> {
                 GoalChange::Continue,
             );
         };
-        let id = Some(self.job.job_id);
+        let id = Some(self.job.task_id);
         if self.upload_attempted.is_none() || self.retry_upload {
             if !bytes.starts_with(PNG) || !(33..=MAX_IMAGE).contains(&bytes.len()) {
                 self.failure = "capture_failed";
@@ -470,9 +519,9 @@ impl JobTools<'_, '_> {
             self.worker.log.event(id, "upload_ticket_request");
             let prepare = self
                 .worker
-                .request(Method::POST, &format!("{}/upload-ticket", self.job.job_id))
+                .request(Method::POST, &format!("{}/upload-ticket", self.job.task_id))
                 .header("X-Screenshot-Lease", self.job.lease.to_string())
-                .json(&json!({"sizeBytes":bytes.len(),"sha256":sha256,"md5":md5}))
+                .json(&self.target_body(json!({"sizeBytes":bytes.len(),"sha256":sha256,"md5":md5})))
                 .send();
             let prepared = tokio::select! {
                 result = prepare => match result { Ok(value) => value, Err(_) => return self.unknown_upload(false) },
@@ -540,9 +589,9 @@ impl JobTools<'_, '_> {
         self.worker.log.event(id, "upload_completion_request");
         let completion = self
             .worker
-            .request(Method::POST, &format!("{}/complete", self.job.job_id))
+            .request(Method::POST, &format!("{}/complete", self.job.task_id))
             .header("X-Screenshot-Lease", self.job.lease.to_string())
-            .json(&json!({}))
+            .json(&self.target_body(json!({})))
             .send();
         let response = tokio::select! {
             result = completion => match result { Ok(response)=>response, Err(_)=>return self.unknown_upload(false) },
@@ -553,20 +602,79 @@ impl JobTools<'_, '_> {
             Ok(body) => body,
             Err(_) => return self.unknown_upload(false),
         };
-        if status == StatusCode::OK && body["delivered"] == true && body["result"].is_object() {
-            self.center_finished = true;
-            self.screenshot = None;
-            self.worker.log.event(id, "image_delivered");
-            return ToolReply::ok(body, GoalChange::Delivered);
+        if status == StatusCode::OK && body["delivered"].is_boolean() && body["result"].is_object()
+        {
+            return self.confirmed_upload(body);
         }
         self.upload_rejected(status, safe_error_code(&body))
+    }
+
+    fn valid_target(&self, index: Option<usize>) -> bool {
+        match (&self.job.target, index) {
+            (None, None) => true,
+            (Some(targets), Some(index)) => {
+                index < targets.len() && !self.completed_targets.contains(&index)
+            }
+            _ => false,
+        }
+    }
+
+    fn invalid_target(&self) -> ToolReply {
+        ToolReply::error("invalid_target_index", "Use an unfinished targetIndex from get_capture_task and the same index for capture and upload.", true, GoalChange::Continue)
+    }
+
+    fn target_body(&self, mut body: Value) -> Value {
+        if let Some(index) = self.current_target {
+            body["targetIndex"] = json!(index);
+        }
+        body
+    }
+
+    fn confirmed_upload(&mut self, mut body: Value) -> ToolReply {
+        let mut completed = self.completed_targets.clone();
+        if let Some(index) = self.current_target {
+            completed.insert(index);
+        }
+        let all_done = self
+            .job
+            .target
+            .as_ref()
+            .is_none_or(|targets| completed.len() == targets.len());
+        if (body["delivered"] == true) != all_done {
+            return self.unknown_upload(false);
+        }
+        // Public queries retain the aggregate. The model only needs this item's
+        // confirmation; repeating every signed URL on every call grows quadratically.
+        if let (Some(index), Some(images)) =
+            (self.current_target, body["result"]["images"].as_array_mut())
+        {
+            images.retain(|image| image["targetIndex"].as_u64() == Some(index as u64));
+        }
+        self.completed_targets = completed;
+        self.screenshot = None;
+        self.current_target = None;
+        self.upload_attempted = None;
+        self.retry_upload = false;
+        self.failure = "capture_failed";
+        self.center_finished = all_done;
+        self.worker
+            .log
+            .event(Some(self.job.task_id), "image_delivered");
+        ToolReply::ok(
+            body,
+            if all_done {
+                GoalChange::Delivered
+            } else {
+                GoalChange::Continue
+            },
+        )
     }
 
     fn unknown_upload(&mut self, stopping: bool) -> ToolReply {
         self.failure = "delivery_unknown";
         self.worker
             .log
-            .event(Some(self.job.job_id), "delivery_unknown");
+            .event(Some(self.job.task_id), "delivery_unknown");
         ToolReply::error(
             "delivery_unknown",
             "Delivery is not confirmed. Retry this same screenshotId to check completion.",
@@ -591,7 +699,7 @@ impl JobTools<'_, '_> {
 
     fn upload_rejected(&mut self, status: StatusCode, code: &'static str) -> ToolReply {
         self.worker.log.event(
-            Some(self.job.job_id),
+            Some(self.job.task_id),
             format_args!("upload_rejected http={} code={code}", status.as_u16()),
         );
         // A definitive HEAD 404 permits a later explicit retry of this exact ticket/image.
@@ -668,7 +776,7 @@ fn signed_upload_url(value: &str) -> Result<Url, ()> {
 async fn bounded_json(mut response: reqwest::Response) -> Result<Value, ()> {
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| ())? {
-        if chunk.len() > 64 * 1024 - body.len() {
+        if chunk.len() > MAX_CENTER_JSON - body.len() {
             return Err(());
         }
         body.extend_from_slice(&chunk);
@@ -1171,7 +1279,11 @@ mod tests {
         let puts = Arc::new(AtomicUsize::new(0));
         let completions = Arc::new(AtomicUsize::new(0));
         let job = Job {
-            job_id: Uuid::new_v4(),
+            task_id: Uuid::new_v4(),
+            job_id: None,
+            platform: Some("ios".into()),
+            bundle_identifier: Some("fixture.app".into()),
+            target: None,
             lease: Uuid::new_v4(),
             profile: None,
             prompt: "Amberia 首页".into(),
@@ -1265,6 +1377,8 @@ mod tests {
             root: workspace.path(),
             adb: None,
             screenshot: Some((screenshot_id, png)),
+            current_target: None,
+            completed_targets: std::collections::BTreeSet::new(),
             upload_attempted: None,
             retry_upload: false,
             center_finished: false,
@@ -1314,6 +1428,119 @@ mod tests {
         );
         shutdown.send(()).unwrap();
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn multiple_targets_keep_identity_and_continue_until_every_image_is_confirmed() {
+        let workspace = tempfile::tempdir().unwrap();
+        let job: Job = serde_json::from_value(json!({
+            "taskId":Uuid::new_v4(),"jobId":"external/订单-42","lease":Uuid::new_v4(),
+            "platform":"ios","bundleIdentifier":"fixture.app","profile":"optional hint",
+            "prompt":"原文\n  keep spacing and \"quotes\"",
+            "target":[
+                {"locale":"zh-CN","page":"home","device":"phone"},
+                {"locale":"en-US","page":"settings","device":"tablet","theme":"dark"}
+            ]
+        }))
+        .unwrap();
+        let config = Config {
+            kind: "screenshot".into(),
+            connector_id: Uuid::new_v4().to_string(),
+            token: "a".repeat(64),
+            server_url: Url::parse("https://fixture.example").unwrap(),
+            message_key: "fixture".into(),
+            codex_path: None,
+            codex_home: None,
+            adb_path: None,
+            ca_file: None,
+        };
+        let worker = Worker::new(&config, &workspace.path().join("connector.json")).unwrap();
+        let image = Uuid::new_v4();
+        let mut tools = JobTools {
+            worker: &worker,
+            job: &job,
+            root: workspace.path(),
+            adb: None,
+            screenshot: Some((image, vec![1, 2, 3])),
+            current_target: Some(1),
+            completed_targets: std::collections::BTreeSet::new(),
+            upload_attempted: Some(image),
+            retry_upload: true,
+            center_finished: false,
+            failure: "delivery_unknown",
+        };
+        let (_stop, mut stop) = watch::channel(false);
+        let context = tools.call("get_capture_task", json!({}), &mut stop).await;
+        assert_eq!(context.value["taskId"], job.task_id.to_string());
+        assert_eq!(context.value["jobId"], "external/订单-42");
+        assert_eq!(context.value["prompt"], job.prompt);
+        assert_eq!(context.value["target"][1]["theme"], "dark");
+        let invalid_context = tools
+            .call("get_capture_task", json!({"unexpected":true}), &mut stop)
+            .await;
+        assert_eq!(invalid_context.value["code"], "invalid_arguments");
+        assert_eq!(tools.target_body(json!({})), json!({"targetIndex":1}));
+        let mismatch = tools
+            .call(
+                "upload_screenshot",
+                json!({"screenshotId":image,"targetIndex":0}),
+                &mut stop,
+            )
+            .await;
+        assert_eq!(mismatch.value["code"], "invalid_target_index");
+        assert!(!tools.valid_target(None));
+        assert!(!tools.valid_target(Some(2)));
+        let first = tools
+            .confirmed_upload(json!({"delivered":false,"result":{"images":[{"targetIndex":1}]}}));
+        assert!(first.success && first.change == GoalChange::Continue);
+        assert!(!tools.center_finished);
+        assert!(tools.screenshot.is_none() && tools.upload_attempted.is_none());
+        assert!(!tools.retry_upload);
+        assert!(!tools.valid_target(Some(1)));
+        assert!(tools.valid_target(Some(0)));
+        tools.current_target = Some(0);
+        tools.screenshot = Some((Uuid::new_v4(), vec![4, 5, 6]));
+        let last = tools.confirmed_upload(
+            json!({"delivered":true,"result":{"images":[{"targetIndex":0},{"targetIndex":1}]}}),
+        );
+        assert!(last.success && last.change == GoalChange::Delivered);
+        assert!(tools.center_finished && tools.screenshot.is_none());
+        assert_eq!(last.value["result"]["images"], json!([{"targetIndex":0}]));
+    }
+
+    #[test]
+    fn accepts_nullable_legacy_identity_and_largest_escaped_claim_fixture() {
+        let legacy = json!({
+            "taskId":Uuid::new_v4(),"jobId":null,"platform":null,
+            "bundleIdentifier":null,"target":null,"profile":null,
+            "lease":Uuid::new_v4(),"prompt":"historical single image"
+        });
+        let decoded: Job = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(decoded.platform.is_none() && decoded.bundle_identifier.is_none());
+        assert!(decoded.target.is_none() && decoded.job_id.is_none());
+        let prompt = "\u{0001}".repeat(16 * 1024);
+        let targets: Vec<Value> = (0..256)
+            .map(|index| {
+                json!({
+                    "locale":"a".repeat(80),
+                    "page":format!("{index:03}{}", "p".repeat(97)),
+                    "device":"phone","theme":"dark"
+                })
+            })
+            .collect();
+        assert!(serde_json::to_vec(&targets).unwrap().len() <= 64 * 1024);
+        let mut claim = legacy;
+        claim["prompt"] = json!(prompt);
+        claim["target"] = json!(targets);
+        claim["jobId"] = json!("e".repeat(180));
+        claim["platform"] = json!("ios");
+        claim["bundleIdentifier"] = json!("fixture.app");
+        let body = serde_json::to_vec(&claim).unwrap();
+        assert!(body.len() > 128 * 1024);
+        assert!(body.len() <= MAX_CLAIM);
+        let decoded: Job = serde_json::from_slice(&body).unwrap();
+        assert_eq!(decoded.prompt, prompt);
+        assert_eq!(decoded.target.unwrap().len(), 256);
     }
 
     #[tokio::test]

@@ -15,7 +15,7 @@ use uuid::Uuid;
 const GOAL: &str = "Fulfill the user's screenshot request and obtain confirmed delivery from the Connector upload_screenshot tool.";
 const MAX_MESSAGE: u64 = 1024 * 1024;
 
-pub(super) const INSTRUCTIONS: &str = "You own the screenshot task. The user's message contains the app, page, device preferences and visual requirements. Find the project on this computer and use the local development tools to prepare the requested screen. Choose an appropriate iOS Simulator or Android Emulator, reuse a suitable one or create and boot one as needed. Decide whether to build, install or launch the app. Treat project source as read-only and use the provided build output paths. If no simulator is ready, prepare one using the installed development tools and runtimes. Report a simulator environment blocker only when the required tools or runtime are missing and prevent preparation. Call validate_simulator with the chosen device, then capture_screenshot when the requested screen is visible. Upload the returned screenshotId using upload_screenshot. If a tool returns a retryable error, fix the issue or wait if appropriate and call it again within this Goal. Only a successful upload_screenshot response with delivered=true completes the task. If delivery cannot be retried, report the blocker. Use the provided upload tool for delivery and preserve the requested app screen until the capture is complete.";
+pub(super) const INSTRUCTIONS: &str = "You own the screenshot task. Call get_capture_task first to read the task identity, external jobId, app and ordered target array. The user's message is the original visual request. Fulfill each target separately without a Cartesian product. Pass its zero-based targetIndex to capture_screenshot and upload_screenshot; omit targetIndex only for legacy tasks with target=null. Finish uploading each captured image before capturing another. After delivered=false continue with an unfinished target, and finish only after delivered=true. Find the project on this computer and use the local development tools to prepare the requested screen. Choose an appropriate iOS Simulator or Android Emulator, reuse a suitable one or create and boot one as needed. Decide whether to build, install or launch the app. Treat project source as read-only and use the provided build output paths. If no simulator is ready, prepare one using the installed development tools and runtimes. Report a simulator environment blocker only when the required tools or runtime are missing and prevent preparation. Call validate_simulator with the chosen device, then capture_screenshot when the requested screen is visible. Upload the returned screenshotId using upload_screenshot. If a tool returns a retryable error, fix the issue or wait if appropriate and call it again within this Goal. Only a successful upload_screenshot response with delivered=true completes the task. If delivery cannot be retried, report the blocker. Use the provided upload tool for delivery and preserve the requested app screen until the capture is complete.";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum GoalChange {
@@ -58,11 +58,14 @@ fn tool_specs() -> Value {
         "required":["platform","deviceId"],
         "additionalProperties":false
     });
+    let mut capture = device.clone();
+    capture["properties"]["targetIndex"] = json!({"type":"integer","minimum":0,"description":"Required for target-array tasks; position in get_capture_task target array"});
     json!([
+        {"name":"get_capture_task","description":"Read structured task identity, original prompt, targets and completed target indices.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
         {"name":"validate_simulator","description":"Check that the requested local simulator is booted and available.","inputSchema":device},
-        {"name":"capture_screenshot","description":"Capture the visible screen of this local simulator and return a screenshotId.","inputSchema":device},
+        {"name":"capture_screenshot","description":"Capture the visible screen of this local simulator and return a screenshotId.","inputSchema":capture},
         {"name":"upload_screenshot","description":"Upload the captured PNG to the configured storage and obtain center confirmation. Retry the same screenshotId when instructed.","inputSchema":{
-            "type":"object","properties":{"screenshotId":{"type":"string"}},
+            "type":"object","properties":{"screenshotId":{"type":"string"},"targetIndex":{"type":"integer","minimum":0}},
             "required":["screenshotId"],"additionalProperties":false
         }}
     ])
@@ -129,7 +132,6 @@ pub(super) struct Session<'a> {
     pub(super) root: &'a Path,
     pub(super) instructions: String,
     pub(super) prompt: &'a str,
-    pub(super) profile: Option<&'a str>,
     pub(super) job: Uuid,
 }
 
@@ -234,10 +236,7 @@ impl Session<'_> {
         if goal["goal"]["status"] != "active" {
             return Err("codex_goal_setup_failed");
         }
-        let mut input = vec![json!({"type":"text","text":self.prompt})];
-        if let Some(profile) = self.profile {
-            input.push(json!({"type":"text","text":format!("Optional project hint: {profile}")}));
-        }
+        let input = vec![json!({"type":"text","text":self.prompt})];
         // The first turn can issue a tool call immediately after its response.
         rpc.request(3, "turn/start", json!({"threadId":thread,"input":input}))
             .await
@@ -350,6 +349,8 @@ reply '{"method":"turn/completed","params":{"threadId":"fixture-thread","turn":{
 reply '{"method":"turn/started","params":{"threadId":"fixture-thread","turn":{"id":"second-turn"}}}'
 reply '{"id":"upload","method":"item/tool/call","params":{"threadId":"fixture-thread","tool":"upload_screenshot","arguments":{"screenshotId":"fixture"}}}'
 read_request
+reply '{"id":"last-upload","method":"item/tool/call","params":{"threadId":"fixture-thread","tool":"upload_screenshot","arguments":{"screenshotId":"fixture-2","targetIndex":1}}}'
+read_request
 read_request
 reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
 "#).unwrap();
@@ -358,7 +359,6 @@ reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
             root: root.path(),
             instructions: INSTRUCTIONS.into(),
             prompt: &prompt,
-            profile: None,
             job: Uuid::new_v4(),
         };
         let log = Log::for_config(&root.path().join("connector.json"));
@@ -381,7 +381,11 @@ reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
                         )
                     }
                     "upload_screenshot" => {
-                        ToolReply::ok(json!({"delivered":true}), GoalChange::Delivered)
+                        if args["targetIndex"] == 1 {
+                            ToolReply::ok(json!({"delivered":true}), GoalChange::Delivered)
+                        } else {
+                            ToolReply::ok(json!({"delivered":false}), GoalChange::Continue)
+                        }
                     }
                     _ => panic!("Unexpected fixture tool"),
                 },
@@ -403,6 +407,10 @@ reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
             .unwrap()
             .contains("invalid_simulator_id"));
         assert_eq!(messages[6]["result"]["success"], true);
-        assert_eq!(messages[7]["params"]["status"], "complete");
+        assert_eq!(messages[7]["id"], "last-upload");
+        assert_eq!(messages[8]["params"]["status"], "complete");
+        assert_eq!(messages[4]["params"]["input"].as_array().unwrap().len(), 1);
+        let tools = messages[2]["params"]["dynamicTools"].as_array().unwrap();
+        assert!(tools.iter().any(|tool| tool["name"] == "get_capture_task"));
     }
 }

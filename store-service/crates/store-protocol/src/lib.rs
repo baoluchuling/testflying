@@ -4,6 +4,7 @@ use std::fmt;
 
 pub mod crypto;
 pub mod logs;
+pub mod screenshot;
 pub mod upload;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct PrepareInput {
+    target_index: Option<usize>,
     size_bytes: u64,
     sha256: String,
     md5: String,
@@ -41,6 +42,9 @@ pub(super) async fn prepare(
     authorize_worker(&state, &id, &headers)?;
     let lease = lease(&headers)?;
     state.registry.screenshot_upload_lease(&id, &job, lease)?;
+    let target_index = state
+        .registry
+        .screenshot_target_index(&job, input.target_index)?;
     if !(33..=MAX_IMAGE as u64).contains(&input.size_bytes)
         || !digest(&input.sha256, 64)
         || !digest(&input.md5, 32)
@@ -83,16 +87,30 @@ pub(super) async fn prepare(
         Uuid::new_v4()
     );
     let fingerprint = oss_fingerprint(&settings.oss)?;
-    let ticket = state.registry.prepare_screenshot_ticket(
-        &id,
-        &job,
-        lease,
-        input.size_bytes,
-        &input.sha256,
-        &input.md5,
-        &fingerprint,
-        &key,
-    )?;
+    let ticket = if let Some(index) = target_index {
+        state.registry.prepare_target_ticket(
+            &id,
+            &job,
+            lease,
+            index,
+            input.size_bytes,
+            &input.sha256,
+            &input.md5,
+            &fingerprint,
+            &key,
+        )?
+    } else {
+        state.registry.prepare_screenshot_ticket(
+            &id,
+            &job,
+            lease,
+            input.size_bytes,
+            &input.sha256,
+            &input.md5,
+            &fingerprint,
+            &key,
+        )?
+    };
     let md5 = hex::decode(&ticket.md5)
         .map_err(|_| StoreError::new(500, "registry_error", "Invalid screenshot upload record"))?;
     let signed_headers = BTreeMap::from([
@@ -135,18 +153,39 @@ mod tests {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct CompleteInput {}
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct CompleteInput {
+    target_index: Option<usize>,
+}
 
 pub(super) async fn complete(
     State(state): State<Arc<ApiState>>,
     Path((id, job)): Path<(String, String)>,
     headers: HeaderMap,
-    _input: Option<Json<CompleteInput>>,
+    input: Option<Json<CompleteInput>>,
 ) -> Result<Json<Value>> {
     authorize_worker(&state, &id, &headers)?;
     let lease = lease(&headers)?;
-    let ticket = state.registry.screenshot_ticket(&id, &job, lease)?;
+    let target_index = state
+        .registry
+        .screenshot_target_index(&job, input.and_then(|Json(v)| v.target_index))?;
+    let ticket = if let Some(index) = target_index {
+        state.registry.target_ticket(&id, &job, lease, index)?
+    } else {
+        state.registry.screenshot_ticket(&id, &job, lease)?
+    };
+    if let Some(index) = target_index {
+        if let Some(result) = &ticket.result {
+            return Ok(Json(state.registry.complete_target_ticket(
+                &id,
+                &job,
+                lease,
+                index,
+                &ticket.config_fingerprint,
+                result,
+            )?));
+        }
+    }
     if let Some(result) = ticket.result {
         return Ok(Json(json!({"delivered":true,"result":result})));
     }
@@ -173,6 +212,16 @@ pub(super) async fn complete(
     result["objectKey"] = json!(ticket.object_key);
     result["sizeBytes"] = json!(ticket.size_bytes);
     result["sha256"] = json!(ticket.sha256);
+    if let Some(index) = target_index {
+        return Ok(Json(state.registry.complete_target_ticket(
+            &id,
+            &job,
+            lease,
+            index,
+            &fingerprint,
+            &result,
+        )?));
+    }
     let result =
         state
             .registry

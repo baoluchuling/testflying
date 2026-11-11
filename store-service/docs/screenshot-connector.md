@@ -1,6 +1,6 @@
 # macOS 截图 Connector
 
-外部系统按平台、包名绑定截图节点，提交平台、包名和截图要求。Mac 上的 Connector 为每个任务开启独立的 Codex Goal 会话。Codex 自行发现项目、准备模拟器和操作 App，并在同一会话中调用 Connector 提供的校验、截图和回传工具。中心将 PNG 转发给配置的外部服务。
+外部系统按平台、包名绑定截图节点，提交外部 jobId、平台、包名、截图要求和 target 数组。Mac 上的 Connector 为每个任务开启独立的 Codex Goal 会话。Codex 自行发现项目、准备模拟器和操作 App，并在同一会话中调用 Connector 提供的校验、截图和回传工具。节点将 PNG 直接上传 OSS，中心保存目标与图片地址的对应关系；外部结果通知协议待接入。
 
 ## 创建节点
 
@@ -20,7 +20,7 @@ Content-Type: application/json
 
 ## 外部对接文档
 
-截图节点列表、按包名绑定、触发和查询任务的唯一对接说明已合并到 [中心统一接口文档](store-api.md#截图节点与截图任务https)。触发只需 platform、bundleIdentifier 和 prompt，不再传 connectorId；本页仅保留实体 Mac 部署运维说明。中心会附加目标应用身份，完整保留外部提示词；包名路由本身无需升级；本轮 OSS 直传需安装最新截图节点程序。
+截图节点列表、按包名绑定、触发和查询任务的唯一对接说明已合并到 [中心统一接口文档](store-api.md#截图节点与截图任务https)。触发须传外部 jobId、platform、bundleIdentifier、prompt 和 target 数组，不传 connectorId；本页仅保留实体 Mac 部署运维说明。中心保留 prompt 原文，通过 get_capture_task 工具提供结构化应用身份与目标；本轮多目标协议 2 需安装最新截图节点程序。
 
 ## 在实体 Mac 上运行
 
@@ -38,7 +38,7 @@ Content-Type: application/json
 
 使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 从安装账号的 `PATH` 找到 Codex CLI，沿用该账号的登录和用户配置，并以内置 `workspace-write` 沙盒和 `never` 审批模式启动。特殊安装可通过 `codexPath` 或 `codexHome` 指定绝对路径。Codex 按本机权限查找项目，任务的工作区设为 Connector 创建的私有临时目录，用于存放任务产物，完成、失败或正常停止时清理。[OpenAI Docs](https://learn.chatgpt.com/docs/sandboxing)
 
-需要支持 Goal 和 App Server 动态工具的 Codex CLI，已验证 0.139.0 的初始化协议。Connector 为该进程启用 Goal。Codex 自行决定复用、创建或启动模拟器，以及是否构建、安装和启动 App。会话内的 `validate_simulator` 检查所选设备，`capture_screenshot` 截取该设备并返回本任务的 `screenshotId`，`upload_screenshot` 通过中心交付这张图。可恢复的工具失败会返回给当前 Goal，Codex 可以修复后重试。中心确认上传后 Goal 才算完成。[OpenAI Docs](https://learn.chatgpt.com/docs/app-server)
+需要支持 Goal 和 App Server 动态工具的 Codex CLI，已验证 0.139.0 的初始化协议。Connector 为该进程启用 Goal。Codex 自行决定复用、创建或启动模拟器，以及是否构建、安装和启动 App。会话先调用 `get_capture_task` 读取外部 jobId、应用与 target；`validate_simulator` 检查所选设备，`capture_screenshot` 按 targetIndex 截取该设备并返回 screenshotId，`upload_screenshot` 用相同 targetIndex 上传这张图。可恢复的工具失败会返回给当前 Goal，Codex 可以修复后重试。每张图确认后继续下一个目标，全部 target 均确认上传后 Goal 才算完成。[OpenAI Docs](https://learn.chatgpt.com/docs/app-server)
 
 将解压目录移到截图账号的 `~/Library/Application Support/` 下，填好配置并设好文件权限后，在该目录执行安装。安装脚本会请求管理员授权，将节点注册为系统 LaunchDaemon，并以截图账号立即启动。开机后服务自动运行，无需保持终端打开。
 
@@ -52,9 +52,9 @@ sh ./install.sh
 
 升级已有节点时，把新版 ZIP 中的 `screenshot-connector`、`run.sh`、`install.sh` 和 `testflying-prod-ca.crt` 覆盖到原安装目录，保留原来的 `connector.json`，再运行 `sh ./install.sh` 重启服务。
 
-在安装目录执行 `tail -F connector.log` 即可查看后台日志。按任务 ID 查找 `job_claimed`、`codex_goal_started`、`simulator_unavailable`、`image_ready` 或 `result_rejected`，可定位执行阶段。完整提示词用 JSON 字符串保存在领单记录中。日志只保存在 Mac 上，文件权限为 `0600`。服务启动时和运行期间每分钟清理超过 24 小时的记录。原生 Goal 会话历史由安装账号的 Codex 管理。
+在安装目录执行 `tail -F connector.log` 即可查看后台日志。按内部 taskId 查找 `job_claimed`、`codex_goal_started`、`simulator_unavailable`、`image_ready` 或 `result_rejected`，可定位执行阶段。完整提示词用 JSON 字符串保存在领单记录中。日志只保存在 Mac 上，文件权限为 `0600`。服务启动时和运行期间每分钟清理超过 24 小时的记录。原生 Goal 会话历史由安装账号的 Codex 管理。
 
-节点收到通知后通过 `POST /v1/connectors/{id}/screenshot-jobs/claim` 领取任务，空队列返回 204。执行失败通过 `POST /v1/connectors/{id}/screenshot-jobs/{jobId}/failure` 报告。截图后通过 POST /v1/connectors/{id}/screenshot-jobs/{jobId}/upload-ticket 获取短时上传地址，直接 PUT PNG 到 OSS，再 POST 同一路径下的 complete 确认结果。图片最大 16 MiB。中心接口要求节点 Bearer Token 和 X-Screenshot-Lease；OSS 请求只携带短时签名及绑定的图片元数据。任务超时后需要重新提交。
+节点收到通知后通过 `POST /v1/connectors/{id}/screenshot-jobs/claim` 并带 X-Screenshot-Protocol: 2 领取任务，空队列返回 204。执行失败通过 `POST /v1/connectors/{id}/screenshot-jobs/{taskId}/failure` 报告。截图后通过 POST /v1/connectors/{id}/screenshot-jobs/{taskId}/upload-ticket 获取短时上传地址，直接 PUT PNG 到 OSS，再 POST 同一路径下的 complete 确认结果。两次请求均传 targetIndex（从 0 开始）；内部路径使用 taskId，外部 jobId 不作为调度 ID。图片最大 16 MiB。中心接口要求节点 Bearer Token 和 X-Screenshot-Lease；OSS 请求只携带短时签名及绑定的图片元数据。任务超时后需要由外部显式决定是否创建新任务。
 
 ## OSS 与外部通知配置
 
@@ -62,4 +62,4 @@ sh ./install.sh
 
 外部回调的固定格式尚未确定。本轮可保存 URL 和鉴权 Token，状态为 protocol_pending，尚不发送回调；未填 URL 显示 not_configured。上传结果含图片地址、对象路径、摘要和 notificationStatus，明确区分 OSS 上传成功与通知待接入。
 
-本轮需在截图 Mac 重新安装最新 arm64 部署包以升级程序，沿用原节点身份和 Codex 环境。旧程序的 PNG 回传入口在 OSS 启用后返回 screenshot_connector_upgrade_required。完整配置 API、访问地址有效期和外部接口见[中心统一文档](store-api.md#截图节点与截图任务https)。
+本轮需在截图 Mac 重新安装最新 arm64 部署包以升级程序，沿用原节点身份和 Codex 环境。旧程序不能领取协议 2 的新任务，返回 screenshot_connector_upgrade_required 且任务保留在队列；旧 PNG 回传入口在 OSS 启用后也返回该错误。完整配置 API、访问地址有效期和外部接口见[中心统一文档](store-api.md#截图节点与截图任务https)。
