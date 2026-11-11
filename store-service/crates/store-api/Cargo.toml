@@ -26,4 +26,5 @@ http-body-util.workspace = true
 tempfile.workspace = true
 tokio-tungstenite.workspace = true
 store-connector = { path = "../store-connector" }
+store-provider.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }

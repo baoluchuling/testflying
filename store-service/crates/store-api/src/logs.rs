@@ -286,6 +286,8 @@ pub(crate) fn error_summary(code: &str, message: &str) -> ErrorSummary {
         "connector_already_connected" => "connector_already_connected",
         "logs_unavailable" => "logs_unavailable",
         "invalid_log_query" => "invalid_log_query",
+        "logs_upgrade_required" => "logs_upgrade_required",
+        "invalid_log_request" => "invalid_log_request",
         _ => "request_failed",
     };
     let upstream_status = (code == "store_upstream_error")

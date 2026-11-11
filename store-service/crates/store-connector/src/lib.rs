@@ -9,6 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::{sync::Arc, time::Duration};
+use store_protocol::logs::{LogAction, LogRequest, NodeRequest};
 use store_protocol::{crypto, upload, Operation, Platform, StoreError, StoreReply, StoreRequest};
 use store_provider::{
     assets::AssetStore,
@@ -281,6 +282,7 @@ pub fn http_router(executor: Arc<Executor>) -> Router {
     Router::new()
         .route("/health", get(|| async { Json(json!({"status":"ok"})) }))
         .route("/v1/execute", post(http_execute))
+        .route("/v1/diagnostics/logs", post(http_logs))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(executor)
 }
@@ -424,6 +426,68 @@ async fn http_execute(
     Json(executor.execute(request).await).into_response()
 }
 
+impl Executor {
+    pub async fn execute_logs(self: Arc<Self>, request: LogRequest) -> StoreReply {
+        let id = request.request_id.clone();
+        if let Err(error) = request.validate() {
+            return StoreReply::from_result(id, Err(error));
+        }
+        let Some(log) = self.log.clone() else {
+            return StoreReply::from_result(
+                id,
+                Err(StoreError::new(
+                    503,
+                    "logs_unavailable",
+                    "Node log storage unavailable",
+                )),
+            );
+        };
+        let result = tokio::task::spawn_blocking(move || match request.action {
+            LogAction::Latest => log.latest_snapshot(),
+            LogAction::Read {
+                file,
+                offset,
+                length,
+                snapshot_size,
+            } => log.read_snapshot(&file, offset, length, snapshot_size),
+        })
+        .await
+        .map_err(|_| StoreError::new(503, "logs_unavailable", "Node log reader unavailable"))
+        .and_then(|result| {
+            result.map_err(|_| {
+                StoreError::new(
+                    503,
+                    "logs_unavailable",
+                    "Node log file unavailable or changed",
+                )
+            })
+        });
+        StoreReply::from_result(id, result)
+    }
+}
+async fn http_logs(
+    State(executor): State<Arc<Executor>>,
+    headers: HeaderMap,
+    Json(request): Json<LogRequest>,
+) -> Response {
+    if !bool::from(
+        executor
+            .config
+            .token
+            .as_bytes()
+            .ct_eq(bearer(&headers).as_bytes()),
+    ) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(
+                StoreError::new(401, "invalid_node_token", "Invalid Connector credentials").body(),
+            ),
+        )
+            .into_response();
+    }
+    Json(executor.execute_logs(request).await).into_response()
+}
+
 async fn connection(
     executor: Arc<Executor>,
     mut shutdown: watch::Receiver<bool>,
@@ -469,7 +533,7 @@ async fn connection(
             true,
         )?;
         let registration = serde_json::to_vec(
-            &json!({"connectorId":executor.config.connector_id,"baseUrl":executor.config.base_url}),
+            &json!({"connectorId":executor.config.connector_id,"baseUrl":executor.config.base_url,"logsVersion":1}),
         )
         .map_err(|_| crypto::error())?;
         let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];
@@ -528,7 +592,15 @@ async fn connection(
                 match message {
                     Message::Binary(bytes) => {
                         let Some(plain)=channel.decrypt(&bytes)? else {continue;};
-                        let request:StoreRequest=serde_json::from_slice(&plain).map_err(|_|StoreError::new(422,"invalid_request","Invalid Store API command"))?;
+                        let envelope:NodeRequest=serde_json::from_slice(&plain).map_err(|_|StoreError::new(422,"invalid_request","Invalid Store API command"))?;
+                        let request=match envelope {
+                            NodeRequest::Store(request)=>request,
+                            NodeRequest::Logs(request)=>{
+                                let executor=executor.clone();let sender=results.clone();
+                                tokio::spawn(async move {let _=sender.send(executor.execute_logs(request).await).await;});
+                                continue;
+                            }
+                        };
                         if request.operation.is_upload() {
                             let operation=request.operation;
                             let id=request.payload["assetId"].as_str().unwrap_or("").to_owned();
@@ -602,6 +674,35 @@ where
         tokio::time::timeout(Duration::from_secs(5), write.send(message)).await,
         Ok(Ok(()))
     )
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    #[tokio::test]
+    async fn logs_remain_readable_while_store_capacity_is_busy() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("connector.json");
+        std::fs::write(&path, "{}").unwrap();
+        let log = Log::for_config(&path, "test-node").unwrap();
+        log.event("fixture", json!({}));
+        let config=serde_json::from_value(json!({"connectorId":"test-node","token":"fixture-token-0123456789",
+            "messageKey":"01".repeat(32),"uploadKey":"02".repeat(32),"serverUrl":"http://127.0.0.1:1",
+            "platformMode":"android","provider":{"mode":"mock"}})).unwrap();
+        let executor = Executor::with_log(config, Some(log)).unwrap();
+        let _busy = executor.capacity.clone().acquire_owned().await.unwrap();
+        let reply = tokio::time::timeout(
+            Duration::from_secs(1),
+            executor.execute_logs(LogRequest {
+                request_id: "log-while-busy".into(),
+                action: LogAction::Latest,
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(reply.status, 200);
+        assert!(reply.body["sizeBytes"].as_u64().unwrap() > 0);
+    }
 }
 
 #[cfg(test)]

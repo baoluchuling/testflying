@@ -2118,6 +2118,7 @@ dependencies = [
  "sha2",
  "store-connector",
  "store-protocol",
+ "store-provider",
  "subtle",
  "tempfile",
  "tokio",

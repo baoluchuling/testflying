@@ -4,10 +4,59 @@ export function bindLogs(request, getSession) {
   let filters;
   let sequence = 0;
   let busy = false;
+  let downloading = false;
+  let downloadEpoch = 0;
+  let logNodes = [];
+
+  function selectedNode() { return logNodes.find((node) => node.connectorId === $("nodeLogSelect").value); }
+  function updateDownload() {
+    const node = selectedNode();
+    $("nodeLogDownload").disabled = downloading || !node?.enabled || !node?.logsAvailable;
+    if (!downloading) $("nodeLogStatus").textContent = !node ? "暂无商店节点" : node.logsAvailable ? "可以读取最新日志文件。" : node.connected ? "该节点需安装最新升级包后才能读取日志。" : "节点未连接，暂时无法读取日志。";
+  }
+  function setNodes(nodes) {
+    const selected = $("nodeLogSelect").value;
+    logNodes = nodes.filter((node) => node.kind !== "screenshot");
+    $("nodeLogSelect").replaceChildren(...logNodes.map((node) => new Option(`${node.name} · ${node.connected ? "已连接" : "未连接"}${node.logsAvailable ? "" : " · 需升级"}`, node.connectorId)));
+    if (!logNodes.length) $("nodeLogSelect").add(new Option("暂无商店节点", ""));
+    if (logNodes.some((node) => node.connectorId === selected)) $("nodeLogSelect").value = selected;
+    updateDownload();
+  }
+  async function download() {
+    const active = getSession(); const node = selectedNode();
+    if (!active || !node || downloading || $("nodeLogDownload").disabled) return;
+    const current = ++downloadEpoch;
+    downloading = true; updateDownload(); $("nodeLogStatus").textContent = "正在从节点读取日志…";
+    try {
+      const bytes = await request(active, `connectors/${encodeURIComponent(node.connectorId)}/logs/latest`, { binary: true });
+      if (downloadEpoch !== current || active.signal.aborted) return;
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/x-ndjson" }));
+      const link = document.createElement("a"); link.href = url; link.download = `store-connector-${node.connectorId.slice(0, 8)}-latest.jsonl`;
+      document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+      $("nodeLogStatus").textContent = "最新节点日志已下载。";
+    } catch (error) {
+      if (downloadEpoch === current && !active.signal.aborted) $("nodeLogStatus").textContent = error.message || "节点日志下载失败";
+    } finally {
+      if (downloadEpoch === current) { downloading = false; const node = selectedNode(); $("nodeLogDownload").disabled = !node?.enabled || !node?.logsAvailable; }
+    }
+  }
+  $("nodeLogSelect").addEventListener("change", updateDownload);
+  $("nodeLogDownload").addEventListener("click", download);
+  $("nodeLogRefresh").addEventListener("click", async () => {
+    const active = getSession(); if (!active) return;
+    $("nodeLogRefresh").disabled = true;
+    try { const result = await request(active, "connectors"); if (!active.signal.aborted) setNodes(result.connectors); }
+    catch (error) { if (!active.signal.aborted) $("nodeLogStatus").textContent = error.message || "刷新失败"; }
+    finally { if (!active.signal.aborted) $("nodeLogRefresh").disabled = false; }
+  });
 
   function reset() {
     sequence++;
     busy = false;
+    downloadEpoch++;
+    downloading = false;
+    setNodes([]);
+    $("nodeLogRefresh").disabled = false;
     cursor = undefined;
     filters = undefined;
     $("logWorkspace").hidden = true;
@@ -88,5 +137,5 @@ export function bindLogs(request, getSession) {
 
   $("logFilters").addEventListener("submit", (event) => { event.preventDefault(); load(false); });
   $("logMore").addEventListener("click", () => load(true));
-  return { reset, show() { $("logWorkspace").hidden = false; } };
+  return { reset, setNodes, show() { $("logWorkspace").hidden = false; } };
 }

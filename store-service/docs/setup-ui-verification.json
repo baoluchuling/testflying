@@ -1,5 +1,5 @@
 {
-  "runId": "d534940643ed435489292264f0936463",
+  "runId": "7d91c77f3e18466e9270586c88fb7f90",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -25,6 +25,7 @@
     "both credential paths are automatic and no application list is included",
     "repeat download reuses node identity and omits disabled-platform secrets",
     "program-only upgrade preserves node identity without including local configuration",
+    "node log download uses the authenticated session and hides unsupported old nodes",
     "seven-day logs support application filters and request traces without rendering HTML",
     "locking cancels a pending credential reveal and clears local files and secrets",
     "screenshot node is available in its own deployment panel and excluded from Store Connector downloads",
@@ -35,13 +36,13 @@
     "mobile layout has no horizontal overflow",
     "no credential file or account fields are uploaded and CSP passes"
   ],
-  "windowsExecutableSha256": "ffef9345e09d37bff0f44d51546c6e7729519d2da43a445e49fccfce77501fbc",
+  "windowsExecutableSha256": "62d2148ab8607f3be81e8e84983c59aa0ab7b9459f864ded5b0f3fb82ab811ef",
   "credentialFilesUploaded": false,
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "45e816bb-00be-445e-848f-177516ed8c41",
-    "b3a85117-dd0c-46be-be4d-629596ddc169"
+    "47951c3f-aad3-46f2-897d-c5546c8e3387",
+    "75931409-e5f3-40f3-ba7d-334dc976cfba"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0

@@ -3,6 +3,7 @@ use serde_json::Value;
 use std::fmt;
 
 pub mod crypto;
+pub mod logs;
 pub mod upload;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]

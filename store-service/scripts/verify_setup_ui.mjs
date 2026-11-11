@@ -106,6 +106,13 @@ if (!production) {
         }
       }
       const screenshot = screenshotInstallerPath.exec(url.pathname);
+      if (/\/connectors\/[^/]+\/logs\/latest$/.test(url.pathname)) {
+        assert(nodes.some((node) => url.pathname.includes(node.connectorId) && node.logsAvailable));
+        res.setHeader("Content-Type", "application/x-ndjson");
+        res.setHeader("Cache-Control", "no-store");
+        res.end('{"event":"fixture.node.log"}\n');
+        return;
+      }
       if (url.pathname === setupApi + "logs") {
         res.end(JSON.stringify({retentionDays:7,storageHealthy:true,nextCursor:null,entries:[{
           id:1,timestampMs:Date.now(),event:"connector.result",status:502,requestId:"fixture-request-id",
@@ -362,6 +369,18 @@ try {
   checks.push("program-only upgrade preserves node identity without including local configuration");
   if (!production) {
     await page.locator("#logWorkspace summary").click();
+    assert.equal(await page.locator("#nodeLogDownload").isDisabled(),true);
+    nodes[0].connected=true;nodes[0].logsAvailable=true;
+    await page.locator("#nodeLogRefresh").click();
+    await page.locator("#nodeLogDownload:enabled").waitFor();
+    const logDownload=page.waitForEvent("download");
+    await page.locator("#nodeLogDownload").click();
+    const downloadedLog=await logDownload;
+    const logPath=path.join(tmp,"downloaded-node-log.jsonl");
+    await downloadedLog.saveAs(logPath);
+    assert.equal(fs.readFileSync(logPath,"utf8"),'{"event":"fixture.node.log"}\n');
+    assert.match(downloadedLog.suggestedFilename(),/^store-connector-.*-latest\.jsonl$/);
+    checks.push("node log download uses the authenticated session and hides unsupported old nodes");
     await page.locator("#logIdentifier").fill("com.cfs.amberia");
     await page.locator("#logSearch").click();
     await page.locator("#logEntries details").waitFor();
@@ -396,6 +415,7 @@ try {
     releaseReveal();
     heldReveal = undefined;
     assert.equal(await page.locator("#integrationToken").inputValue(), "");
+    assert.equal(await page.locator("#nodeLogSelect").inputValue(), "");
     assert.equal(await page.locator("#appleFile").inputValue(), "");
     assert.equal(await page.locator("#googleFile").inputValue(), "");
     assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);

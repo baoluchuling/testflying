@@ -8,6 +8,7 @@ mod google;
 mod image_query;
 mod images;
 mod reviews;
+mod upstream_error;
 mod validation;
 
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
@@ -430,7 +431,30 @@ impl Gateway {
             diagnostics::HttpGuard::start(self.inner.log.clone(), platform, step, &request);
         let result = self.inner.client.execute(request).await;
         guard.finish(&result);
-        result.map_err(|_| upstream("Store request failed"))
+        let mut response = result.map_err(|_| upstream("Store request failed"))?;
+        if !response.status().is_success() && self.inner.log.is_some() {
+            let mut bytes = Vec::new();
+            let mut state = "complete";
+            loop {
+                match response.chunk().await {
+                    Ok(Some(chunk)) => {
+                        let remaining = (64 * 1024usize).saturating_sub(bytes.len());
+                        bytes.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+                        if chunk.len() > remaining {
+                            state = "truncated";
+                            break;
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(_) => {
+                        state = "incomplete";
+                        break;
+                    }
+                }
+            }
+            guard.error_response(&bytes, state);
+        }
+        Ok(response)
     }
 }
 async fn bounded_json(mut response: Response) -> Result<Value> {

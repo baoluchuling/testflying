@@ -48,6 +48,12 @@ async function request(active, path, { method = "GET", body, binary = false, tok
       throw new Unauthorized(message);
     }
     if (response.status === 409 && path === "integrations") throw new Error("这个系统名称已有 Token");
+    if (path.endsWith("/logs/latest")) {
+      let code;
+      try { code = (await response.json()).error?.code; } catch { /* No raw response text is shown. */ }
+      const messages = { logs_upgrade_required: "请先在该节点安装最新升级包，再读取日志", logs_unavailable: "节点日志不可用，请检查本机日志目录权限", connector_disconnected: "节点未连接，暂时无法读取日志", connector_disabled: "节点已停用" };
+      throw new Error(messages[code] || `节点日志读取失败（${response.status}）`);
+    }
     if (binary && response.status === 503) throw new Error("所选系统的程序尚未发布，请选择其他系统");
     throw new Error(`中心请求失败（${response.status}），请检查节点状态后重试`);
   }
@@ -140,6 +146,7 @@ function renderNodes(selected = "new") {
   }
   select.value = selected;
   updateFields();
+  logs.setNodes(nodes);
 }
 
 function updateFields() {

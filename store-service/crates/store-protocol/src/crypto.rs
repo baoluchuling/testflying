@@ -13,6 +13,8 @@ pub const HANDSHAKE_BYTES: usize = 4096;
 pub struct Registration {
     pub connector_id: String,
     pub base_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logs_version: Option<u8>,
 }
 
 pub fn error() -> StoreError {

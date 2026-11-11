@@ -1,6 +1,7 @@
 mod api_docs;
 mod integrations;
 pub mod logs;
+mod node_logs;
 pub mod registry;
 mod screenshots;
 mod setup;
@@ -172,6 +173,7 @@ pub fn router_with_screenshots(
 ) -> Router {
     let management = Router::new()
         .route("/v1/logs", get(logs::read))
+        .route("/v1/connectors/{id}/logs/latest", get(node_logs::latest))
         .route(
             "/v1/connectors",
             get(list_connectors).post(create_connector),
@@ -252,8 +254,12 @@ pub fn router_with_screenshots(
 
 fn node_view(state: &ApiState, node: Connector) -> Value {
     let connected = state.transport.connected(&node.connector_id);
+    let logs_available = node.kind == ConnectorKind::Store
+        && (state.transport.logs_supported(&node.connector_id)
+            || (!connected && node.base_url.is_some()));
     let mut value = serde_json::to_value(node).expect("Connector serialization");
     value["connected"] = json!(connected);
+    value["logsAvailable"] = json!(logs_available);
     value
 }
 

@@ -121,6 +121,10 @@ pub(super) fn routes(state: Arc<super::ApiState>) -> Router<Arc<super::ApiState>
     let setup_api = Router::new()
         .route("/connector-setup/api/logs", get(super::logs::read))
         .route(
+            "/connector-setup/api/connectors/{id}/logs/latest",
+            get(super::node_logs::latest),
+        )
+        .route(
             "/connector-setup/api/connectors",
             get(super::list_connectors).post(super::create_connector),
         )

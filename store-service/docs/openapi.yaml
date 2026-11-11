@@ -215,6 +215,48 @@ components:
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
 security: [{integrationToken: []}, {clientToken: []}]
 paths:
+  /v1/connectors/{id}/logs/latest:
+    get:
+      summary: Stream the latest Store Connector log snapshot; administrator only
+      description: Requires an upgraded store node. Uses encrypted WSS or authenticated node HTTP fallback. The center does not persist the file. No store call or mutation replay. Business/integration tokens cannot read this endpoint. Cache-Control no-store.
+      security: [{adminToken: []}]
+      parameters: [{$ref: '#/components/parameters/id'}]
+      responses:
+        '200':
+          description: Fixed snapshot of the latest private JSONL file; streamed in bounded chunks.
+          content: {application/x-ndjson: {schema: {type: string, format: binary}}}
+        '409':
+          description: logs_upgrade_required for a connected old node, or connector_disabled.
+          content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/diagnostics/logs:
+    post:
+      summary: Node-side read-only log control interface
+      description: Call the node address, not the center. Same LogRequest is sent over encrypted WSS. Does not require an app binding, store credentials or an available store task slot. Returns a StoreReply envelope with requestId, status and body; no arbitrary path access.
+      security: [{nodeToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId, action]
+              additionalProperties: false
+              properties:
+                requestId: {type: string, minLength: 1, maxLength: 128}
+                action:
+                  oneOf:
+                    - {type: object, required: [type], additionalProperties: false, properties: {type: {const: latest}}}
+                    - type: object
+                      required: [type, file, offset, length, snapshotSize]
+                      additionalProperties: false
+                      properties:
+                        type: {const: read}
+                        file: {type: string, pattern: '^store-connector-[0-9]{10}\.jsonl$'}
+                        offset: {type: integer, minimum: 0}
+                        length: {type: integer, minimum: 1, maximum: 32768}
+                        snapshotSize: {type: integer, minimum: 0}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
   /v1/logs:
     get:
       summary: Administrator-only center logs retained for seven days

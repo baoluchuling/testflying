@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+use store_protocol::logs::{LogRequest, NodeRequest};
 use store_protocol::{crypto, StoreError, StoreReply, StoreRequest};
 use tokio::sync::{mpsc, oneshot, watch};
 use uuid::Uuid;
@@ -16,7 +17,8 @@ type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<Result<StoreReply>>>>>;
 
 struct Connection {
     generation: Uuid,
-    sender: mpsc::Sender<StoreRequest>,
+    sender: mpsc::Sender<NodeRequest>,
+    logs_supported: bool,
     close: watch::Sender<bool>,
     screenshot_wake: watch::Sender<()>,
     pending: Pending,
@@ -78,6 +80,79 @@ impl Transport {
 
     pub fn connected(&self, id: &str) -> bool {
         self.connections.lock().unwrap().contains_key(id)
+    }
+    pub fn logs_supported(&self, id: &str) -> bool {
+        self.connections
+            .lock()
+            .unwrap()
+            .get(id)
+            .is_some_and(|c| c.logs_supported)
+    }
+
+    pub async fn dispatch_logs(
+        &self,
+        node: &Connector,
+        token: &str,
+        request: LogRequest,
+    ) -> Result<StoreReply> {
+        request.validate()?;
+        if self.connected(&node.connector_id) {
+            if !self.logs_supported(&node.connector_id) {
+                return Err(StoreError::new(
+                    409,
+                    "logs_upgrade_required",
+                    "Upgrade this node to enable log retrieval",
+                ));
+            }
+            self.websocket_request(&node.connector_id, NodeRequest::Logs(request))
+                .await
+        } else {
+            let base = node.base_url.as_deref().ok_or_else(disconnected)?;
+            let mut response = self
+                .client
+                .post(format!("{base}/v1/diagnostics/logs"))
+                .bearer_auth(token)
+                .json(&request)
+                .send()
+                .await
+                .map_err(|_| disconnected())?;
+            if response.status().as_u16() == 404 {
+                return Err(StoreError::new(
+                    409,
+                    "logs_upgrade_required",
+                    "Upgrade this node to enable log retrieval",
+                ));
+            }
+            if !response.status().is_success() {
+                return Err(StoreError::new(
+                    502,
+                    "connector_rejected",
+                    "Node rejected the log request",
+                ));
+            }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(|_| disconnected())? {
+                if bytes.len() + chunk.len() > 128 * 1024 {
+                    return Err(StoreError::new(
+                        502,
+                        "invalid_connector_reply",
+                        "Node log reply exceeded limit",
+                    ));
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            let reply: StoreReply = serde_json::from_slice(&bytes).map_err(|_| {
+                StoreError::new(502, "invalid_connector_reply", "Invalid node log reply")
+            })?;
+            if reply.request_id != request.request_id || !(200..=599).contains(&reply.status) {
+                return Err(StoreError::new(
+                    502,
+                    "invalid_connector_reply",
+                    "Invalid node log reply",
+                ));
+            }
+            Ok(reply)
+        }
     }
 
     pub fn disconnect(&self, id: &str) {
@@ -252,31 +327,34 @@ impl Transport {
             }
             Ok(reply)
         } else {
-            let (sender, receiver) = oneshot::channel();
-            let id = request.request_id.clone();
-            let pending = {
-                let connections = self.connections.lock().unwrap();
-                let connection = connections
-                    .get(&node.connector_id)
-                    .ok_or_else(disconnected)?;
-                let pending = connection.pending.clone();
-                pending.lock().unwrap().insert(id.clone(), sender);
-                if connection.sender.try_send(request).is_err() {
-                    pending.lock().unwrap().remove(&id);
-                    return Err(disconnected());
-                }
-                pending
-            };
-            let _pending_guard = PendingGuard { pending, id };
-            match tokio::time::timeout(self.timeout, receiver).await {
-                Ok(Ok(result)) => result,
-                Ok(Err(_)) => Err(disconnected()),
-                Err(_) => Err(StoreError::new(
-                    504,
-                    "connector_timeout",
-                    "Connector timed out; the store outcome may be unknown",
-                )),
+            self.websocket_request(&node.connector_id, NodeRequest::Store(request))
+                .await
+        }
+    }
+
+    async fn websocket_request(&self, node_id: &str, request: NodeRequest) -> Result<StoreReply> {
+        let (sender, receiver) = oneshot::channel();
+        let id = request.request_id().to_owned();
+        let pending = {
+            let connections = self.connections.lock().unwrap();
+            let connection = connections.get(node_id).ok_or_else(disconnected)?;
+            let pending = connection.pending.clone();
+            pending.lock().unwrap().insert(id.clone(), sender);
+            if connection.sender.try_send(request).is_err() {
+                pending.lock().unwrap().remove(&id);
+                return Err(disconnected());
             }
+            pending
+        };
+        let _pending_guard = PendingGuard { pending, id };
+        match tokio::time::timeout(self.timeout, receiver).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err(disconnected()),
+            Err(_) => Err(StoreError::new(
+                504,
+                "connector_timeout",
+                "Connector timed out; the store outcome may be unknown",
+            )),
         }
     }
 
@@ -323,10 +401,10 @@ impl Transport {
             if channel.decrypt(&confirm)?.as_deref() != Some(b"confirm") {
                 return Err(crypto::error());
             }
-            Ok((channel, endpoint))
+            Ok((channel, endpoint, registration.logs_version == Some(1)))
         })
         .await;
-        let Ok(Ok((mut channel, endpoint))) = authenticated else {
+        let Ok(Ok((mut channel, endpoint, logs_supported))) = authenticated else {
             self.connection_event(
                 &id,
                 "connector.handshake_failed",
@@ -357,6 +435,7 @@ impl Transport {
                     close,
                     screenshot_wake,
                     pending: pending.clone(),
+                    logs_supported,
                 },
             );
         }
@@ -402,7 +481,7 @@ impl Transport {
                 request = requests.recv() => {
                     let Some(request) = request else {break;};
                     // A canceled HTTP caller must not cause a command to be sent later.
-                    if !pending.lock().unwrap().contains_key(&request.request_id) {continue;}
+                    if !pending.lock().unwrap().contains_key(request.request_id()) {continue;}
                     let Ok(text) = serde_json::to_string(&request) else {break;};
                     let Ok(records)=channel.encrypt(text.as_bytes()) else {break;};
                     let mut sent=true;

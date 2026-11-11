@@ -138,6 +138,9 @@ fn catalog() -> Value {
             "adminToken":{"transport":["http","https"],"canReadApiDocs":false,"canBind":true}},
         "applicationIdentity":{"platform":["ios","android"],"identifier":"iOS Bundle ID / Android 包名，大小写精确匹配"},
         "endpoints":endpoints,
+        "adminDiagnostics":{"authentication":["adminToken"],"method":"GET","path":"/v1/connectors/{id}/logs/latest",
+            "summary":"读取指定商店节点最新 JSONL 日志文件；中心流式转发，不保存文件副本",
+            "requiresConnectorUpgrade":true,"oldNodeError":{"status":409,"code":"logs_upgrade_required"}},
         "uploadEndpoints":[
             {"method":"POST","path":format!("{APP}/uploads"),"summary":"申请图片上传凭据","requestSchema":"#/components/schemas/UploadInput","authentication":["integrationToken","businessToken"]},
             {"method":"PUT","path":format!("{APP}/uploads/{{assetId}}"),"summary":"按返回的 uploadUrl 上传原始文件字节","authentication":["uploadToken"],"contentTypes":["image/png","image/jpeg"],"maxBytes":67108864}

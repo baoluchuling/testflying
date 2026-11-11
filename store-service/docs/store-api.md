@@ -723,6 +723,30 @@ STORE_API_TOKEN="$INTEGRATION_TOKEN" python3 examples/upload-image.py \
 
 ## 商店 Connector 本机日志
 
+### 从中心下载最新节点日志
+
+后台展开「中心商店日志 · 最近七天」，选择商店节点，点击「下载最新节点日志」。节点需先安装本次「仅升级程序」包；旧节点保持连接但显示需升级，不向它发送未知控制命令。截图节点不提供此接口。
+
+管理员接口：`GET /v1/connectors/{connectorId}/logs/latest`，使用 `Authorization: Bearer STORE_API_ADMIN_TOKEN`。后台会话路由为 HTTPS `GET /connector-setup/api/connectors/{connectorId}/logs/latest`。普通业务和接入 Token 无权限。返回 `application/x-ndjson` 附件和 `Cache-Control: no-store`。中心通过现有加密 WSS（或已配置的节点 HTTP 回退）逐块读取并转发，不保存日志文件副本，不调用商店、不重放任务，也不占用商店账号任务锁。
+
+返回最新小时文件的固定字节快照；下载期间追加的事件留到下次读取，文件缺失、缩短或不属于该节点时失败。连接中的旧节点返回 `409 logs_upgrade_required`；停用节点返回 `409 connector_disabled`；不可用返回 `503 logs_unavailable` 或 `connector_disconnected`。传输中失败会截断下载，需重新取文件。后台下载沿用 160 MiB 上限，中心接口自身按 32 KiB 分块流式转发，不按大小删除本机日志。
+
+节点 HTTP 控制接口为 `POST /v1/diagnostics/logs`，使用现有节点 Bearer Token。请求不带 platform 或应用标识：
+
+```json
+{"requestId":"diagnostic-1","action":{"type":"latest"}}
+```
+
+成功返回 StoreReply：`{"requestId":"diagnostic-1","status":200,"body":{"file":"store-connector-0000498420.jsonl","sizeBytes":12345}}`。中心按返回的文件和快照大小读取：
+
+```json
+{"requestId":"diagnostic-2","action":{"type":"read","file":"store-connector-0000498420.jsonl","offset":0,"length":12345,"snapshotSize":12345}}
+```
+
+`length` 范围 1–32768；回复 body 为 `file`、`offset`、`snapshotSize` 和 Base64 `data`。只允许未过期且表头归属一致的固定日志名，禁止路径、链接和任意文件读取。WSS 握手声明 `logsVersion:1`，使用同一控制请求。中心只记录下载开始、结束、取消与字节数，不将文件内容写入中心日志。
+
+### 本机留存和诊断内容
+
 新版商店节点在 `connector.json` 同目录的 `logs` 文件夹中写入 UTF-8 JSONL，前台及开机后台运行均生效。Windows 安装位置为 `C:\Program Files\Testflying Connector\data\logs`；macOS 为 `/Library/Application Support/Testflying Connector/data/logs`；手动部署位于实际配置文件旁。仅升级程序也会保留既有配置和凭据，并为 Windows 后台账号配置日志目录写权限。
 
 日志按小时分文件，例如 `store-connector-0000498420.jsonl`，按时间保留最多七天，不按文件大小轮转。每分钟和启动时清理；过期按小时起点判断，七天边界最多提前一小时。不删除无归属标记的文件或链接。后台关闭时不运行清理，下一次启动继续清理。
@@ -730,6 +754,8 @@ STORE_API_TOKEN="$INTEGRATION_TOKEN" python3 examples/upload-image.py \
 记录请求 ID、平台、应用、任务接收/回复/实际执行完成、超时、连接/重连，以及每个上游 HTTP 步骤（如 `edit_commit`、`edit_discard`、`oauth_token`）、脱敏路径模板、方法、状态和耗时。`contentLengthHeader` 是构造请求时显式声明的 Content-Length；null 表示未显式声明，不等于抓包证明线上缺失。`bodyBytes` 是已知正文长度，流式未知时为 null。无正文 POST 明确声明 0，保持空体，不发送 `{}`，不会自动重试。
 
 文案仅记已知字段字符数/字节数/SHA-256；不记录文案原文、Token、Cookie、JWT、私钥、账号正文、图片字节、完整 URL、查询或签名上传链接。HTTP 失败不会保存未经脱敏的商店响应正文。调用方超时后，已启动任务的最终执行和清理结果仍会记录。
+
+新版在 `upstream.error` 中增加 `details.vendor`：仅提取允许的 Apple/Google/OAuth 标准错误码、标准字段名和固定原因分类（如 `changes_in_review`、`review_flag_required`、`app_not_published`、`permission_denied`）。错误正文最多读取 64 KiB，仅在内存分析，不记录原始 message/detail；无法识别时标记 `unclassified`。`errorBodyRead` 为 complete、truncated 或 incomplete。旧请求丢失的商店响应正文无法补回，下载文件也不能凭空确定其具体原因。
 
 Windows 可在管理员 PowerShell 查看最新文件：
 

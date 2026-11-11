@@ -76,6 +76,14 @@
       </details>
       <details id="logWorkspace" class="card" hidden>
         <summary>中心商店日志 · 最近七天</summary>
+        <section>
+          <h3>节点本机日志</h3>
+          <p class="muted">读取所选商店节点的最新日志文件。文件由中心转发，不在中心保存副本。</p>
+          <label for="nodeLogSelect">商店节点</label><select id="nodeLogSelect"></select>
+          <button id="nodeLogDownload" type="button" disabled>下载最新节点日志</button>
+          <button id="nodeLogRefresh" type="button" class="quiet">刷新节点状态</button>
+          <p id="nodeLogStatus" role="status" aria-live="polite"></p>
+        </section>
         <p class="muted">查看请求、节点转发和错误。文案仅记录字段长度与摘要，凭据及图片内容不会写入日志。超过七天自动清理。</p>
         <form id="logFilters">
           <div class="grid">

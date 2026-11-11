@@ -232,9 +232,9 @@ async fn google_empty_commit_declares_zero_length_and_records_safe_step_logs() {
                 );
             }
             return (
-                StatusCode::SERVICE_UNAVAILABLE,
+                StatusCode::BAD_REQUEST,
                 vec![],
-                b"private-vendor-message".to_vec(),
+                br#"{"error":{"status":"FAILED_PRECONDITION","message":"private-vendor-message: You already have changes in review; private-copy"}}"#.to_vec(),
             );
         }
         google_base(r).unwrap_or_else(|| ok(json!({})))
@@ -282,7 +282,19 @@ async fn google_empty_commit_declares_zero_length_and_records_safe_step_logs() {
     assert_eq!(commit["requestId"], request.request_id);
     assert_eq!(commit["details"]["contentLengthHeader"], 0);
     assert_eq!(commit["details"]["bodyBytes"], 0);
-    assert_eq!(commit["details"]["status"], 503);
+    assert_eq!(commit["details"]["status"], 400);
+    let error = entries
+        .iter()
+        .find(|entry| {
+            entry["event"] == "upstream.error" && entry["details"]["step"] == "edit_commit"
+        })
+        .unwrap();
+    assert_eq!(error["details"]["vendor"]["code"], "FAILED_PRECONDITION");
+    assert_eq!(
+        error["details"]["vendor"]["classification"],
+        "changes_in_review"
+    );
+    assert_eq!(error["details"]["errorBodyRead"], "complete");
     assert!(entries
         .iter()
         .any(|entry| entry["details"]["step"] == "edit_discard"));

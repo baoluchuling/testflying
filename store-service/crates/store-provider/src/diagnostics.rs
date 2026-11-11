@@ -77,6 +77,83 @@ impl Log {
     pub fn directory(&self) -> &Path {
         &self.directory
     }
+    fn read_existing(&self, hour: u64) -> io::Result<File> {
+        check_directory(&fs::symlink_metadata(&self.directory)?)?;
+        let path = self
+            .directory
+            .join(format!("store-connector-{hour:010}.jsonl"));
+        let mut file = secure_options().open(path)?;
+        check_file(&file.metadata()?)?;
+        file.lock()?;
+        verify_header(
+            &mut file,
+            &json!({"schema":1,"owner":OWNER,"connectorId":self.node,"hour":hour}),
+        )?;
+        Ok(file)
+    }
+    pub fn latest_snapshot(&self) -> io::Result<Value> {
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| io::Error::other("Log lock unavailable"))?;
+        check_directory(&fs::symlink_metadata(&self.directory)?)?;
+        let now = now_ms() / 3_600_000;
+        let mut latest = None;
+        for entry in fs::read_dir(&self.directory)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let Some(name) = name.to_str() else { continue };
+            let Some(hour) = store_protocol::logs::log_hour(name) else {
+                continue;
+            };
+            if hour <= now
+                && hour.saturating_add(HOURS) > now
+                && latest.is_none_or(|old| hour > old)
+            {
+                latest = Some(hour);
+            }
+        }
+        let hour = latest.ok_or_else(|| io::Error::other("No current node log"))?;
+        let file = self.read_existing(hour)?;
+        Ok(
+            json!({"file":format!("store-connector-{hour:010}.jsonl"),"sizeBytes":file.metadata()?.len()}),
+        )
+    }
+    pub fn read_snapshot(
+        &self,
+        name: &str,
+        offset: u64,
+        length: u32,
+        snapshot_size: u64,
+    ) -> io::Result<Value> {
+        use std::io::Read;
+        let hour = store_protocol::logs::log_hour(name)
+            .ok_or_else(|| io::Error::other("Invalid node log name"))?;
+        let now = now_ms() / 3_600_000;
+        if hour > now
+            || hour.saturating_add(HOURS) <= now
+            || length == 0
+            || length as usize > store_protocol::logs::MAX_LOG_CHUNK
+            || offset > snapshot_size
+        {
+            return Err(io::Error::other("Invalid node log range"));
+        }
+        let _guard = self
+            .lock
+            .lock()
+            .map_err(|_| io::Error::other("Log lock unavailable"))?;
+        let mut file = self.read_existing(hour)?;
+        if file.metadata()?.len() < snapshot_size {
+            return Err(io::Error::other("Node log snapshot changed"));
+        }
+        let count = (snapshot_size - offset).min(length as u64) as usize;
+        file.seek(SeekFrom::Start(offset))?;
+        let mut bytes = vec![0; count];
+        file.read_exact(&mut bytes)?;
+        Ok(
+            json!({"file":name,"offset":offset,"snapshotSize":snapshot_size,"data":store_protocol::upload::encode_chunk(&bytes)}),
+        )
+    }
     pub fn event(&self, name: &'static str, details: Value) {
         self.emit(None, name, details);
     }
@@ -348,6 +425,11 @@ impl HttpGuard {
             log.emit(self.meta.as_ref(), event, self.details.clone());
         }
     }
+    pub(crate) fn error_response(&mut self, bytes: &[u8], state: &'static str) {
+        self.details["vendor"] = crate::upstream_error::summarize(bytes);
+        self.details["errorBodyRead"] = json!(state);
+        self.record("upstream.error");
+    }
 }
 impl Drop for HttpGuard {
     fn drop(&mut self) {
@@ -510,6 +592,50 @@ mod tests {
         .unwrap();
         assert!(text.contains("\"event\":\"test\""));
     }
+
+    #[test]
+    fn snapshots_stream_large_logs_and_ignore_later_appends() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("connector.json");
+        fs::write(&config, "{}").unwrap();
+        let log = Log::for_config(&config, "test-node").unwrap();
+        let hour = now_ms() / 3_600_000;
+        let mut file = log.file(hour).unwrap();
+        file.seek(SeekFrom::End(0)).unwrap();
+        let line = format!("{{\"fixture\":\"{}\"}}\n", "x".repeat(4096));
+        for _ in 0..600 {
+            file.write_all(line.as_bytes()).unwrap();
+        }
+        file.flush().unwrap();
+        drop(file);
+        let snapshot = log.latest_snapshot().unwrap();
+        let name = snapshot["file"].as_str().unwrap();
+        let size = snapshot["sizeBytes"].as_u64().unwrap();
+        assert!(size > store_protocol::crypto::MAX_JSON_BYTES as u64);
+        log.event("after_snapshot", json!({}));
+        let mut offset = 0;
+        let mut downloaded = Vec::new();
+        while offset < size {
+            let value = log
+                .read_snapshot(
+                    name,
+                    offset,
+                    store_protocol::logs::MAX_LOG_CHUNK as u32,
+                    size,
+                )
+                .unwrap();
+            let bytes =
+                store_protocol::upload::decode_chunk(value["data"].as_str().unwrap()).unwrap();
+            assert!(!bytes.is_empty());
+            offset += bytes.len() as u64;
+            downloaded.extend(bytes);
+        }
+        assert_eq!(downloaded.len() as u64, size);
+        assert!(!String::from_utf8_lossy(&downloaded).contains("after_snapshot"));
+        assert!(log.read_snapshot("../connector.json", 0, 1, size).is_err());
+        assert!(log.read_snapshot(name, size + 1, 1, size).is_err());
+        assert!(log.read_snapshot(name, 0, 1, u64::MAX).is_err());
+    }
     #[test]
     fn sensitive_payloads_and_paths_are_not_copied() {
         let value = summary(
@@ -550,6 +676,10 @@ mod tests {
         ));
         symlink(&target, &path).unwrap();
         assert!(log.append(&json!({"event":"test"})).is_err());
+        assert!(log.latest_snapshot().is_err());
+        assert!(log
+            .read_snapshot(path.file_name().unwrap().to_str().unwrap(), 0, 1, 1)
+            .is_err());
         assert_eq!(fs::read_to_string(&target).unwrap(), "keep");
         fs::remove_file(&path).unwrap();
         let foreign = log.directory.join("store-connector-0000000001.jsonl");

@@ -390,6 +390,21 @@ async fn websocket_routes_multiple_apps_and_rejects_duplicate_nodes() {
     )
     .await;
     wait_connected(&state, &node.connector_id).await;
+    assert!(!state.transport.logs_supported(&node.connector_id));
+    let unsupported = state
+        .transport
+        .dispatch_logs(
+            &node,
+            &token,
+            store_protocol::logs::LogRequest {
+                request_id: "legacy-log-check".into(),
+                action: store_protocol::logs::LogAction::Latest,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(unsupported.code, "logs_upgrade_required");
+    assert!(state.transport.connected(&node.connector_id));
     let mut duplicate = format!(
         "{}/v1/connectors/{}/ws",
         base.replacen("http", "ws", 1),
@@ -573,6 +588,176 @@ async fn timeout_busy_disconnect_and_reconnect_never_replay_commands() {
         .unwrap();
     assert_eq!(fresh.await.unwrap().unwrap().body, json!({"fresh":true}));
     state.transport.close_all();
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn latest_node_log_streams_over_http_and_encrypted_websocket_without_app_binding() {
+    let state = state(Duration::from_secs(5));
+    let node = state.registry.create(input()).unwrap();
+    let token = state.registry.token(&node);
+    let (base, center) = serve(store_api::router(state.clone())).await;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("connector.json");
+    std::fs::write(&path, "{}").unwrap();
+    let log = store_provider::diagnostics::Log::for_config(&path, &node.connector_id).unwrap();
+    // A log larger than one encrypted message must still stream without store credentials.
+    for _ in 0..600 {
+        log.event("fixture", json!({"data":"x".repeat(4096)}));
+    }
+    let snapshot = log.latest_snapshot().unwrap();
+    let expected = std::fs::read(log.directory().join(snapshot["file"].as_str().unwrap())).unwrap();
+    assert!(expected.len() > crypto::MAX_JSON_BYTES);
+    let config:ConnectorConfig=serde_json::from_value(json!({"connectorId":node.connector_id,"token":token,
+        "messageKey":state.registry.purpose_key(&node,"message"),"uploadKey":state.registry.purpose_key(&node,"upload"),
+        "serverUrl":base,"platformMode":"android","provider":{"mode":"mock"}})).unwrap();
+    let executor = Executor::with_log(config, Some(log.clone())).unwrap();
+    let (direct, node_server) = serve(store_connector::http_router(executor.clone())).await;
+    state
+        .registry
+        .register_endpoint(&node.connector_id, &token, Some(&direct))
+        .unwrap();
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let control = format!("{direct}/v1/diagnostics/logs");
+    let latest = json!({"requestId":"fixture-control","action":{"type":"latest"}});
+    assert_eq!(
+        client
+            .post(&control)
+            .bearer_auth(CLIENT)
+            .json(&latest)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let invalid = client
+        .post(&control)
+        .bearer_auth(&token)
+        .json(&json!({"requestId":"invalid","action":{
+        "type":"read","file":"../connector.json","offset":0,"length":1,"snapshotSize":1}}))
+        .send()
+        .await
+        .unwrap()
+        .json::<StoreReply>()
+        .await
+        .unwrap();
+    assert_eq!(invalid.status, 422);
+    let url = format!("{base}/v1/connectors/{}/logs/latest", node.connector_id);
+    assert_eq!(
+        client
+            .get(&url)
+            .bearer_auth(CLIENT)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        401
+    );
+    let http = client.get(&url).bearer_auth(ADMIN).send().await.unwrap();
+    assert_eq!(http.status(), 200);
+    assert_eq!(http.headers()["cache-control"], "no-store");
+    assert_eq!(http.bytes().await.unwrap().as_ref(), expected);
+    let (stop, stopped) = tokio::sync::watch::channel(false);
+    let active = tokio::spawn(store_connector::run_active(executor.clone(), stopped));
+    wait_connected(&state, &node.connector_id).await;
+    assert!(state.transport.logs_supported(&node.connector_id));
+    state
+        .transport
+        .dispatch_logs(
+            &node,
+            &token,
+            store_protocol::logs::LogRequest {
+                request_id: "connected-barrier".into(),
+                action: store_protocol::logs::LogAction::Latest,
+            },
+        )
+        .await
+        .unwrap();
+    let current = log.latest_snapshot().unwrap();
+    let expected = std::fs::read(log.directory().join(current["file"].as_str().unwrap())).unwrap();
+    let wss = client.get(&url).bearer_auth(ADMIN).send().await.unwrap();
+    assert_eq!(wss.status(), 200);
+    assert_eq!(wss.bytes().await.unwrap().as_ref(), expected);
+    state
+        .registry
+        .set_enabled(&node.connector_id, false)
+        .unwrap();
+    assert_eq!(
+        client
+            .get(&url)
+            .bearer_auth(ADMIN)
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        409
+    );
+    stop.send(true).unwrap();
+    tokio::time::timeout(Duration::from_secs(2), active)
+        .await
+        .unwrap()
+        .unwrap();
+    executor.drain().await;
+    state.transport.close_all();
+    node_server.abort();
+    let _ = node_server.await;
+    center.abort();
+    let _ = center.await;
+}
+
+#[tokio::test]
+async fn node_log_download_audits_cancellation_and_rejects_corrupt_chunks() {
+    use axum::routing::post;
+    let state = state(Duration::from_secs(2));
+    let node = state.registry.create(input()).unwrap();
+    let fake=Router::new().route("/v1/diagnostics/logs",post(|axum::Json(request):axum::Json<Value>|async move {
+        let body=if request["action"]["type"]=="latest" {json!({"file":"store-connector-0000498420.jsonl","sizeBytes":1})}
+            else {json!({"file":"store-connector-0000498420.jsonl","offset":999,"snapshotSize":1,"data":"eA=="})};
+        axum::Json(json!({"requestId":request["requestId"],"status":200,"body":body}))
+    }));
+    let (base, server) = serve(fake).await;
+    state
+        .registry
+        .register_endpoint(
+            &node.connector_id,
+            &state.registry.token(&node),
+            Some(&base),
+        )
+        .unwrap();
+    let app = store_api::router(state.clone());
+    let path = format!("/v1/connectors/{}/logs/latest", node.connector_id);
+    let request = || {
+        Request::builder()
+            .uri(&path)
+            .header("authorization", format!("Bearer {ADMIN}"))
+            .body(Body::empty())
+            .unwrap()
+    };
+    let cancelled = app.clone().oneshot(request()).await.unwrap();
+    assert_eq!(cancelled.status(), 200);
+    drop(cancelled);
+    let corrupt = app.clone().oneshot(request()).await.unwrap();
+    assert!(corrupt.into_body().collect().await.is_err());
+    let (_, entries) = call(
+        app,
+        "GET",
+        &format!("/v1/logs?connectorId={}", node.connector_id),
+        ADMIN,
+        Value::Null,
+    )
+    .await;
+    let entries = entries["entries"].as_array().unwrap();
+    assert!(entries
+        .iter()
+        .any(|e| e["event"] == "node.logs.download_cancelled"));
+    assert!(entries
+        .iter()
+        .any(|e| e["event"] == "node.logs.download_failed"));
+    assert!(!entries
+        .iter()
+        .any(|e| e["event"] == "node.logs.download_completed"));
     server.abort();
     let _ = server.await;
 }
