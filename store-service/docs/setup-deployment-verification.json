@@ -1,15 +1,15 @@
 {
-  "runId": "a7bfe8e3d61b4e1bae3487a58893ca9f",
+  "runId": "361f9079193d4a029bbc14cc0646270f",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-11T03:33:24.274715+00:00",
-  "deploymentCommit": "abf18becb5c0fab2de3d07a563ae852fe1c66575",
-  "binarySourceCommit": "05c8f3631180eadb2b3e3eb7b6e86803726427a6",
-  "apiSha256": "41959338321f93c7d9c5ddbdf83cb8a3b384e9913a7a3d8ea0c615e6d3061a38",
+  "finishedAt": "2026-11-11T04:25:07.414751+00:00",
+  "deploymentCommit": "7585bd666052fc7096593316422b5c8f8b05448e",
+  "binarySourceCommit": "b529bce9fcb7c6e73c4ffd36a159479a6279f077",
+  "apiSha256": "8b60149bbf6874da8c0362d1979caa6dde7d0b1f4af0b61c40456833f2239d50",
   "connectorBinarySha256": {
-    "linux-amd64": "00e9961027e25bdbe82c7b5b00108bf4870bdc6d031a5465158beb79cbff039c",
-    "darwin-arm64": "676a65819b6bd2d1e127b25537b6f2d2257397768e2da09c9ed33b5524de4495",
-    "windows-amd64": "699eee05114b10c1d422223b0fbf85fc72c172feed0cb8e105eafceab63b8e6d"
+    "linux-amd64": "aab2e4714f7be78040c262bead81dddff7e0cb30f93ccfc4bcd35ea1227556da",
+    "darwin-arm64": "b1331485cf8c8d3f5393ffa30b6c7f2e94fd011a75fb146774532984e10329de",
+    "windows-amd64": "9366238557a8fa8aee2a1e7a932a4a14b7c034629ba0acfeb204ab48d7f3eb14"
   },
   "screenshotConnectorSha256": "a41f8006b9502f3f540a5d735f8eb92bc903910078c7ce42bb980e44f221f776",
   "screenshotUploadConfigured": false,
@@ -69,12 +69,12 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "a7bfe8e3d61b4e1bae3487a58893ca9f",
-    "sourceCommit": "abf18becb5c0fab2de3d07a563ae852fe1c66575",
+    "runId": "361f9079193d4a029bbc14cc0646270f",
+    "sourceCommit": "7585bd666052fc7096593316422b5c8f8b05448e",
     "downloadVerified": {
-      "linux-amd64": "00e9961027e25bdbe82c7b5b00108bf4870bdc6d031a5465158beb79cbff039c",
-      "darwin-arm64": "676a65819b6bd2d1e127b25537b6f2d2257397768e2da09c9ed33b5524de4495",
-      "windows-amd64": "699eee05114b10c1d422223b0fbf85fc72c172feed0cb8e105eafceab63b8e6d"
+      "linux-amd64": "aab2e4714f7be78040c262bead81dddff7e0cb30f93ccfc4bcd35ea1227556da",
+      "darwin-arm64": "b1331485cf8c8d3f5393ffa30b6c7f2e94fd011a75fb146774532984e10329de",
+      "windows-amd64": "9366238557a8fa8aee2a1e7a932a4a14b7c034629ba0acfeb204ab48d7f3eb14"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": true,
@@ -83,6 +83,11 @@
     "nodeLogsRetentionDays": 7,
     "nodeLogDownloadProtocol": 1,
     "safeVendorErrorDiagnostics": true,
+    "googleCommit": {
+      "changesNotSentForReview": "omitted",
+      "changesInReviewBehavior": "ERROR_IF_IN_REVIEW",
+      "maySendForReview": true
+    },
     "emptyPostContentLengthZero": true,
     "iosLatestVersionOnly": true
   },
@@ -99,11 +104,11 @@
   },
   "nodeLogControlVerification": {
     "oldNodeChecks": [
-      "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
-      "5d4a07c0-2a1b-47e7-a450-8484e225e168"
+      "806eb06e-90ef-43d3-8b0a-ac3410a2a75e"
     ],
     "adminOnly": true,
     "oldNodesRemainConnected": true,
+    "normalGoogleCommitDocumented": true,
     "nodes": [
       {
         "connectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
@@ -124,7 +129,7 @@
         "name": "\u6c5f\u897f\u805a\u6587",
         "kind": "store",
         "connected": true,
-        "logsAvailable": false
+        "logsAvailable": true
       }
     ],
     "realStoreRequests": 0
