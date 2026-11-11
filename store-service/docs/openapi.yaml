@@ -83,6 +83,7 @@ components:
         provider: {type: object, additionalProperties: true}
     Sync:
       type: object
+      description: Android sync commits the Google edit normally and may send changes for review. Omits changesNotSentForReview; retains changesInReviewBehavior=ERROR_IF_IN_REVIEW to reject when changes are already in review. Not a draft-only save, no automatic mutation retries.
       required: [operation]
       allOf:
         - if:

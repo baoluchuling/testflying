@@ -120,7 +120,7 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 | CPP 宣传文本和截图同步 | 支持 | 不支持 |
 | 图片上传和替换 | Asset Library、关联及排序；手机／平板／折叠屏 | 手机／平板／feature graphic |
 
-当前不提供通用送审、发布、评论回复、CPP 列表／删除或 PPO 启停功能。管理员专用节点和绑定查询见下节附录，不属于外部的两个接入接口。
+当前不提供独立的通用送审、发布、评论回复、CPP 列表／删除或 PPO 启停功能。Android sync 会正常提交 Google edit，可能触发送审，详见下文；不能视为仅保存草稿。管理员专用节点和绑定查询见下节附录，不属于外部的两个接入接口。
 
 ## 列出节点和绑定应用
 
@@ -479,7 +479,9 @@ Android：
 
 locale 和非空 releaseNotes 必填，iOS 自动使用最新版本，无需 version。Android storeRelease 可省略；若提供，可用非空字符串 track、versionCode、versionName 组合筛选，versionCode 必须传字符串。条件同时满足才匹配；不指定时选现有最高数值 versionCode，指定部分条件时在匹配范围内选择。保留其他语言和其他 release。
 
-`release_notes` 不是合法 scope，版本说明通过本 operation 更新。Android 提交 edit 不自动送审或发布。
+`release_notes` 不是合法 scope，版本说明通过本 operation 更新。
+
+Android 的文案、图片及版本说明同步使用普通 Google edit commit：不发送 `changesNotSentForReview`，保留 `changesInReviewBehavior=ERROR_IF_IN_REVIEW`。已有更改审核中时拒绝提交，不主动取消已有审核；否则正常提交可触发送审，审核通过后的上线行为由 Google Play 状态和自管式发布设置决定。提交还可能带上 Play Console 其他待送审修改，调用前应协调该应用的后台操作。这不是只保存草稿的接口，不保证留待人工送审；失败不切换参数自动重试。
 
 ### 9.3 更新图片
 

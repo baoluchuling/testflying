@@ -72,7 +72,16 @@ async fn handler(State(state): State<FakeState>, request: Request) -> Response {
     // This prevents permissive fake handlers from masking malformed live calls.
     let deprecated_screenshot_request = record.uri.contains("/appScreenshot");
     let invalid_locale_creation = invalid_apple_locale_creation(&record);
-    let (status, headers, bytes) = if deprecated_screenshot_request
+    let unsupported_google_review_flag =
+        record.uri.starts_with("/androidpublisher/v3/applications/")
+            && record.uri.contains(":commit?")
+            && reqwest::Url::parse(&format!("http://fixture{}", record.uri))
+                .unwrap()
+                .query_pairs()
+                .any(|(key, _)| key == "changesNotSentForReview");
+    let (status, headers, bytes) = if unsupported_google_review_flag {
+        (StatusCode::BAD_REQUEST,vec![],br#"{"error":{"status":"INVALID_ARGUMENT","message":"changesNotSentForReview must not be set for this application"}}"#.to_vec())
+    } else if deprecated_screenshot_request
         || invalid_locale_creation
         || invalid_apple_library_request(&record)
     {
@@ -705,7 +714,7 @@ async fn google_oauth_cache_targeted_release_and_safe_commit() {
     let commit = records.iter().find(|r| r.uri.contains(":commit?")).unwrap();
     assert_eq!(commit.headers.get("content-length").unwrap(), "0");
     assert!(commit.bytes.is_empty());
-    assert!(commit.uri.contains("changesNotSentForReview=true"));
+    assert!(!commit.uri.contains("changesNotSentForReview"));
     assert!(commit
         .uri
         .contains("changesInReviewBehavior=ERROR_IF_IN_REVIEW"));
@@ -721,7 +730,7 @@ async fn google_metadata_scope_and_failed_commit_discard_edit_without_retry() {
                 return (
                     StatusCode::BAD_REQUEST,
                     vec![],
-                    b"private upstream bearer and key material".to_vec(),
+                    br#"{"error":{"status":"FAILED_PRECONDITION","message":"You already have changes in review. private upstream bearer and key material"}}"#.to_vec(),
                 );
             }
             ok(json!({}))
@@ -748,6 +757,11 @@ async fn google_metadata_scope_and_failed_commit_discard_edit_without_retry() {
     assert!(records
         .iter()
         .any(|r| r.method == "DELETE" && r.uri.ends_with("/edits/edit")));
+    let commit = records.iter().find(|r| r.uri.contains(":commit?")).unwrap();
+    assert!(commit
+        .uri
+        .contains("changesInReviewBehavior=ERROR_IF_IN_REVIEW"));
+    assert!(!commit.uri.contains("changesNotSentForReview"));
 }
 
 #[tokio::test]
@@ -1958,9 +1972,9 @@ async fn explicit_empty_image_arrays_clear_only_the_selected_slot() {
             || r.uri.ends_with("/featureGraphic"))));
     assert!(!records.iter().any(|r| r.uri.starts_with("/upload/")
         || (r.method == "POST" && r.uri == "/v1/appAssetLibraryImages")));
-    assert!(records
-        .iter()
-        .any(|r| r.uri.contains(":commit?") && r.uri.contains("changesNotSentForReview=true")));
+    assert!(records.iter().any(|r| r.uri.contains(":commit?")
+        && r.uri.contains("changesInReviewBehavior=ERROR_IF_IN_REVIEW")
+        && !r.uri.contains("changesNotSentForReview")));
 }
 
 #[tokio::test]

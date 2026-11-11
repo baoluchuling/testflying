@@ -121,6 +121,13 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert!(unique.contains(&("GET", "/v1/store-management/connectors")));
     assert!(unique.contains(&("PUT", "/v1/apps/{platform}/{bundleIdentifier}/connector")));
     assert_eq!(catalog["uploadEndpoints"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        catalog["sync"]["androidCommit"],
+        json!({
+            "changesNotSentForReview":"omitted","changesInReviewBehavior":"ERROR_IF_IN_REVIEW",
+            "maySendForReview":true,"draftOnly":false,
+        })
+    );
     let query = &catalog["imageQuery"];
     assert_eq!(
         query["parameters"][1]["enum"],

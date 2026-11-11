@@ -258,7 +258,13 @@ impl Gateway {
                     }
                     json!({})
                 };
-                self.api(Platform::Android,Method::POST,&format!("{path}:commit?changesNotSentForReview=true&changesInReviewBehavior=ERROR_IF_IN_REVIEW"),None).await?;
+                self.api(
+                    Platform::Android,
+                    Method::POST,
+                    &format!("{path}:commit?changesInReviewBehavior=ERROR_IF_IN_REVIEW"),
+                    None,
+                )
+                .await?;
                 Ok(succeeded(state))
             }
             _ => Err(invalid("Unsupported Google edit operation")),
