@@ -658,9 +658,9 @@ fn apple_upload_base(record: &Record, image: &[u8], base: &str) -> Option<Reply>
             json!({"data":{"type":"appAssetLibraryImages","id":"shot","attributes":{"state":"AWAITING_UPLOAD","uploadOperations":[{"method":"PUT","url":format!("{base}/chunk"),"offset":0,"length":image.len(),"requestHeaders":[{"name":"x-upload","value":"chunk-header"}]}]}}}),
         ));
     }
-    if record.method == "GET" && record.uri == "/v1/appAssetLibraryImages/shot" {
+    if record.method == "PATCH" && record.uri == "/v1/appAssetLibraryImages/shot" {
         return Some(ok(
-            json!({"data":{"type":"appAssetLibraryImages","id":"shot","attributes":{"state":"PREPARE_FOR_SUBMISSION","specId":"spec","imageAsset":{"width":2,"height":3}}}}),
+            json!({"data":{"type":"appAssetLibraryImages","id":"shot","attributes":{"state":"UPLOAD_COMPLETE"}}}),
         ));
     }
     if record.method == "POST" && record.uri == "/v1/appAssetLibraryPlacements" {
@@ -1061,9 +1061,9 @@ async fn image_uploads_stage_library_assets_before_placements_and_google_multipa
     assert!(records.iter().any(|r| r.method == "PATCH"
         && r.uri == "/v1/appAssetLibraryImages/shot"
         && r.body()["data"]["attributes"] == json!({"uploaded":true})));
-    let processed = records
+    let committed = records
         .iter()
-        .position(|r| r.method == "GET" && r.uri == "/v1/appAssetLibraryImages/shot")
+        .position(|r| r.method == "PATCH" && r.uri == "/v1/appAssetLibraryImages/shot")
         .unwrap();
     let removed = records
         .iter()
@@ -1073,7 +1073,10 @@ async fn image_uploads_stage_library_assets_before_placements_and_google_multipa
         .iter()
         .position(|r| r.method == "POST" && r.uri == "/v1/appAssetLibraryPlacements")
         .unwrap();
-    assert!(processed < removed && removed < placed);
+    assert!(committed < removed && removed < placed);
+    assert!(!records
+        .iter()
+        .any(|r| r.method == "GET" && r.uri == "/v1/appAssetLibraryImages/shot"));
     assert_eq!(
         records[placed].body()["data"]["relationships"]["appStoreVersionLocalization"]["data"]
             ["id"],
@@ -1101,14 +1104,15 @@ async fn image_uploads_stage_library_assets_before_placements_and_google_multipa
 }
 
 #[tokio::test]
-async fn apple_library_processing_failure_or_spec_mismatch_preserves_existing_placements() {
+async fn apple_library_commit_failure_or_spec_mismatch_preserves_existing_placements() {
     for failed in [true, false] {
         let image = png();
         let endpoint = Arc::new(Mutex::new(String::new()));
         let upstream = endpoint.clone();
         let fake=Fake::new(move |r| {
-            if r.method=="GET" && r.uri=="/v1/appAssetLibraryImages/shot" {
-                return ok(json!({"data":{"id":"shot","attributes":{"state":if failed {"FAILED"}else{"PREPARE_FOR_SUBMISSION"},"specId":"unexpected-spec"}}}));
+            if r.method=="PATCH" && r.uri=="/v1/appAssetLibraryImages/shot" {
+                if failed { return (StatusCode::BAD_REQUEST, vec![], b"private vendor error".to_vec()); }
+                return ok(json!({"data":{"id":"shot","attributes":{"state":"UPLOAD_COMPLETE","specId":"unexpected-spec"}}}));
             }
             apple_upload_base(r,&image,&upstream.lock().unwrap()).or_else(||apple_base(r)).unwrap_or_else(||ok(json!({})))
         }).await;
@@ -1127,18 +1131,13 @@ async fn apple_library_processing_failure_or_spec_mismatch_preserves_existing_pl
 }
 
 #[tokio::test]
-async fn apple_foldable_upload_waits_for_processing_and_orders_both_runtime_groups() {
+async fn apple_foldable_upload_commits_without_polling_and_orders_both_runtime_groups() {
     let image = png();
     let endpoint = Arc::new(Mutex::new(String::new()));
     let upstream = endpoint.clone();
-    let polls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let observed = polls.clone();
     let fake = Fake::new(move |r| {
-        if r.method == "GET"
-            && r.uri == "/v1/appAssetLibraryImages/shot"
-            && observed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0
-        {
-            return ok(json!({"data":{"id":"shot","attributes":{"state":"UPLOAD_COMPLETE"}}}));
+        if r.method == "GET" && r.uri == "/v1/appAssetLibraryImages/shot" {
+            panic!("Committed image must not be polled before placement");
         }
         if r.uri.contains("/placements?") {
             return ok(apple_image_placements(&[
@@ -1159,8 +1158,10 @@ async fn apple_foldable_upload_waits_for_processing_and_orders_both_runtime_grou
         "operation":"update_app_metadata","version":"1.0","locale":"en-US","syncScopes":["store_images"],
         "metadata":{"storeImages":{"foldable_screenshots":{"urls":[format!("{}/image.png",fake.url)]}}}
     }))).await.unwrap()["status"],"succeeded");
-    assert_eq!(polls.load(std::sync::atomic::Ordering::SeqCst), 2);
     let records = fake.records();
+    assert!(!records
+        .iter()
+        .any(|r| r.method == "GET" && r.uri == "/v1/appAssetLibraryImages/shot"));
     let deletes = records
         .iter()
         .filter(|r| r.method == "DELETE")
@@ -1693,6 +1694,199 @@ async fn invalid_apple_upload_range_is_rejected_before_uploaded_completion() {
     assert!(!fake.records().iter().any(|r| r.method == "DELETE"
         || r.uri == "/v1/appAssetLibraryPlacements"
         || r.method == "PATCH" && r.uri == "/v1/appAssetLibraryImages/shot"));
+}
+
+#[tokio::test]
+async fn apple_committed_images_are_placed_without_polling_and_diagnostics_stay_safe() {
+    for (state, safe_state) in [
+        (Some("UPLOAD_COMPLETE"), "UPLOAD_COMPLETE"),
+        (Some("FAILED"), "FAILED"),
+        (Some("REJECTED"), "REJECTED"),
+        (Some("ARCHIVED"), "ARCHIVED"),
+        (Some("private-unknown-state"), "UNKNOWN"),
+        (None, "MISSING"),
+    ] {
+        let image = png();
+        let endpoint = Arc::new(Mutex::new(String::new()));
+        let upstream = endpoint.clone();
+        let fake = Fake::new(move |r| {
+            if r.method == "GET" && r.uri == "/v1/appAssetLibraryImages/shot" {
+                panic!("Successful commit must continue to placement without polling");
+            }
+            if r.method == "PATCH" && r.uri == "/v1/appAssetLibraryImages/shot" {
+                let mut attributes = json!({
+                    "specId":null,
+                    "imageAsset":{"url":"https://private.invalid/private-image.png?token=private-token"},
+                    "stateDetails":{"errors":[{"code":"private-vendor-code","message":"Invalid image dimensions for private-image.png; https://private.invalid/?token=private-token"}]}
+                });
+                if let Some(state) = state {
+                    attributes["state"] = json!(state);
+                }
+                return ok(json!({"data":{"id":"shot","attributes":attributes}}));
+            }
+            if r.uri.contains("/placements?") {
+                return ok(apple_image_placements(&[("old-phone", "phone-profile"), ("keep-tablet", "tablet-profile")]));
+            }
+            apple_upload_base(r, &image, &upstream.lock().unwrap())
+                .or_else(|| apple_base(r))
+                .unwrap_or_else(|| ok(json!({})))
+        })
+        .await;
+        *endpoint.lock().unwrap() = fake.url.clone();
+        let keys = Keys::new();
+        let config_path = keys.dir.path().join("connector.json");
+        std::fs::write(&config_path, "{}").unwrap();
+        let log = store_provider::diagnostics::Log::for_config(&config_path, "test-node").unwrap();
+        let gateway = Gateway::with_log(keys.config(&fake.url), None, Some(log.clone())).unwrap();
+        let mut request = request(
+            Platform::Ios,
+            Operation::Sync,
+            json!({
+                "operation":"update_app_metadata","version":"1.0","locale":"en-US","syncScopes":["store_images"],
+                "metadata":{"storeImages":{"phone_screenshots":{"urls":[format!("{}/image.png",fake.url)]}}}
+            }),
+        );
+        request.request_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into();
+        let result = gateway.execute(&request).await.unwrap();
+        assert_eq!(result["status"], "succeeded");
+        assert_eq!(
+            result["storeState"]["storeImagesSubmission"],
+            json!({"status":"accepted","processingStatus":"not_waited","assetCount":1})
+        );
+        let records = fake.records();
+        assert!(!records
+            .iter()
+            .any(|r| r.method == "GET" && r.uri == "/v1/appAssetLibraryImages/shot"));
+        let chunk = records.iter().find(|r| r.uri == "/chunk").unwrap();
+        assert!(!chunk.headers.contains_key("authorization"));
+        let removed = records
+            .iter()
+            .filter(|r| r.method == "DELETE")
+            .collect::<Vec<_>>();
+        assert_eq!(removed.len(), 1);
+        assert!(removed[0].uri.ends_with("placement%2Dold%2Dphone"));
+        let placements = records
+            .iter()
+            .filter(|r| r.method == "POST" && r.uri == "/v1/appAssetLibraryPlacements")
+            .collect::<Vec<_>>();
+        assert_eq!(placements.len(), 1);
+        let placement = placements[0].body();
+        assert_eq!(
+            placement["data"]["attributes"],
+            json!({"placementType":"APP_SCREENSHOT","placementGroup":"phone-profile"})
+        );
+        assert_eq!(
+            placement["data"]["relationships"]["image"]["data"],
+            json!({"type":"appAssetLibraryImages","id":"shot"})
+        );
+        assert_eq!(
+            placement["data"]["relationships"]["appStoreVersionLocalization"]["data"],
+            json!({"type":"appStoreVersionLocalizations","id":"version-loc"})
+        );
+        let ordering = records
+            .iter()
+            .find(|r| r.uri == "/v1/appAssetLibraryPlacementOrderingRequests")
+            .unwrap()
+            .body();
+        assert_eq!(
+            ordering["data"]["relationships"]["appStoreVersionLocalization"]["data"]["id"],
+            "version-loc"
+        );
+        assert_eq!(
+            ordering["data"]["relationships"]["orderedPlacements"]["data"],
+            json!([{"type":"appAssetLibraryPlacements","id":"new-phone-profile"}])
+        );
+        let committed = records
+            .iter()
+            .position(|r| r.method == "PATCH" && r.uri == "/v1/appAssetLibraryImages/shot")
+            .unwrap();
+        let removed = records.iter().position(|r| r.method == "DELETE").unwrap();
+        assert!(committed < removed);
+        let mut entries = Vec::<Value>::new();
+        let mut all = String::new();
+        for entry in std::fs::read_dir(log.directory()).unwrap() {
+            let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+            all.push_str(&text);
+            entries.extend(
+                text.lines()
+                    .skip(1)
+                    .map(|line| serde_json::from_str::<Value>(line).unwrap()),
+            );
+        }
+        let processing = entries
+            .iter()
+            .find(|entry| {
+                entry["event"] == "apple.image_processing"
+                    && entry["details"]["phase"] == "committed"
+            })
+            .unwrap();
+        assert_eq!(processing["requestId"], request.request_id);
+        assert_eq!(processing["platform"], "ios");
+        assert_eq!(processing["details"]["state"], safe_state);
+        assert_eq!(
+            processing["details"]["reasonClasses"],
+            json!(["invalid_dimensions"])
+        );
+        assert_eq!(processing["details"]["stateDetailsPresent"], true);
+        assert_eq!(processing["details"]["specIdPresent"], false);
+        assert_eq!(processing["details"]["imageAssetPresent"], true);
+        assert_eq!(processing["details"]["submissionAccepted"], true);
+        assert!(!all.contains("private"));
+    }
+}
+
+#[tokio::test]
+async fn apple_committed_image_placement_or_ordering_rejection_still_fails_sync() {
+    for fail_ordering in [false, true] {
+        let image = png();
+        let endpoint = Arc::new(Mutex::new(String::new()));
+        let upstream = endpoint.clone();
+        let fake = Fake::new(move |r| {
+            let rejected_path = if fail_ordering {
+                "/v1/appAssetLibraryPlacementOrderingRequests"
+            } else {
+                "/v1/appAssetLibraryPlacements"
+            };
+            if r.method == "POST" && r.uri == rejected_path {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    vec![],
+                    b"private placement error".to_vec(),
+                );
+            }
+            apple_upload_base(r, &image, &upstream.lock().unwrap())
+                .or_else(|| apple_base(r))
+                .unwrap_or_else(|| ok(json!({})))
+        })
+        .await;
+        *endpoint.lock().unwrap() = fake.url.clone();
+        let keys = Keys::new();
+        let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+        let error = gateway.execute(&request(Platform::Ios, Operation::Sync, json!({
+            "operation":"update_app_metadata","version":"1.0","locale":"en-US","syncScopes":["store_images"],
+            "metadata":{"storeImages":{"phone_screenshots":{"urls":[format!("{}/image.png",fake.url)]}}}
+        }))).await.unwrap_err();
+        assert_eq!(error.status, 502);
+        assert_eq!(error.code, "store_upstream_error");
+        assert!(!error.message.contains("private"));
+        let records = fake.records();
+        assert!(records
+            .iter()
+            .any(|r| r.method == "PATCH" && r.uri == "/v1/appAssetLibraryImages/shot"));
+        assert!(records
+            .iter()
+            .any(|r| r.method == "POST" && r.uri == "/v1/appAssetLibraryPlacements"));
+        assert_eq!(
+            records
+                .iter()
+                .filter(|r| r.uri == "/v1/appAssetLibraryPlacementOrderingRequests")
+                .count(),
+            usize::from(fail_ordering)
+        );
+        assert!(!records
+            .iter()
+            .any(|r| r.method == "GET" && r.uri == "/v1/appAssetLibraryImages/shot"));
+    }
 }
 
 #[tokio::test]

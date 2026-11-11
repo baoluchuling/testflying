@@ -463,7 +463,7 @@ impl Gateway {
             self.apple_patch("appInfoLocalizations", &loc, json!(info_attrs))
                 .await?;
         }
-        if has_images {
+        let submitted_images = if has_images {
             self.apple_sync_images(
                 app,
                 "appStoreVersionLocalization",
@@ -471,9 +471,13 @@ impl Gateway {
                 &localization,
                 &p["metadata"]["storeImages"],
             )
-            .await?;
-        }
-        Ok(succeeded(json!({})))
+            .await?
+        } else {
+            0
+        };
+        let mut result = succeeded(json!({}));
+        image_submission_result(&mut result, submitted_images);
+        Ok(result)
     }
     async fn apple_reviews(&self, app: &str, p: &Value) -> Result<Value> {
         let size = p["pageSize"]
@@ -691,17 +695,31 @@ impl Gateway {
             )
             .await?;
         }
-        if scopes(p, "store_images", false) && page["storeImages"].is_object() {
-            self.apple_sync_images(
-                app,
-                "appCustomProductPageLocalization",
-                "appCustomProductPageLocalizations",
-                &localization,
-                &page["storeImages"],
-            )
-            .await?;
-        }
-        Ok(succeeded(json!({"applePageId":page_id,"created":created})))
+        let submitted_images =
+            if scopes(p, "store_images", false) && page["storeImages"].is_object() {
+                self.apple_sync_images(
+                    app,
+                    "appCustomProductPageLocalization",
+                    "appCustomProductPageLocalizations",
+                    &localization,
+                    &page["storeImages"],
+                )
+                .await?
+            } else {
+                0
+            };
+        let mut result = succeeded(json!({"applePageId":page_id,"created":created}));
+        image_submission_result(&mut result, submitted_images);
+        Ok(result)
+    }
+}
+fn image_submission_result(result: &mut Value, submitted_images: usize) {
+    if submitted_images > 0 {
+        result["storeState"]["storeImagesSubmission"] = json!({
+            "status":"accepted", "processingStatus":"not_waited", "assetCount":submitted_images
+        });
+        result["message"] =
+            json!("Store changes submitted; Apple may still be processing screenshots");
     }
 }
 pub(super) fn resource(
