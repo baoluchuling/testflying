@@ -125,7 +125,6 @@ async fn wait_for_screenshot_wake(
 }
 
 fn screenshot_payload(mut body: Value) -> Value {
-    body["jobId"] = json!(uuid::Uuid::new_v4().to_string());
     body["target"] = json!([{"locale":"en-US","page":"home","device":"phone"}]);
     body
 }
@@ -137,7 +136,7 @@ async fn send(app: &Router, method: &str, path: &str, token: &str, body: Value) 
                 .method(method)
                 .uri(path)
                 .header("x-forwarded-proto", "https")
-                .header("x-screenshot-protocol", "2")
+                .header("x-screenshot-protocol", "3")
                 .header(header::AUTHORIZATION, format!("Bearer {token}"))
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(body.to_string()))
@@ -176,13 +175,10 @@ async fn send_legacy(
         return response;
     }
     let mut job = value(response).await;
-    let id = job["taskId"].as_str().unwrap().to_owned();
+    let id = job["jobId"].as_str().unwrap().to_owned();
     rusqlite::Connection::open(database)
         .unwrap()
-        .execute(
-            "UPDATE screenshot_jobs SET external_job_id=NULL,targets=NULL WHERE id=?1",
-            [&id],
-        )
+        .execute("UPDATE screenshot_jobs SET targets=NULL WHERE id=?1", [&id])
         .unwrap();
     job["jobId"] = json!(id);
     (
@@ -1187,13 +1183,13 @@ async fn screenshot_json(
 }
 
 #[tokio::test]
-async fn structured_submission_has_scoped_external_ids_and_rejects_invalid_targets() {
+async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids() {
     let app = store_api::router(state());
     let (mac, worker) = node(&app, "V2 fixture", "screenshot").await;
     let client = integration(&app, "V2 primary", &[]).await;
     let peer = integration(&app, "V2 peer", &[]).await;
     bind_app(&app, &client, &mac).await;
-    let payload = json!({"jobId":"external-job","platform":"ios","bundleIdentifier":"com.example.app","prompt":"  exact\n","target":[{"locale":"en-US","page":"home","device":"phone"}]});
+    let payload = json!({"platform":"ios","bundleIdentifier":"com.example.app","prompt":"  exact\n","target":[{"locale":"en-US","page":"home","device":"phone"}]});
     let submit = "/v1/screenshot-jobs";
     assert_eq!(
         send(&app, "GET", submit, &client, Value::Null)
@@ -1217,7 +1213,7 @@ async fn structured_submission_has_scoped_external_ids_and_rejects_invalid_targe
         send(
             &app,
             "GET",
-            "/v1/screenshot-jobs?jobId=",
+            "/v1/screenshot-jobs?jobId=not-a-uuid",
             &client,
             Value::Null
         )
@@ -1225,26 +1221,7 @@ async fn structured_submission_has_scoped_external_ids_and_rejects_invalid_targe
         .status(),
         422
     );
-    for opaque in ["外部/任务", ".", "..", "a/../b", "query?name=one&two=三"] {
-        let mut opaque_payload = payload.clone();
-        opaque_payload["jobId"] = json!(opaque);
-        let response = send(&app, "POST", submit, &client, opaque_payload).await;
-        assert_eq!(response.status(), 202);
-        let url = reqwest::Url::parse_with_params(
-            "https://fixture.example/v1/screenshot-jobs",
-            [("jobId", opaque)],
-        )
-        .unwrap();
-        let path = format!("{}?{}", url.path(), url.query().unwrap());
-        let response = send(&app, "GET", &path, &client, Value::Null).await;
-        assert_eq!(response.status(), 200);
-        assert_eq!(value(response).await["jobId"], opaque);
-        assert_eq!(
-            send(&app, "GET", &path, &peer, Value::Null).await.status(),
-            404
-        );
-    }
-    for missing in ["jobId", "target"] {
+    for missing in ["platform", "bundleIdentifier", "prompt", "target"] {
         let mut bad = payload.clone();
         bad.as_object_mut().unwrap().remove(missing);
         assert_eq!(send(&app, "POST", submit, &client, bad).await.status(), 422);
@@ -1252,44 +1229,25 @@ async fn structured_submission_has_scoped_external_ids_and_rejects_invalid_targe
     let response = send(&app, "POST", submit, &client, payload.clone()).await;
     assert_eq!(response.status(), 202);
     let job = value(response).await;
-    assert_eq!(job["jobId"], "external-job");
-    assert_ne!(job["taskId"], job["jobId"]);
+    let id = job["jobId"].as_str().unwrap();
+    assert!(uuid::Uuid::parse_str(id).is_ok());
+    assert!(job.get("taskId").is_none());
+    let repeated_response = send(&app, "POST", submit, &client, payload.clone()).await;
+    assert_eq!(repeated_response.status(), 202);
+    let repeated = value(repeated_response).await;
+    assert!(uuid::Uuid::parse_str(repeated["jobId"].as_str().unwrap()).is_ok());
+    assert!(repeated.get("taskId").is_none());
+    assert_ne!(repeated["jobId"], job["jobId"]);
+    let status_path = format!("{submit}?jobId={id}");
     assert_eq!(
-        send(&app, "POST", submit, &client, payload.clone())
+        send(&app, "GET", &status_path, &peer, Value::Null)
             .await
             .status(),
-        409
-    );
-    assert_eq!(
-        send(
-            &app,
-            "GET",
-            "/v1/screenshot-jobs?jobId=external-job",
-            &peer,
-            Value::Null
-        )
-        .await
-        .status(),
         404
     );
-    assert_eq!(
-        send(&app, "POST", submit, &peer, payload.clone())
-            .await
-            .status(),
-        202
-    );
-    assert_eq!(
-        send(
-            &app,
-            "GET",
-            &format!("{submit}?jobId={}", job["taskId"].as_str().unwrap()),
-            &client,
-            Value::Null
-        )
-        .await
-        .status(),
-        404
-    );
+    let status = value(send(&app, "GET", &status_path, &client, Value::Null).await).await;
+    assert_eq!(status["jobId"], job["jobId"]);
+    assert!(status.get("taskId").is_none());
     for target in [
         json!([]),
         json!([{"locale":"en-US","page":"home","device":"desktop"}]),
@@ -1299,7 +1257,7 @@ async fn structured_submission_has_scoped_external_ids_and_rejects_invalid_targe
         bad["target"] = target;
         assert_eq!(send(&app, "POST", submit, &client, bad).await.status(), 422);
     }
-    for field in ["clientRequestId", "callback"] {
+    for field in ["jobId", "taskId", "clientRequestId", "callback"] {
         let mut bad = payload.clone();
         bad[field] = json!("unexpected");
         assert_eq!(send(&app, "POST", submit, &client, bad).await.status(), 422);
@@ -1317,7 +1275,28 @@ async fn structured_submission_has_scoped_external_ids_and_rejects_invalid_targe
         .await
         .unwrap();
     assert_eq!(response.status(), 409);
+    let previous_protocol = app
+        .clone()
+        .oneshot(
+            Request::post(&path)
+                .header("x-forwarded-proto", "https")
+                .header("x-screenshot-protocol", "2")
+                .header(header::AUTHORIZATION, format!("Bearer {worker}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(previous_protocol.status(), 409);
+    assert_eq!(
+        value(previous_protocol).await["error"]["code"],
+        "screenshot_connector_upgrade_required"
+    );
+    let queued = value(send(&app, "GET", &status_path, &client, Value::Null).await).await;
+    assert_eq!(queued["status"], "queued");
     let claim = value(send(&app, "POST", &path, &worker, Value::Null).await).await;
+    assert_eq!(claim["jobId"], job["jobId"]);
+    assert!(claim.get("taskId").is_none());
     assert_eq!(claim["prompt"], payload["prompt"]);
     assert_eq!(claim["target"], payload["target"]);
 }
@@ -1405,7 +1384,7 @@ async fn direct_oss_ticket_is_bound_to_worker_file_lease_and_verified_before_ide
     )
     .await;
     let public_job = job["jobId"].as_str().unwrap();
-    let job = job["taskId"].as_str().unwrap();
+    let job = job["jobId"].as_str().unwrap();
     let lease = claimed["lease"].as_str().unwrap();
     let prefix = format!("/v1/connectors/{mac}/screenshot-jobs/{job}");
     let prepare = format!("{prefix}/upload-ticket");
@@ -1588,7 +1567,7 @@ async fn unconfigured_oss_fails_at_upload_ticket_after_job_claim() {
         &app,
         &format!(
             "/v1/connectors/{mac}/screenshot-jobs/{}/upload-ticket",
-            job["taskId"].as_str().unwrap()
+            job["jobId"].as_str().unwrap()
         ),
         &token,
         claimed["lease"].as_str().unwrap(),

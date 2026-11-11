@@ -302,7 +302,6 @@ fn installer_archive(config: &[u8], executable: &[u8]) -> zip::result::ZipResult
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Submit {
-    job_id: String,
     target: Vec<store_protocol::screenshot::ScreenshotTarget>,
     platform: Platform,
     bundle_identifier: String,
@@ -343,7 +342,6 @@ async fn submit(
         )
         .into());
     }
-    store_protocol::screenshot::validate_job_id(&input.job_id)?;
     store_protocol::screenshot::validate_targets(&input.target)?;
     let job = state.registry.enqueue_screenshot_v2(
         &access,
@@ -351,7 +349,6 @@ async fn submit(
         &input.bundle_identifier,
         input.profile.as_deref().unwrap_or_default(),
         &input.prompt,
-        &input.job_id,
         &input.target,
     )?;
     state.transport.notify_screenshot(
@@ -447,7 +444,7 @@ async fn claim(
             &id,
             headers
                 .get("x-screenshot-protocol")
-                .is_some_and(|v| v == "2"),
+                .is_some_and(|v| v == "3"),
         )? {
             Some(job) => Json(job).into_response(),
             None => StatusCode::NO_CONTENT.into_response(),

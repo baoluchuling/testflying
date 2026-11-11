@@ -13,15 +13,11 @@ pub struct ScreenshotTarget {
 }
 
 pub fn validate_job_id(value: &str) -> Result<(), StoreError> {
-    if value.is_empty()
-        || value.len() > 180
-        || value.trim() != value
-        || value.chars().any(char::is_control)
-    {
+    if value.len() != 36 || uuid::Uuid::parse_str(value).is_err() {
         return Err(StoreError::new(
             422,
             "invalid_screenshot_job_id",
-            "jobId must contain 1–180 bytes without control characters or surrounding whitespace",
+            "jobId must be a center-generated UUID",
         ));
     }
     Ok(())
@@ -111,11 +107,12 @@ mod tests {
     }
 
     #[test]
-    fn external_ids_are_opaque_and_exact() {
+    fn job_ids_are_uuids() {
         for id in ["", " a", "a ", "a\n", "a\u{7f}"] {
             assert!(validate_job_id(id).is_err());
         }
         assert!(validate_job_id(&"a".repeat(181)).is_err());
-        assert!(validate_job_id("外部/任务:1").is_ok());
+        assert!(validate_job_id("外部/任务:1").is_err());
+        assert!(validate_job_id("00000000-0000-4000-8000-000000000001").is_ok());
     }
 }

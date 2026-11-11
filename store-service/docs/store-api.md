@@ -798,9 +798,9 @@ Get-Content -LiteralPath $logFile.FullName -Tail 50 -Wait
 
 ## 截图节点与截图任务（HTTPS）
 
-截图与商店业务在同一中心，但使用独立绑定和链路。外部先列出截图节点，按“平台＋包名”绑定截图 Mac；之后触发任务传外部 jobId、平台、包名、截图要求和 target 数组，不传节点 ID、项目路径或模拟器 ID。无需商店绑定或 Apple/Google 商店凭据；开发环境和项目需在实体 Mac 准备好，由 Codex 查找和操作。商店平台转发开关不影响截图任务。
+截图与商店业务在同一中心，但使用独立绑定和链路。外部先列出截图节点，按“平台＋包名”绑定截图 Mac；之后触发任务只传平台、包名、截图要求和 target 数组。中心创建任务并返回 jobId，外部保存响应中的 ID，不在请求中传 jobId、节点 ID、项目路径或模拟器 ID。无需商店绑定或 Apple/Google 商店凭据；开发环境和项目需在实体 Mac 准备好，由 Codex 查找和操作。商店平台转发开关不影响截图任务。
 
-正常业务链路无需外部轮询：中心持久保存外部 jobId 并转给节点，节点完成截图与 OSS 上传后向中心确认，再由中心带原 jobId 和目标图片结果通知外部。查询接口仅作排障或核对备用，不参与任务执行和完成判定。当前外部回调 POST 协议尚未补齐，本版先完成任务字段、节点转发和 OSS 结果关联，暂不发送外部通知。
+正常业务链路无需外部轮询：中心生成并持久保存 jobId，将它返回给调用方并转给节点；节点完成截图与 OSS 上传后向中心确认，再由中心带同一个 jobId 和目标图片结果通知外部。查询接口仅作排障或核对备用，不参与任务执行和完成判定。当前外部回调 POST 协议尚未补齐，本版先完成任务字段、节点转发和 OSS 结果关联，暂不发送外部通知。
 
 下列路径追加到 HTTPS 中心基础地址（例如 `https://store-api.example.com/store-api`），不要追加到 `{APP}` 下。接口均要求 HTTPS 和 `Authorization: Bearer INTEGRATION_TOKEN`；绑定的 PUT/GET/DELETE 也允许管理员 Token。普通商店业务 Token 无权使用截图接口。应用后端负责校验当前用户的应用权限。
 
@@ -811,7 +811,7 @@ Get-Content -LiteralPath $logFile.FullName -Tail 50 -Wait
 | GET | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 查询当前截图绑定 |
 | DELETE | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 解除截图绑定 |
 | POST | /v1/screenshot-jobs | 按平台、包名触发截图 |
-| GET | /v1/screenshot-jobs?jobId={外部任务ID} | 查询任务状态与结果 |
+| GET | /v1/screenshot-jobs?jobId={触发响应中的ID} | 可选：查询任务状态与结果 |
 
 ### 1. 列出截图节点
 
@@ -856,7 +856,6 @@ Authorization: Bearer INTEGRATION_TOKEN
 Content-Type: application/json
 
 {
-  "jobId":"capture-job-20261111-001",
   "platform":"ios",
   "bundleIdentifier":"app.snapflix.ios",
   "prompt":"截取 Kissreels 指定页面截图。",
@@ -868,11 +867,10 @@ Content-Type: application/json
 }
 ```
 
-必填字段如下。拒绝未知字段；不接受 `connectorId`、`clientRequestId` 或 `callback`。
+必填字段如下。**请求不用传 jobId**，中心创建后会返回。拒绝未知字段；不接受 `jobId`、`taskId`、`connectorId`、`clientRequestId` 或 `callback`。
 
 | 字段 | 含义与限制 |
 |---|---|
-| jobId | **外部管理后台的任务 ID**，在外层传递。非空、最多 180 个 UTF-8 字节，不含控制字符或首尾空白；原样保存，不要求 UUID。 |
 | platform | ios 或 android。 |
 | bundleIdentifier | iOS Bundle ID / Android 包名，与截图绑定大小写精确匹配。 |
 | prompt | 调用方截图要求，非空、最多 16 KiB UTF-8 字节，原文转发，不拼接平台、包名或目标。 |
@@ -887,31 +885,30 @@ Content-Type: application/json
 | device | phone（手机）、tablet（平板）、foldable（折叠屏）；不是固定模拟器 ID，不传 duo 或 all。 |
 | theme | 可选 light 或 dark；未指定时省略。 |
 
-同一页面的多种语言、设备或主题分别列项。平台、包名、外部 jobId 和 target 通过节点的 `get_capture_task` 工具结构化提供给 Codex；本机 Codex 自行发现项目、选择或创建模拟器、决定构建和页面操作。可选 `profile` 仅为任务提示，可省略或 null；字符串须为 1–64 个 ASCII 字母、数字、下划线或短横线，不要求固定 profiles。
+同一页面的多种语言、设备或主题分别列项。平台、包名、中心生成的 jobId 和 target 通过节点的 `get_capture_task` 工具结构化提供给 Codex；本机 Codex 自行发现项目、选择或创建模拟器、决定构建和页面操作。可选 `profile` 仅为任务提示，可省略或 null；字符串须为 1–64 个 ASCII 字母、数字、下划线或短横线，不要求固定 profiles。
 
 成功返回 HTTP 202：
 
 ```json
-{"jobId":"capture-job-20261111-001","taskId":"22222222-2222-4222-8222-222222222222","status":"queued","connectorId":"11111111-1111-4111-8111-111111111111","platform":"ios","bundleIdentifier":"app.snapflix.ios"}
+{"jobId":"22222222-2222-4222-8222-222222222222","status":"queued","connectorId":"11111111-1111-4111-8111-111111111111","platform":"ios","bundleIdentifier":"app.snapflix.ios"}
 ```
 
-`jobId` 始终是外部 ID，`taskId` 是中心另行生成的内部执行 UUID，不能混用。中心在入队时原子读取截图绑定并固定节点；未绑定返回 404 screenshot_app_not_found，不随机选择 Mac；已绑定节点被停用返回 503 screenshot_connector_disabled。启用但离线的节点允许入队，重连后检查队列。在线节点通过已有加密 WSS 收到任务通知。每个 Mac 同时执行一个任务，最多排队 20 个，队满返回 429 screenshot_queue_full。202 只表示已入队，不表示截图或外部回传已完成。
+**保存返回的 jobId**：它是中心生成的 UUID，创建、保存、节点执行和后续结果通知共用这个 ID，不再区分另一套 taskId。中心在入队时原子读取截图绑定并固定节点；未绑定返回 404 screenshot_app_not_found，不随机选择 Mac；已绑定节点被停用返回 503 screenshot_connector_disabled。启用但离线的节点允许入队，重连后检查队列。在线节点通过已有加密 WSS 收到任务通知。每个 Mac 同时执行一个任务，最多排队 20 个，队满返回 429 screenshot_queue_full。202 只表示已入队，不表示截图或外部回传已完成。
 
-同一接入凭证重复提交仍在七天保留期内的 `jobId` 返回 **409**，不创建第二个执行任务，即使请求正文不同也不会覆盖旧任务。若提交响应丢失，先按该外部 jobId 查询，不要换 ID 自动重发；不同接入凭证可使用相同 jobId，记录互相隔离。记录过期清理后，重复保护也随之结束。
+每次成功 POST 都创建一个新任务并返回新的 jobId。若响应丢失，不要自动重发，避免重复执行；正常业务不需要通过查询来推动任务完成。
 
 ### 4. 可选：查询状态和结果
 
 ```http
-GET /v1/screenshot-jobs?jobId=capture-job-20261111-001
+GET /v1/screenshot-jobs?jobId=22222222-2222-4222-8222-222222222222
 Authorization: Bearer INTEGRATION_TOKEN
 ```
 
-`jobId` 是必填的 **URL 查询参数**，使用外部任务 ID。用标准 URL 查询参数编码器编码整个值，例如外部 ID `外部/任务:1` 编码为 `jobId=%E5%A4%96%E9%83%A8%2F%E4%BB%BB%E5%8A%A1%3A1`。不要将 ID 放入路径，避免代理规范化斜杠或点号后查不到任务。必须使用创建任务的同一枚接入 Token；其他 Token 即使有权使用同一节点，也返回 404 screenshot_job_not_found。上例三个目标均上传确认后的结果：
+仅在需要核对时查询，`jobId` 参数使用触发响应里的 UUID。必须使用创建任务的同一枚接入 Token；其他 Token 即使有权使用同一节点，也返回 404 screenshot_job_not_found。上例三个目标均上传确认后的结果：
 
 ```json
 {
-  "jobId":"capture-job-20261111-001",
-  "taskId":"22222222-2222-4222-8222-222222222222",
+  "jobId":"22222222-2222-4222-8222-222222222222",
   "connectorId":"11111111-1111-4111-8111-111111111111",
   "platform":"ios",
   "bundleIdentifier":"app.snapflix.ios",
@@ -936,7 +933,7 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 状态可能为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。节点逐项截图和上传，第一张成功不会结束多目标任务；**全部 target 均上传确认后才为 succeeded**。`result.images` 按原 target 顺序排列，`targetIndex` 为从 0 开始的数组位置，每张图携带原 target；尚未完成的项目不会占位。后续目标失败时保留已确认图片，`status=failed`、`error` 为错误码，不能把部分图片当作整单成功。
 
-任务记录约保留七天。本节以新版任务协议为准，接入方按外部 jobId 查询。
+任务记录约保留七天。本节以新版任务协议为准。
 
 ### 5. 图片交付与限制
 
@@ -951,7 +948,7 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 节点上传时先请求绑定本任务租约、图片大小和摘要的最长五分钟 OSS V4 PUT 地址（不超过当前任务租约），再直接上传原始 PNG。中心使用已保存的对象路径签名 HEAD，验证 Content-Type、大小和摘要元数据后记录成功。节点不向 OSS 发送中心或节点 Token；预签名上传地址也不进入日志。未设置图片访问域名时，imageUrl 是一小时有效的下载签名地址，imageUrlExpiresAt 指明过期时间；设置访问域名时返回该域名下的对象路径，不更改 Bucket 或对象权限。
 
-本轮多目标链路需要升级截图 Connector（任务协议 2）。旧节点领取新任务会返回 409 screenshot_connector_upgrade_required，任务仍留在队列，不会被当作单图执行。旧 PNG 回传入口在 OSS 启用时返回 screenshot_connector_upgrade_required，不会代替新节点向 OSS 上传。原有 STORE_API_SCREENSHOT_UPLOAD_URL 仅供旧链路过渡使用。
+本轮链路需要升级截图 Connector（任务协议 3，统一使用中心生成的 jobId）。此前协议 2 的双 ID 节点也需要升级；旧节点领取新任务返回 409 screenshot_connector_upgrade_required，任务仍留在队列。OSS 上传仍为多目标 direct-oss-v2。旧 PNG 回传入口在 OSS 启用时返回 screenshot_connector_upgrade_required，不会代替新节点向 OSS 上传。原有 STORE_API_SCREENSHOT_UPLOAD_URL 仅供旧链路过渡使用。
 
 管理员 API：HTTPS GET／PUT /v1/screenshot-settings；后台会话同源路径为 /connector-setup/api/screenshot-settings。普通业务／接入 Token 无权读取或修改。GET 只返回普通配置和 accessKeySecretConfigured、securityTokenConfigured、tokenConfigured，不返回密码。PUT 可仅更新一个分组，例如：
 
@@ -976,4 +973,4 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 Endpoint 是已包含 Bucket 的完整主机名或已绑定的 CNAME，中心不会再次拼接 Bucket。开启 OSS 时所有必需字段须完整；更换 AccessKey ID 须同时提供对应 Secret；如未提供新的 STS Token，会清除旧 STS Token，以便切换到长期凭据。图片访问域名只负责生成外部访问 URL，访问权限仍由 OSS／CDN 自身配置决定。
 
-管理员可在后台「截图 Connector 部署」创建截图节点；管理 API 为 POST /v1/connectors，正文 `{"name":"截图 Mac","kind":"screenshot"}`，使用管理员 Token。HTTPS GET /v1/connectors/{connectorId}/screenshot-installer 下载该节点的部署 ZIP，属于程序部署包，不是图片产物。安装、后台运行和日志说明见 [截图 Connector 部署说明](screenshot-connector.md)。本轮外部 jobId、多目标和 OSS 直传需要安装最新 arm64 截图节点程序；保留原 connector.json 后重新运行安装脚本，不需要重建节点或绑定。商店节点无需为使用截图接口而升级。
+管理员可在后台「截图 Connector 部署」创建截图节点；管理 API 为 POST /v1/connectors，正文 `{"name":"截图 Mac","kind":"screenshot"}`，使用管理员 Token。HTTPS GET /v1/connectors/{connectorId}/screenshot-installer 下载该节点的部署 ZIP，属于程序部署包，不是图片产物。安装、后台运行和日志说明见 [截图 Connector 部署说明](screenshot-connector.md)。本轮多目标和 OSS 直传需要安装最新 arm64 截图节点程序；保留原 connector.json 后重新运行安装脚本，不需要重建节点或绑定。商店节点无需为使用截图接口而升级。

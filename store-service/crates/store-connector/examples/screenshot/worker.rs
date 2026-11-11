@@ -100,8 +100,7 @@ impl Config {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Job {
-    task_id: Uuid,
-    job_id: Option<String>,
+    job_id: Uuid,
     platform: Option<String>,
     bundle_identifier: Option<String>,
     target: Option<Vec<store_protocol::screenshot::ScreenshotTarget>>,
@@ -171,7 +170,7 @@ impl<'a> Worker<'a> {
         let claim = async {
             let mut response = self
                 .request(Method::POST, "claim")
-                .header("X-Screenshot-Protocol", "2")
+                .header("X-Screenshot-Protocol", "3")
                 .send()
                 .await?;
             match response.status() {
@@ -201,8 +200,8 @@ impl<'a> Worker<'a> {
         let Some(job) = job else {
             return Ok(false);
         };
-        let id = Some(job.task_id);
-        self.log.prompt(job.task_id, &job.prompt);
+        let id = Some(job.job_id);
+        self.log.prompt(job.job_id, &job.prompt);
         let outcome = self.run_goal(&job, stop).await;
         let stopping = *stop.borrow();
         let Err(code) = outcome else {
@@ -216,7 +215,7 @@ impl<'a> Worker<'a> {
 
         self.log.event(id, format_args!("job_failed code={code}"));
         let request = self
-            .request(Method::POST, &format!("{}/failure", job.task_id))
+            .request(Method::POST, &format!("{}/failure", job.job_id))
             .header("X-Screenshot-Lease", job.lease.to_string())
             .json(&json!({"code":code}))
             .send();
@@ -253,7 +252,7 @@ impl<'a> Worker<'a> {
             .map_err(|_| "capture_failed")?;
         let result = self.run_goal_in(workspace.path(), job, stop).await;
         if workspace.close().is_err() {
-            self.log.event(Some(job.task_id), "task_cleanup_failed");
+            self.log.event(Some(job.job_id), "task_cleanup_failed");
         }
         result
     }
@@ -264,7 +263,7 @@ impl<'a> Worker<'a> {
         job: &Job,
         stop: &mut watch::Receiver<bool>,
     ) -> Result<(), &'static str> {
-        let id = Some(job.task_id);
+        let id = Some(job.job_id);
         let unavailable = |_| "profile_unavailable";
         let codex = match self
             .config
@@ -303,7 +302,7 @@ impl<'a> Worker<'a> {
             root,
             instructions,
             prompt: &job.prompt,
-            job: job.task_id,
+            job: job.job_id,
         };
         let mut tools = JobTools {
             worker: self,
@@ -379,7 +378,7 @@ impl JobTools<'_, '_> {
                 );
             }
             return ToolReply::ok(
-                json!({"taskId":self.job.task_id,"jobId":self.job.job_id,"platform":self.job.platform,"bundleIdentifier":self.job.bundle_identifier,"prompt":self.job.prompt,"target":self.job.target,"profile":self.job.profile,"completedTargetIndices":self.completed_targets}),
+                json!({"jobId":self.job.job_id,"platform":self.job.platform,"bundleIdentifier":self.job.bundle_identifier,"prompt":self.job.prompt,"target":self.job.target,"profile":self.job.profile,"completedTargetIndices":self.completed_targets}),
                 GoalChange::Continue,
             );
         }
@@ -437,7 +436,7 @@ impl JobTools<'_, '_> {
                 GoalChange::Continue,
             );
         };
-        let id = Some(self.job.task_id);
+        let id = Some(self.job.job_id);
         if device
             .verify_running(scratch.path(), self.adb, stop)
             .await
@@ -503,7 +502,7 @@ impl JobTools<'_, '_> {
                 GoalChange::Continue,
             );
         };
-        let id = Some(self.job.task_id);
+        let id = Some(self.job.job_id);
         if self.upload_attempted.is_none() || self.retry_upload {
             if !bytes.starts_with(PNG) || !(33..=MAX_IMAGE).contains(&bytes.len()) {
                 self.failure = "capture_failed";
@@ -519,7 +518,7 @@ impl JobTools<'_, '_> {
             self.worker.log.event(id, "upload_ticket_request");
             let prepare = self
                 .worker
-                .request(Method::POST, &format!("{}/upload-ticket", self.job.task_id))
+                .request(Method::POST, &format!("{}/upload-ticket", self.job.job_id))
                 .header("X-Screenshot-Lease", self.job.lease.to_string())
                 .json(&self.target_body(json!({"sizeBytes":bytes.len(),"sha256":sha256,"md5":md5})))
                 .send();
@@ -589,7 +588,7 @@ impl JobTools<'_, '_> {
         self.worker.log.event(id, "upload_completion_request");
         let completion = self
             .worker
-            .request(Method::POST, &format!("{}/complete", self.job.task_id))
+            .request(Method::POST, &format!("{}/complete", self.job.job_id))
             .header("X-Screenshot-Lease", self.job.lease.to_string())
             .json(&self.target_body(json!({})))
             .send();
@@ -659,7 +658,7 @@ impl JobTools<'_, '_> {
         self.center_finished = all_done;
         self.worker
             .log
-            .event(Some(self.job.task_id), "image_delivered");
+            .event(Some(self.job.job_id), "image_delivered");
         ToolReply::ok(
             body,
             if all_done {
@@ -674,7 +673,7 @@ impl JobTools<'_, '_> {
         self.failure = "delivery_unknown";
         self.worker
             .log
-            .event(Some(self.job.task_id), "delivery_unknown");
+            .event(Some(self.job.job_id), "delivery_unknown");
         ToolReply::error(
             "delivery_unknown",
             "Delivery is not confirmed. Retry this same screenshotId to check completion.",
@@ -699,7 +698,7 @@ impl JobTools<'_, '_> {
 
     fn upload_rejected(&mut self, status: StatusCode, code: &'static str) -> ToolReply {
         self.worker.log.event(
-            Some(self.job.task_id),
+            Some(self.job.job_id),
             format_args!("upload_rejected http={} code={code}", status.as_u16()),
         );
         // A definitive HEAD 404 permits a later explicit retry of this exact ticket/image.
@@ -1279,8 +1278,7 @@ mod tests {
         let puts = Arc::new(AtomicUsize::new(0));
         let completions = Arc::new(AtomicUsize::new(0));
         let job = Job {
-            task_id: Uuid::new_v4(),
-            job_id: None,
+            job_id: Uuid::new_v4(),
             platform: Some("ios".into()),
             bundle_identifier: Some("fixture.app".into()),
             target: None,
@@ -1296,9 +1294,11 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let upload_url = format!("http://{address}/oss?x-oss-signature=fixture");
         let calls = Arc::clone(&prepares);
+        let job_id = job.job_id;
         let app = Router::new().route(
             "/v1/connectors/{connector}/screenshot-jobs/{job}/upload-ticket",
-            post(move |headers: HeaderMap, Json(metadata): Json<Value>| {
+            post(move |axum::extract::Path((_, request_job)): axum::extract::Path<(String, Uuid)>, headers: HeaderMap, Json(metadata): Json<Value>| {
+                assert_eq!(request_job, job_id);
                 let attempt = calls.fetch_add(1, Ordering::SeqCst);
                 let lease = lease.clone();
                 let upload_url=upload_url.clone();
@@ -1337,7 +1337,8 @@ mod tests {
         );
         let calls = completions.clone();
         let lease = job.lease.to_string();
-        let app=app.route("/v1/connectors/{connector}/screenshot-jobs/{job}/complete",post(move |headers:HeaderMap,Json(body):Json<Value>|{
+        let app=app.route("/v1/connectors/{connector}/screenshot-jobs/{job}/complete",post(move |axum::extract::Path((_, request_job)):axum::extract::Path<(String,Uuid)>,headers:HeaderMap,Json(body):Json<Value>|{
+            assert_eq!(request_job,job_id);
             let attempt=calls.fetch_add(1,Ordering::SeqCst);let lease=lease.clone();
             async move {
                 assert_eq!(headers["x-screenshot-lease"],lease);
@@ -1385,6 +1386,9 @@ mod tests {
             failure: "codex_failed",
         };
         let (_stop, mut stop) = watch::channel(false);
+        let context = tools.call("get_capture_task", json!({}), &mut stop).await;
+        assert_eq!(context.value["jobId"], job_id.to_string());
+        assert!(context.value.get("taskId").is_none());
         let wrong = tools
             .call(
                 "upload_screenshot",
@@ -1434,7 +1438,7 @@ mod tests {
     async fn multiple_targets_keep_identity_and_continue_until_every_image_is_confirmed() {
         let workspace = tempfile::tempdir().unwrap();
         let job: Job = serde_json::from_value(json!({
-            "taskId":Uuid::new_v4(),"jobId":"external/订单-42","lease":Uuid::new_v4(),
+            "jobId":Uuid::new_v4(),"lease":Uuid::new_v4(),
             "platform":"ios","bundleIdentifier":"fixture.app","profile":"optional hint",
             "prompt":"原文\n  keep spacing and \"quotes\"",
             "target":[
@@ -1471,8 +1475,8 @@ mod tests {
         };
         let (_stop, mut stop) = watch::channel(false);
         let context = tools.call("get_capture_task", json!({}), &mut stop).await;
-        assert_eq!(context.value["taskId"], job.task_id.to_string());
-        assert_eq!(context.value["jobId"], "external/订单-42");
+        assert_eq!(context.value["jobId"], job.job_id.to_string());
+        assert!(context.value.get("taskId").is_none());
         assert_eq!(context.value["prompt"], job.prompt);
         assert_eq!(context.value["target"][1]["theme"], "dark");
         let invalid_context = tools
@@ -1511,13 +1515,17 @@ mod tests {
     #[test]
     fn accepts_nullable_legacy_identity_and_largest_escaped_claim_fixture() {
         let legacy = json!({
-            "taskId":Uuid::new_v4(),"jobId":null,"platform":null,
+            "jobId":Uuid::new_v4(),"platform":null,
             "bundleIdentifier":null,"target":null,"profile":null,
             "lease":Uuid::new_v4(),"prompt":"historical single image"
         });
         let decoded: Job = serde_json::from_value(legacy.clone()).unwrap();
         assert!(decoded.platform.is_none() && decoded.bundle_identifier.is_none());
-        assert!(decoded.target.is_none() && decoded.job_id.is_none());
+        assert!(decoded.target.is_none());
+        assert_eq!(
+            decoded.job_id.to_string(),
+            legacy["jobId"].as_str().unwrap()
+        );
         let prompt = "\u{0001}".repeat(16 * 1024);
         let targets: Vec<Value> = (0..256)
             .map(|index| {
@@ -1532,7 +1540,7 @@ mod tests {
         let mut claim = legacy;
         claim["prompt"] = json!(prompt);
         claim["target"] = json!(targets);
-        claim["jobId"] = json!("e".repeat(180));
+        claim["jobId"] = json!(Uuid::new_v4());
         claim["platform"] = json!("ios");
         claim["bundleIdentifier"] = json!("fixture.app");
         let body = serde_json::to_vec(&claim).unwrap();

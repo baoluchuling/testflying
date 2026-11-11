@@ -45,22 +45,19 @@ pub(super) fn create_schema(db: &Connection) -> Result<()> {
             .map_err(database_error)?;
         }
     }
-    for column in ["external_job_id", "targets"] {
-        if !columns.iter().any(|name| name == column) {
-            db.execute(
-                &format!("ALTER TABLE screenshot_jobs ADD COLUMN {column} TEXT"),
-                [],
-            )
+    if !columns.iter().any(|name| name == "targets") {
+        db.execute("ALTER TABLE screenshot_jobs ADD COLUMN targets TEXT", [])
             .map_err(database_error)?;
-        }
     }
-    db.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS screenshot_external_id ON screenshot_jobs(integration_id,external_job_id) WHERE external_job_id IS NOT NULL;
-        CREATE TABLE IF NOT EXISTS screenshot_target_tickets (
+    db.execute_batch(
+        "CREATE TABLE IF NOT EXISTS screenshot_target_tickets (
           job_id TEXT NOT NULL REFERENCES screenshot_jobs(id) ON DELETE CASCADE,
           target_index INTEGER NOT NULL, connector_id TEXT NOT NULL, lease TEXT NOT NULL,
           object_key TEXT NOT NULL UNIQUE, size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL,
           md5 TEXT NOT NULL, config_fingerprint TEXT NOT NULL, result TEXT,
-          PRIMARY KEY(job_id,target_index));").map_err(database_error)?;
+          PRIMARY KEY(job_id,target_index));",
+    )
+    .map_err(database_error)?;
     Ok(())
 }
 
@@ -590,7 +587,7 @@ impl Registry {
         profile: &str,
         prompt: &str,
     ) -> Result<Value> {
-        self.enqueue_screenshot_inner(access, platform, identifier, profile, prompt, None, None)
+        self.enqueue_screenshot_inner(access, platform, identifier, profile, prompt, None)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -601,10 +598,8 @@ impl Registry {
         identifier: &str,
         profile: &str,
         prompt: &str,
-        job_id: &str,
         targets: &[store_protocol::screenshot::ScreenshotTarget],
     ) -> Result<Value> {
-        store_protocol::screenshot::validate_job_id(job_id)?;
         store_protocol::screenshot::validate_targets(targets)?;
         self.enqueue_screenshot_inner(
             access,
@@ -612,7 +607,6 @@ impl Registry {
             identifier,
             profile,
             prompt,
-            Some(job_id),
             Some(
                 serde_json::to_string(targets)
                     .map_err(|_| database_error(rusqlite::Error::InvalidQuery))?,
@@ -628,7 +622,6 @@ impl Registry {
         identifier: &str,
         profile: &str,
         prompt: &str,
-        external: Option<&str>,
         targets: Option<String>,
     ) -> Result<Value> {
         validate_identifier(identifier)?;
@@ -638,16 +631,6 @@ impl Registry {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
         expire(&tx, time)?;
-        if let Some(external) = external {
-            let exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM screenshot_jobs WHERE integration_id=?1 AND external_job_id=?2)", params![access.id,external], |row| row.get(0)).map_err(database_error)?;
-            if exists {
-                return Err(StoreError::new(
-                    409,
-                    "screenshot_job_conflict",
-                    "jobId already exists for this integration",
-                ));
-            }
-        }
         let binding:Option<(String,bool)>=tx.query_row("SELECT c.id,c.enabled FROM screenshot_app_bindings b JOIN connectors c ON c.id=b.connector_id WHERE b.platform=?1 AND b.bundle_identifier=?2 AND c.mode='screenshot'",params![platform.to_string(),identifier],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(database_error)?;
         let (node, enabled) = binding.ok_or_else(missing_screenshot_binding)?;
         if !enabled {
@@ -688,13 +671,13 @@ impl Registry {
         }
         let id = Uuid::new_v4().to_string();
         tx.execute(
-            "INSERT INTO screenshot_jobs(id,connector_id,integration_id,profile,prompt,status,created_at,deadline,platform,bundle_identifier,external_job_id,targets)
-             VALUES(?1,?2,?3,?4,?5,'queued',?6,?7,?8,?9,?10,?11)",
-            params![id, node, access.id, profile, prompt, time, time + 86400,platform.to_string(),identifier,external,targets],
+            "INSERT INTO screenshot_jobs(id,connector_id,integration_id,profile,prompt,status,created_at,deadline,platform,bundle_identifier,targets)
+             VALUES(?1,?2,?3,?4,?5,'queued',?6,?7,?8,?9,?10)",
+            params![id, node, access.id, profile, prompt, time, time + 86400,platform.to_string(),identifier,targets],
         ).map_err(database_error)?;
         tx.commit().map_err(database_error)?;
         Ok(
-            json!({"jobId":external,"taskId":id,"status":"queued","connectorId":node,"platform":platform,"bundleIdentifier":identifier}),
+            json!({"jobId":id,"status":"queued","connectorId":node,"platform":platform,"bundleIdentifier":identifier}),
         )
     }
 
@@ -702,25 +685,15 @@ impl Registry {
         let db = self.db.lock().unwrap();
         expire(&db, timestamp()?)?;
         let job = db.query_row(
-            "SELECT connector_id,profile,status,result,error,platform,bundle_identifier,id,external_job_id,targets FROM screenshot_jobs WHERE integration_id=?2 AND (external_job_id=?1 OR (external_job_id IS NULL AND id=?1)) ORDER BY external_job_id IS NULL LIMIT 1",
+            "SELECT connector_id,profile,status,result,error,platform,bundle_identifier,id,targets FROM screenshot_jobs WHERE integration_id=?2 AND id=?1",
             params![id, access.id],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?,
-                      row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?,row.get::<_,Option<String>>(5)?,row.get::<_,Option<String>>(6)?,row.get::<_,String>(7)?,row.get::<_,Option<String>>(8)?,row.get::<_,Option<String>>(9)?)),
+                      row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?,row.get::<_,Option<String>>(5)?,row.get::<_,Option<String>>(6)?,row.get::<_,String>(7)?,row.get::<_,Option<String>>(8)?)),
         ).optional().map_err(database_error)?;
-        let (
-            node,
-            profile,
-            status,
-            result,
-            error,
-            platform,
-            identifier,
-            task_id,
-            external,
-            targets,
-        ) = job.ok_or_else(|| {
-            StoreError::new(404, "screenshot_job_not_found", "Screenshot job not found")
-        })?;
+        let (node, profile, status, result, error, platform, identifier, job_id, targets) = job
+            .ok_or_else(|| {
+                StoreError::new(404, "screenshot_job_not_found", "Screenshot job not found")
+            })?;
         let result = result
             .map(|body| serde_json::from_str::<Value>(&body))
             .transpose()
@@ -729,7 +702,7 @@ impl Registry {
             })?;
         let profile = (!profile.is_empty()).then_some(profile);
         Ok(
-            json!({"jobId":external,"taskId":task_id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()).unwrap_or_else(|| json!([])),"connectorId":node,"platform":platform,"bundleIdentifier":identifier,"profile":profile,"status":status,"result":result,"error":error}),
+            json!({"jobId":job_id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()).unwrap_or_else(|| json!([])),"connectorId":node,"platform":platform,"bundleIdentifier":identifier,"profile":profile,"status":status,"result":result,"error":error}),
         )
     }
 
@@ -738,7 +711,11 @@ impl Registry {
         self.claim_screenshot_protocol(node, false)
     }
 
-    pub(crate) fn claim_screenshot_protocol(&self, node: &str, v2: bool) -> Result<Option<Value>> {
+    pub(crate) fn claim_screenshot_protocol(
+        &self,
+        node: &str,
+        current_protocol: bool,
+    ) -> Result<Option<Value>> {
         let time = timestamp()?;
         let mut db = self.db.lock().unwrap();
         let tx = db
@@ -748,18 +725,18 @@ impl Registry {
         let claimed = if let Some((id, profile, prompt, platform, identifier)) =
             claimable_screenshot(&tx, node, time)?
         {
-            let (external, targets): (Option<String>, Option<String>) = tx
+            let targets: Option<String> = tx
                 .query_row(
-                    "SELECT external_job_id,targets FROM screenshot_jobs WHERE id=?1",
+                    "SELECT targets FROM screenshot_jobs WHERE id=?1",
                     [&id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
+                    |row| row.get(0),
                 )
                 .map_err(database_error)?;
-            if targets.is_some() && !v2 {
+            if targets.is_some() && !current_protocol {
                 return Err(StoreError::new(
                     409,
                     "screenshot_connector_upgrade_required",
-                    "Upgrade the Screenshot Connector to protocol 2",
+                    "Upgrade the Screenshot Connector to protocol 3",
                 ));
             }
             let lease = Uuid::new_v4().to_string();
@@ -769,14 +746,14 @@ impl Registry {
             ).map_err(database_error)?;
             let profile = (!profile.is_empty()).then_some(profile);
             let prompt = match (&platform, &identifier) {
-                _ if v2 => prompt,
+                _ if current_protocol => prompt,
                 (Some(platform), Some(identifier)) => {
                     format!("应用平台：{platform}\n应用包名 / Bundle ID：{identifier}\n\n{prompt}")
                 }
                 _ => prompt,
             };
             Some(
-                json!({"jobId":if v2 { external } else { Some(id.clone()) },"taskId":id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()),"platform":platform,"bundleIdentifier":identifier,"profile":profile,"prompt":prompt,"lease":lease}),
+                json!({"jobId":id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()),"platform":platform,"bundleIdentifier":identifier,"profile":profile,"prompt":prompt,"lease":lease}),
             )
         } else {
             None
@@ -916,11 +893,10 @@ mod direct_delivery_tests {
                 "com.example.persisted",
                 "",
                 "Capture",
-                "persistent-external",
                 &targets,
             )
             .unwrap();
-        let id = job["taskId"].as_str().unwrap();
+        let id = job["jobId"].as_str().unwrap();
         let claim = registry
             .claim_screenshot_protocol(&node, true)
             .unwrap()
@@ -953,9 +929,7 @@ mod direct_delivery_tests {
         assert_eq!(first["delivered"], false);
         drop(registry);
         let registry = Registry::open(&path, key).unwrap();
-        let status = registry
-            .screenshot_status(&access, "persistent-external")
-            .unwrap();
+        let status = registry.screenshot_status(&access, id).unwrap();
         assert_eq!(status["result"], first["result"]);
         assert_eq!(status["status"], "running");
         assert!(registry
@@ -981,11 +955,9 @@ mod direct_delivery_tests {
             .unwrap();
         drop(registry);
         let registry = Registry::open(&path, key).unwrap();
-        let failed = registry
-            .screenshot_status(&access, "persistent-external")
-            .unwrap();
-        assert_eq!(failed["jobId"], "persistent-external");
-        assert_eq!(failed["taskId"], id);
+        let failed = registry.screenshot_status(&access, id).unwrap();
+        assert!(Uuid::parse_str(id).is_ok());
+        assert_eq!(failed["jobId"], id);
         assert_eq!(failed["status"], "failed");
         assert_eq!(failed["error"], "capture_failed");
         assert_eq!(failed["result"], first["result"]);
@@ -1023,45 +995,27 @@ mod direct_delivery_tests {
                 "com.example.fixture",
                 "",
                 prompt,
-                "external/id",
                 &targets,
             )
             .unwrap();
-        let id = job["taskId"].as_str().unwrap();
-        assert_ne!(id, "external/id");
-        assert_eq!(
-            registry
-                .enqueue_screenshot_v2(
-                    &integration,
-                    Platform::Ios,
-                    "com.example.fixture",
-                    "",
-                    prompt,
-                    "external/id",
-                    &targets
-                )
-                .unwrap_err()
-                .status,
-            409
-        );
+        let id = job["jobId"].as_str().unwrap();
+        assert!(Uuid::parse_str(id).is_ok());
         assert_eq!(
             registry.claim_screenshot(&node).unwrap_err().code,
             "screenshot_connector_upgrade_required"
         );
         assert_eq!(
-            registry
-                .screenshot_status(&integration, "external/id")
-                .unwrap()["status"],
+            registry.screenshot_status(&integration, id).unwrap()["status"],
             "queued"
         );
-        assert!(registry.screenshot_status(&integration, id).is_err());
+        assert!(job.get("taskId").is_none());
         let claimed = registry
             .claim_screenshot_protocol(&node, true)
             .unwrap()
             .unwrap();
         assert_eq!(claimed["prompt"], prompt);
         assert_eq!(claimed["target"], serde_json::to_value(&targets).unwrap());
-        assert_eq!(claimed["jobId"], "external/id");
+        assert_eq!(claimed["jobId"], id);
         let lease = claimed["lease"].as_str().unwrap();
         let fp = oss_fingerprint(&registry.screenshot_settings().unwrap().oss).unwrap();
         for index in 0..2 {
@@ -1118,9 +1072,7 @@ mod direct_delivery_tests {
             assert_eq!(repeated, result);
         }
         assert_eq!(
-            registry
-                .screenshot_status(&integration, "external/id")
-                .unwrap()["status"],
+            registry.screenshot_status(&integration, id).unwrap()["status"],
             "succeeded"
         );
         registry
@@ -1170,7 +1122,7 @@ mod direct_delivery_tests {
                 "Fixture prompt",
             )
             .unwrap();
-        let job = queued["taskId"].as_str().unwrap().to_owned();
+        let job = queued["jobId"].as_str().unwrap().to_owned();
         let claimed = registry
             .claim_screenshot(&node.connector_id)
             .unwrap()
