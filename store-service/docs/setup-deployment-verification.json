@@ -1,15 +1,15 @@
 {
-  "runId": "9d13746b3cba4dee908e14e568e777d5",
+  "runId": "e0da4dc97a4f4f20838413640e5bfd7d",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-11T04:56:52.187867+00:00",
-  "deploymentCommit": "c65ede994b0024000447099deb16a6b125ae4ea2",
-  "binarySourceCommit": "d4fb874028ddea771cdb1482e4d1fe69d3ff8057",
-  "apiSha256": "260a2cab4f43e41317966ef6bb434b04817a59953cb4d1f67bbe41e9f6c0303b",
+  "finishedAt": "2026-11-11T07:57:26.540963+00:00",
+  "deploymentCommit": "8fb23285e04872f98b54d3ac16ef73b5b1ff9d9c",
+  "binarySourceCommit": "788149b7884a8db1c400ce0a4fe7b5a64db081d7",
+  "apiSha256": "e5aba0ffed6fb28a898f111c0f67694a823834e9607aee1cbdf5b91790cd6cb7",
   "connectorBinarySha256": {
-    "linux-amd64": "3f79ab9f1e897f1203c9b81eeb5af0ce62b2f7dfe65c683e58486397b4c96eca",
-    "darwin-arm64": "5276d5c1881778dcada1f666bc653d862fe79e9ec702a45befdf8ccbd678748d",
-    "windows-amd64": "4b13495d5bf3397bea8d806dcff1859b7cf2039e0bf6b3f6c966f5dbbb3b9887"
+    "linux-amd64": "791bf6d69ba72a9a70916cce215bdb5119f7cf595560c4d377f46f670c4b8462",
+    "darwin-arm64": "d5c43831b1de0706059716de81ae0d83f6bc38ffef2083b36ec99759f86fdb5b",
+    "windows-amd64": "5c775b3d1739f75b4edec8269d6b6835e8a5336e887ac32c14778b490df03a6c"
   },
   "screenshotConnectorSha256": "a41f8006b9502f3f540a5d735f8eb92bc903910078c7ce42bb980e44f221f776",
   "screenshotUploadConfigured": false,
@@ -38,13 +38,13 @@
     "windows-amd64 updated installation package available",
     "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
-    "http ten store and two node endpoints plus upload helpers",
+    "http ten store, two node and six screenshot endpoints plus upload helpers",
     "http language and device options with platform limits",
     "http exact deployed markdown document",
     "http exact deployed openapi document",
     "http anonymous documentation denied",
     "https business-token documentation available",
-    "https ten store and two node endpoints plus upload helpers",
+    "https ten store, two node and six screenshot endpoints plus upload helpers",
     "https language and device options with platform limits",
     "https exact deployed markdown document",
     "https exact deployed openapi document",
@@ -70,28 +70,29 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "9d13746b3cba4dee908e14e568e777d5",
-    "sourceCommit": "c65ede994b0024000447099deb16a6b125ae4ea2",
+    "runId": "e0da4dc97a4f4f20838413640e5bfd7d",
+    "sourceCommit": "8fb23285e04872f98b54d3ac16ef73b5b1ff9d9c",
     "downloadVerified": {
-      "linux-amd64": "3f79ab9f1e897f1203c9b81eeb5af0ce62b2f7dfe65c683e58486397b4c96eca",
-      "darwin-arm64": "5276d5c1881778dcada1f666bc653d862fe79e9ec702a45befdf8ccbd678748d",
-      "windows-amd64": "4b13495d5bf3397bea8d806dcff1859b7cf2039e0bf6b3f6c966f5dbbb3b9887"
+      "linux-amd64": "791bf6d69ba72a9a70916cce215bdb5119f7cf595560c4d377f46f670c4b8462",
+      "darwin-arm64": "d5c43831b1de0706059716de81ae0d83f6bc38ffef2083b36ec99759f86fdb5b",
+      "windows-amd64": "5c775b3d1739f75b4edec8269d6b6835e8a5336e887ac32c14778b490df03a6c"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": true,
     "configurationMergeSupported": true,
     "actualStoreAccountsUsed": false,
-    "nodeLogsRetentionDays": 7,
     "iosVersionsProtocol": 1,
+    "nodeLogsRetentionDays": 7,
     "nodeLogDownloadProtocol": 1,
     "safeVendorErrorDiagnostics": true,
+    "emptyPostContentLengthZero": true,
+    "iosLatestVersionOnly": true,
+    "iosReadonlyQueriesAllowedForLockedVersions": true,
     "googleCommit": {
       "changesNotSentForReview": "omitted",
       "changesInReviewBehavior": "ERROR_IF_IN_REVIEW",
       "maySendForReview": true
-    },
-    "emptyPostContentLengthZero": true,
-    "iosLatestVersionOnly": true
+    }
   },
   "nativeLogSmoke": {
     "nativeArm64BinaryRan": true,
@@ -104,18 +105,28 @@
     "logControlAuthenticationVerified": true,
     "logSnapshotReadVerified": true
   },
-  "nodeLogControlVerification": {
-    "oldNodeChecks": [
-      "806eb06e-90ef-43d3-8b0a-ac3410a2a75e"
-    ],
-    "adminOnly": true,
-    "oldNodesRemainConnected": true,
-    "normalGoogleCommitDocumented": true,
+  "screenshotAppRoutingVerification": {
     "forwarding": {
       "ios": true,
       "android": false
     },
-    "iosVersionCreationDocumented": true,
+    "endpointCounts": {
+      "node": 2,
+      "screenshot": 6,
+      "store": 10,
+      "uploads": 2
+    },
+    "screenshotListRead": true,
+    "screenshotBindingMissingReturns404": true,
+    "screenshotHttpsEnforced": true,
+    "businessTokenDenied": true,
+    "screenshotNodeCount": 1,
+    "screenshotBindingsWritten": 0,
+    "screenshotJobsCreated": 0,
+    "actualStoreRequests": 0,
+    "storeWrites": 0,
+    "readOnlyVersionPolicyDocumented": true,
+    "proxySha256": "45a717e4036605b0cb3cf22c80521ceae23128c5faf2d348e72ebc35edb03210",
     "nodes": [
       {
         "connectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
@@ -129,7 +140,7 @@
         "name": "\u6307\u95f4\u4e92\u52a8",
         "kind": "store",
         "connected": true,
-        "logsAvailable": false
+        "logsAvailable": true
       },
       {
         "connectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
@@ -138,30 +149,6 @@
         "connected": true,
         "logsAvailable": true
       }
-    ],
-    "realStoreRequests": 0
-  },
-  "platformForwardingVerification": {
-    "temporaryPauseRemoved": true,
-    "proxyRestoredSha256": "45a717e4036605b0cb3cf22c80521ceae23128c5faf2d348e72ebc35edb03210",
-    "forwarding": {
-      "ios": true,
-      "android": false
-    },
-    "publicChecks": [
-      {
-        "transport": "http",
-        "androidPaused": true,
-        "iosAuthenticationPreserved": true,
-        "centerCorrelationHeader": true
-      },
-      {
-        "transport": "https",
-        "androidPaused": true,
-        "iosAuthenticationPreserved": true,
-        "centerCorrelationHeader": true
-      }
-    ],
-    "realStoreRequests": 0
+    ]
   }
 }
