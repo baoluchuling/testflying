@@ -137,8 +137,16 @@ fn catalog() -> Value {
         "path":"/v1/apps/{platform}/{bundleIdentifier}/connector","summary":"绑定或更换应用的商店节点",
         "authentication":["integrationToken","adminToken"],"requiresBinding":false,
         "requestBody":{"required":["connectorId"],"properties":{"connectorId":{"type":"string","format":"uuid"}}}}));
+    endpoints.extend([
+        json!({"id":"list-screenshot-connectors","group":"screenshot","method":"GET","path":"/v1/screenshot-connectors","summary":"列出启用的截图 Mac 节点及连接状态","authentication":["integrationToken"],"transport":["https"],"requiresBinding":false}),
+        json!({"id":"bind-screenshot-connector","group":"screenshot","method":"PUT","path":"/v1/apps/{platform}/{bundleIdentifier}/screenshot-connector","summary":"绑定或更换应用的截图节点，与商店绑定独立","authentication":["integrationToken","adminToken"],"transport":["https"],"requiresBinding":false,"requestSchema":"#/components/schemas/ScreenshotBindingInput"}),
+        json!({"id":"read-screenshot-binding","group":"screenshot","method":"GET","path":"/v1/apps/{platform}/{bundleIdentifier}/screenshot-connector","summary":"查询应用当前截图节点绑定","authentication":["integrationToken","adminToken"],"transport":["https"],"requiresBinding":false}),
+        json!({"id":"unbind-screenshot-connector","group":"screenshot","method":"DELETE","path":"/v1/apps/{platform}/{bundleIdentifier}/screenshot-connector","summary":"解除截图绑定；已创建任务保留原节点","authentication":["integrationToken","adminToken"],"transport":["https"],"requiresBinding":false}),
+        json!({"id":"submit-screenshot-job","group":"screenshot","method":"POST","path":"/v1/screenshot-jobs","summary":"按平台和包名触发截图，中心选择已绑定的 Mac","authentication":["integrationToken"],"transport":["https"],"requiresBinding":true,"bindingResource":"screenshot-connector","requestSchema":"#/components/schemas/ScreenshotJobInput"}),
+        json!({"id":"read-screenshot-job","group":"screenshot","method":"GET","path":"/v1/screenshot-jobs/{jobId}","summary":"用创建任务的同一枚接入 Token 查询结果","authentication":["integrationToken"],"transport":["https"],"requiresBinding":false}),
+    ]);
     json!({
-        "schemaVersion":1,"contractVersion":"2026-11-11","title":"商店业务与节点接入接口",
+        "schemaVersion":1,"contractVersion":"2026-11-11","title":"中心统一接口文档：商店、节点与截图任务",
         "scope":"center-api-contract","requiresConnectorUpgrade":true,
         "description":"中心公开接口契约；不是对节点在线状态、本地平台配置或商店账号权限的实时探测",
         "authentication":{"integrationToken":{"transport":["https"],"header":"Authorization: Bearer INTEGRATION_TOKEN"},
@@ -146,11 +154,18 @@ fn catalog() -> Value {
             "adminToken":{"transport":["http","https"],"canReadApiDocs":false,"canBind":true}},
         "applicationIdentity":{"platform":["ios","android"],"identifier":"iOS Bundle ID / Android 包名，大小写精确匹配"},
         "endpoints":endpoints,
+        "endpointCounts":{"store":10,"node":2,"screenshot":6,"uploads":2},
+        "screenshots":{"requiresConnectorUpgrade":false,"routing":"exact platform + bundleIdentifier screenshot binding; no random node selection; existing jobs keep their assigned node",
+            "required":["platform","bundleIdentifier","prompt"],"connectorIdInSubmit":false,"requiresStoreBinding":false,"requiresStoreCredentials":false,
+            "states":["queued","running","uploading","succeeded","failed"],"taskVisibility":"same issuing integration token only",
+            "prompt":{"maxUtf8Bytes":16384,"preservedVerbatim":true,"appIdentityProvidedToWorker":true},
+            "limits":{"queuedPerNode":20,"parallelJobsPerNode":1,"retentionDays":7,"maxPngBytes":16777216},
+            "centerSavesImage":false,"missingUploadDestinationDoesNotBlockExecution":true,"storeForwardingSwitchesApply":false},
         "adminDiagnostics":{"authentication":["adminToken"],"method":"GET","path":"/v1/connectors/{id}/logs/latest",
             "summary":"读取指定商店节点最新 JSONL 日志文件；中心流式转发，不保存文件副本",
             "requiresConnectorUpgrade":true,"oldNodeError":{"status":409,"code":"logs_upgrade_required"}},
         "forwarding":{"administratorRead":"/v1/forwarding","administratorUpdate":"/v1/forwarding/{platform}","requestBody":{"enabled":"boolean"},"disabledError":{"status":503,"code":"platform_forwarding_disabled"},"scope":"new store reads, writes and image uploads; existing admitted requests continue; connections, diagnostics and docs remain available"},
-        "iosVersions":{"creation":{"method":"POST","path":format!("{APP}/store-releases"),"platform":"ios","required":["versionString"],"releaseType":"MANUAL","submitsForReview":false},"listFields":["id","versionString","platform","state","appStoreState","appVersionState","editable","isLatest","createdDate"],"validationOwner":"connector","selection":"latest version only; locked versions stop version-related followup calls"},
+        "iosVersions":{"creation":{"method":"POST","path":format!("{APP}/store-releases"),"platform":"ios","required":["versionString"],"releaseType":"MANUAL","submitsForReview":false},"listFields":["id","versionString","platform","state","appStoreState","appVersionState","editable","isLatest","createdDate"],"validationOwner":"connector","selection":"latest version only for writes; locked versions stop writes, read-only queries remain available"},
         "uploadEndpoints":[
             {"method":"POST","path":format!("{APP}/uploads"),"summary":"申请图片上传凭据","requestSchema":"#/components/schemas/UploadInput","authentication":["integrationToken","businessToken"]},
             {"method":"PUT","path":format!("{APP}/uploads/{{assetId}}"),"summary":"按返回的 uploadUrl 上传原始文件字节","authentication":["uploadToken"],"contentTypes":["image/png","image/jpeg"],"maxBytes":67108864}

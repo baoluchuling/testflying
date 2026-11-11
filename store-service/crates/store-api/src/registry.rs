@@ -184,7 +184,7 @@ impl Registry {
     }
 
     pub fn get(&self, id: &str) -> Result<Connector> {
-        self.db.lock().unwrap().query_row("SELECT c.id,c.name,c.mode,c.base_url,c.enabled,c.nonce,(SELECT count(*) FROM app_bindings a WHERE a.connector_id=c.id) FROM connectors c WHERE c.id=?1", [id], |row| Ok(Connector {
+        self.db.lock().unwrap().query_row("SELECT c.id,c.name,c.mode,c.base_url,c.enabled,c.nonce,(SELECT count(*) FROM app_bindings a WHERE a.connector_id=c.id)+(SELECT count(*) FROM screenshot_app_bindings a WHERE a.connector_id=c.id) FROM connectors c WHERE c.id=?1", [id], |row| Ok(Connector {
             connector_id: row.get(0)?, name: row.get(1)?,
             kind: if row.get::<_, String>(2)? == "screenshot" { ConnectorKind::Screenshot } else { ConnectorKind::Store },
             base_url: row.get(3)?, enabled: row.get(4)?, nonce: row.get(5)?, app_count: row.get::<_, i64>(6)? as u64,

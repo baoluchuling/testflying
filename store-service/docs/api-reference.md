@@ -2,11 +2,11 @@
 
 版本：0.1.0。本文对应 `store-service/` 当前 Rust 实现；线上版本见 [生产部署记录](production-deployment.md)，现有 Testflying 后台尚未接入。示例均为接口格式示意，不是线上账号数据。
 
-外部后台接入统一使用 [商店业务与节点接入接口文档](store-api.md)，包括 9 个商店业务接口、2 个外部节点查询／绑定接口、locale/device 选择及图片上传配套接口。
+外部后台统一使用 [中心统一接口文档](store-api.md)，包括 10 个商店、2 个商店节点、6 个截图节点／任务接口，以及 locale/device、iOS 版本管理和图片上传。
 
 中心同时提供带接入 Token 或业务 Token 的 `GET /v1/store-management/api-docs`：默认返回 JSON 功能目录与完整文档，`?format=markdown` 返回完整 Markdown，`?format=openapi` 返回 OpenAPI YAML。无需应用绑定或在线节点；接入 Token 仍要求 HTTPS。此目录说明中心契约，不实时探测节点的本地平台模式或商店权限。
 
-管理后台提供 macOS 截图 Connector 部署包。截图任务由实体 Mac 执行，中心负责调度并将图片转发给外部服务。 [macOS 截图 Connector](screenshot-connector.md)
+外部商店、节点和截图接口统一以 [中心统一接口文档](store-api.md) 和在线 api-docs 为准，本页保留底层通信参考。截图节点列表、按包名绑定、触发及状态查询均在统一文档中；[macOS 截图 Connector](screenshot-connector.md) 仅作部署运维说明。
 
 本地文件上传新增两个中心接口：POST `APP_PATH/uploads` 申请短时凭据，PUT `APP_PATH/uploads/{assetId}` 发送文件字节。中心流式转发到 Connector，sync 用 assetId 引用，不需要先上对象存储。参数、限额和完整步骤见 [图片上传接口](image-upload-api.md)。
 

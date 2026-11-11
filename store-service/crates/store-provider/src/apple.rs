@@ -65,17 +65,6 @@ impl Gateway {
             }
             _ => {
                 let version = self.apple_version(app).await?;
-                if !matches!(r.operation, Operation::Preflight | Operation::Sync)
-                    && version
-                        .as_ref()
-                        .is_some_and(|v| !editable(apple_version_state(v)))
-                {
-                    return Err(StoreError::new(
-                        409,
-                        "store_version_not_editable",
-                        "Latest store version is not editable",
-                    ));
-                }
                 match r.operation {
                     Operation::Preflight => {
                         if s(&r.payload, "operation") == "update_marketing_page" {

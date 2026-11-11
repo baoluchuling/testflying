@@ -1,6 +1,6 @@
-# 商店业务与节点接入接口
+# 中心统一接口文档
 
-外部后台用同一枚接入 Token 查询可用节点、绑定应用，再调用商店查询、同步和图片上传接口。本文完整覆盖 **10 个商店业务接口、2 个外部节点查询／绑定接口**，另附图片上传配套接口与管理员查询接口。契约版本：`2026-11-11`。
+外部后台用同一枚接入 Token 查询节点、绑定应用、调用商店和截图任务。本文统一覆盖 **10 个商店业务接口、2 个商店节点查询／绑定接口、6 个截图节点／任务接口**，另附商店图片上传配套接口与管理员接口。契约版本：`2026-11-11`。
 
 ## 在线获取文档和功能目录
 
@@ -13,7 +13,7 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 | format 参数 | 响应类型 | 内容 |
 |---|---|---|
-| 省略或 json | application/json | schemaVersion、contractVersion、12 个核心接口的 endpoints、2 个配套 uploadEndpoints、imageQuery、sync、iosVersions、forwarding、limitations 及完整 Markdown 文档 |
+| 省略或 json | application/json | schemaVersion、contractVersion、18 个核心接口的 endpoints、2 个配套 uploadEndpoints、screenshots、imageQuery、sync、iosVersions、forwarding、limitations 及完整 Markdown 文档 |
 | markdown | text/markdown | 本文完整内容 |
 | openapi | application/yaml | 可导入工具的完整 OpenAPI 定义 |
 
@@ -65,6 +65,7 @@ JSON 字段为 camelCase，最大请求体 2 MiB。以下响应均为格式示�
 | 接入 Token | HTTPS | 查全部启用的商店节点、绑定或换绑应用、调用商店业务、申请上传 |
 | 业务 API Token（`STORE_API_TOKEN`） | HTTP、HTTPS | 查启用的商店节点、调用已绑定应用的商店接口、申请上传 |
 | 管理 Token | HTTP、HTTPS | 查询节点详情、读取当前绑定、绑定或换绑应用 |
+| 接入 Token（截图） | 仅 HTTPS | 列出截图节点、按平台／包名绑定截图节点、提交任务、查询本人任务 |
 | 短时 `uploadToken` | 使用返回的 `uploadUrl` | 上传图片文件字节 |
 
 中心管理员在 HTTPS 配置页打开「接入凭据」，用管理 Token 解锁，填写系统名称并发放。每套内部系统配置一枚接入 Token，调用时使用 `Authorization: Bearer INTEGRATION_TOKEN`。 [Connector 配置页说明](connector-setup.md)
@@ -322,7 +323,7 @@ Android 按最高数值 versionCode 倒序返回。iOS 由节点分页读取全�
 {"releases":[{"id":"apple-version-id","versionString":"2.0","platform":"ios","state":"IN_REVIEW","appStoreState":"IN_REVIEW","appVersionState":"IN_REVIEW","editable":false,"isLatest":true,"createdDate":"2026-11-11T00:00:00Z"}]}
 ```
 
-`state` 优先采用 Apple 的 appVersionState，缺失时采用 appStoreState；两个原始字段同时保留，缺失为 null。`editable` 由节点按状态判断：PREPARE_FOR_SUBMISSION、DEVELOPER_REJECTED、REJECTED、METADATA_REJECTED、INVALID_BINARY、READY_FOR_REVIEW 为 true，其他及未知状态为 false。`isLatest` 标记当前最新版本，不代表可编辑；不回退选择旧可编辑版本。节点在版本关联的语言、文案、截图后续查询和写入前检查最新版本状态，不可编辑立即停止：preflight 返回 canSync:false，sync 返回业务失败 status:failed，关联查询返回 409 store_version_not_editable。中心不查 Apple 版本或校验编辑状态，只转发请求。app 范围的评论、CPP/PPO 和新建版本不属于修改旧版本。分页超过 100 页、链接异常或结果超过安全消息上限直接失败，不返回不完整列表。旧节点需升级，WSS 返回 409 connector_upgrade_required。
+`state` 优先采用 Apple 的 appVersionState，缺失时采用 appStoreState；两个原始字段同时保留，缺失为 null。`editable` 由节点按状态判断：PREPARE_FOR_SUBMISSION、DEVELOPER_REJECTED、REJECTED、METADATA_REJECTED、INVALID_BINARY、READY_FOR_REVIEW 为 true，其他及未知状态为 false。`isLatest` 标记当前最新版本，不代表可编辑；不回退选择旧可编辑版本。语言、文案和截图查询即使最新版本不可编辑也正常读取。只有修改操作由节点检查最新版本状态，不可编辑时在后续写入前停止：preflight 返回 canSync:false，sync 返回业务失败 status:failed。已知状态错误码写入中心日志，不再归为 request_failed。中心不查 Apple 版本或校验编辑状态，只转发请求。app 范围的评论、CPP/PPO 和新建版本不属于修改旧版本。分页超过 100 页、链接异常或结果超过安全消息上限直接失败，不返回不完整列表。旧节点需升级，WSS 返回 409 connector_upgrade_required。
 
 ### 创建 iOS 新版本
 
@@ -794,3 +795,96 @@ Get-Content -LiteralPath $logFile.FullName -Tail 50 -Wait
 ```
 
 按小时切换文件后，重新执行上述两行。macOS 可用 `ls -t` 找到最新日志，再用 `tail -f` 查看。需要重新下载安装商店 Connector 的「仅升级程序」包并运行安装器，本机旧程序不会由中心自动替换。
+
+## 截图节点与截图任务（HTTPS）
+
+截图与商店业务在同一中心，但使用独立绑定和链路。外部先列出截图节点，按“平台＋包名”绑定截图 Mac；之后触发任务只传平台、包名和截图要求，不传节点 ID、项目路径或模拟器 ID。无需商店绑定或 Apple/Google 商店凭据；开发环境和项目需在实体 Mac 准备好，由 Codex 查找和操作。商店平台转发开关不影响截图任务。
+
+下列路径追加到 HTTPS 中心基础地址（例如 `https://store-api.example.com/store-api`），不要追加到 `{APP}` 下。接口均要求 HTTPS 和 `Authorization: Bearer INTEGRATION_TOKEN`；绑定的 PUT/GET/DELETE 也允许管理员 Token。普通商店业务 Token 无权使用截图接口。应用后端负责校验当前用户的应用权限。
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | /v1/screenshot-connectors | 列出全部启用的截图节点 |
+| PUT | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 绑定或更换截图节点 |
+| GET | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 查询当前截图绑定 |
+| DELETE | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 解除截图绑定 |
+| POST | /v1/screenshot-jobs | 按平台、包名触发截图 |
+| GET | /v1/screenshot-jobs/{jobId} | 查询任务状态与结果 |
+
+### 1. 列出截图节点
+
+```http
+GET /v1/screenshot-connectors
+Authorization: Bearer INTEGRATION_TOKEN
+```
+
+返回 HTTP 200：
+
+```json
+{"connectors":[{"connectorId":"11111111-1111-4111-8111-111111111111","name":"截图 Mac","kind":"screenshot","enabled":true,"connected":true,"appCount":1,"baseUrl":null,"logsAvailable":false}]}
+```
+
+只列启用的 Screenshot Connector，不混入商店节点或返回节点凭据。`connected` 表示 WSS 在线，不是商店权限或开发环境检查；离线节点也会列出，可提前绑定，任务等待它上线领取。`appCount` 包含截图应用绑定数。
+
+### 2. 绑定、查询和解除截图节点
+
+平台必须为 `ios` 或 `android`；包名为 iOS Bundle ID / Android package，大小写精确匹配。绑定与商店的 `.../connector` 独立，同一应用可以绑定商店节点和另一台截图 Mac，互不覆盖。
+
+```http
+PUT /v1/apps/ios/com.cfs.amberia/screenshot-connector
+Authorization: Bearer INTEGRATION_TOKEN
+Content-Type: application/json
+
+{"connectorId":"11111111-1111-4111-8111-111111111111"}
+```
+
+成功 HTTP 200：
+
+```json
+{"platform":"ios","bundleIdentifier":"com.cfs.amberia","connector":{"connectorId":"11111111-1111-4111-8111-111111111111","name":"截图 Mac","kind":"screenshot","enabled":true,"connected":true,"appCount":1,"baseUrl":null,"logsAvailable":false}}
+```
+
+`GET` 同一路径返回当前绑定（即使节点后来被停用，也能查看）。`DELETE` 同一路径返回 204，重复解除也返回 204。绑定必须指向启用的截图节点；商店节点返回 422 invalid_screenshot_connector，停用节点返回 409 connector_disabled。设置保存到中心注册表，重启保留。更换或解除只影响之后提交的任务；既有任务保留创建时的节点，不迁移或重放。
+
+### 3. 按包名触发截图
+
+```http
+POST /v1/screenshot-jobs
+Authorization: Bearer INTEGRATION_TOKEN
+Content-Type: application/json
+
+{"platform":"ios","bundleIdentifier":"com.cfs.amberia","prompt":"截取 Amberia 的 iPhone 首页，用于 App Store 商店页。竖屏，保留完整画面和原始分辨率。"}
+```
+
+必填 `platform`、`bundleIdentifier`、`prompt`；不再接受触发正文中的 `connectorId`。`prompt` 不能为空，UTF-8 最多 16 KiB，全文保留，不截断。中心会在给 Worker 的首轮任务消息中补入平台和包名，让 Codex 确定目标应用；具体项目、构建和模拟器选择仍由本机 Codex 决定。可选 `profile` 仅为任务提示，可省略或 null；若为字符串，须为 1–64 个 ASCII 字母、数字、下划线或短横线，不要求固定 profiles。
+
+成功返回 HTTP 202：
+
+```json
+{"jobId":"22222222-2222-4222-8222-222222222222","status":"queued","connectorId":"11111111-1111-4111-8111-111111111111","platform":"ios","bundleIdentifier":"com.cfs.amberia"}
+```
+
+中心在入队时原子读取截图绑定并固定节点；未绑定返回 404 screenshot_app_not_found，不随机选择 Mac；已绑定节点被停用返回 503 screenshot_connector_disabled。启用但离线的节点允许入队，重连后检查队列。在线节点通过已有加密 WSS 收到任务通知。每个 Mac 同时执行一个任务，最多排队 20 个，队满返回 429 screenshot_queue_full。提交不是同步等待截图；202 只表示已入队。不要把重复 POST 当作查询，提交无通用幂等去重，重复提交可能执行多次。
+
+### 4. 查询状态和结果
+
+```http
+GET /v1/screenshot-jobs/22222222-2222-4222-8222-222222222222
+Authorization: Bearer INTEGRATION_TOKEN
+```
+
+必须使用创建任务的同一枚接入 Token。其他 Token 即使有权使用同一节点，也返回 404 screenshot_job_not_found。成功示例：
+
+```json
+{"jobId":"22222222-2222-4222-8222-222222222222","connectorId":"11111111-1111-4111-8111-111111111111","platform":"ios","bundleIdentifier":"com.cfs.amberia","profile":null,"status":"succeeded","result":{"imageUrl":"https://cdn.example.com/screenshot.png"},"error":null}
+```
+
+状态依次可能为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。失败时 error 为错误码，result 通常为 null；成功时 result 也可能为 null（下游未返回 URL）。任务记录约保留七天。升级前的历史任务保留原节点和提示词，缺失的 platform/bundleIdentifier 返回 null。
+
+### 5. 图片交付与限制
+
+节点上传 PNG 到中心，单图最多 16 MiB，中心只在内存中校验并转发到配置的固定外部地址，不保存图片，不提供中心图片下载接口。任务成功时 result.imageUrl 来自外部服务，不是中心存储地址。这与商店图片 `{APP}/uploads` 的 64 MiB 链路不同。
+
+中心的 `STORE_API_SCREENSHOT_UPLOAD_URL` 和可选 `STORE_API_SCREENSHOT_UPLOAD_TOKEN` 配置外部接收服务。未配置或无有效地址不阻止任务提交、领取和执行；交图时返回 503 screenshot_upload_unconfigured，任务标记失败。占位交付协议为 POST multipart/form-data，字段 file、文件名 screenshot.png，Idempotency-Key 为 jobId。中心不跟随跳转，不在结果未知时自动重传；超时可记录 delivery_unknown。图片不进入中心磁盘或日志。
+
+管理员可在后台「截图 Connector 部署」创建截图节点；管理 API 为 POST /v1/connectors，正文 `{"name":"截图 Mac","kind":"screenshot"}`，使用管理员 Token。HTTPS GET /v1/connectors/{connectorId}/screenshot-installer 下载该节点的部署 ZIP，属于程序部署包，不是图片产物。安装、后台运行和日志说明见 [截图 Connector 部署说明](screenshot-connector.md)。本轮包名路由不改变 Worker 协议，现有截图节点无需重新安装。

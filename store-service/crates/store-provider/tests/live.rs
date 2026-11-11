@@ -225,12 +225,12 @@ fn request(platform: Platform, operation: Operation, payload: Value) -> StoreReq
 }
 
 #[tokio::test]
-async fn apple_versions_report_all_states_and_locked_latest_stops_followup_calls() {
+async fn apple_versions_report_all_states_and_only_writes_stop_when_latest_locked() {
     let fake=Fake::new(|r| {
         if r.uri.contains("/appStoreVersions?") {
             return ok(json!({"data":[
                 {"id":"older","attributes":{"platform":"IOS","versionString":"1.0","createdDate":"2025-01-01T00:00:00Z","appStoreState":"PREPARE_FOR_SUBMISSION"}},
-                {"id":"latest","attributes":{"platform":"IOS","versionString":"2.0","createdDate":"2026-01-01T00:00:00Z","appStoreState":"IN_REVIEW","appVersionState":"IN_REVIEW"}}
+                {"id":"latest","attributes":{"platform":"IOS","versionString":"2.0","createdDate":"2026-01-01T00:00:00Z","appStoreState":"WAITING_FOR_REVIEW","appVersionState":"WAITING_FOR_REVIEW"}}
             ]}));
         }
         apple_base(r).unwrap_or_else(||ok(json!({})))
@@ -243,7 +243,7 @@ async fn apple_versions_report_all_states_and_locked_latest_stops_followup_calls
         .unwrap();
     assert_eq!(response["releases"].as_array().unwrap().len(), 2);
     assert_eq!(response["releases"][0]["id"], "latest");
-    assert_eq!(response["releases"][0]["state"], "IN_REVIEW");
+    assert_eq!(response["releases"][0]["state"], "WAITING_FOR_REVIEW");
     assert_eq!(response["releases"][0]["editable"], false);
     assert_eq!(response["releases"][0]["isLatest"], true);
     assert_eq!(response["releases"][1]["editable"], true);
@@ -252,15 +252,12 @@ async fn apple_versions_report_all_states_and_locked_latest_stops_followup_calls
         Operation::StoreListings,
         Operation::StoreImages,
     ] {
-        assert_eq!(
-            gateway
-                .execute(&request(Platform::Ios, operation, json!({})))
-                .await
-                .unwrap_err()
-                .code,
-            "store_version_not_editable"
-        );
+        gateway
+            .execute(&request(Platform::Ios, operation, json!({})))
+            .await
+            .unwrap();
     }
+    let reads = fake.records().len();
     let preflight = gateway
         .execute(&request(
             Platform::Ios,
@@ -279,8 +276,11 @@ async fn apple_versions_report_all_states_and_locked_latest_stops_followup_calls
         .await
         .unwrap();
     assert_eq!(sync["errorCode"], "store_version_not_editable");
-    assert!(fake.records().iter().all(|r| r.method == "GET"
+    assert!(fake.records()[reads..].iter().all(|r| r.method == "GET"
         && (r.uri.starts_with("/v1/apps?") || r.uri.contains("/appStoreVersions?"))));
+    assert!(fake.records()[..reads]
+        .iter()
+        .any(|r| r.uri.contains("/appStoreVersionLocalizations")));
 }
 
 #[tokio::test]

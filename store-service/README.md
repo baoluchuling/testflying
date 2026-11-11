@@ -46,7 +46,7 @@ Testflying / 其他管理后台
 | store-api | 注册表、应用映射、鉴权、HTTP/WSS 路由与节点安装包 |
 | store-connector | 账号本地执行，支持 HTTP 服务与主动 WSS |
 
-业务接入先看 [商店业务与图片上传接口](docs/store-api.md)，包含 10 个商店操作、2 个节点查询／绑定和 2 个上传接口。iOS 支持查询各版本状态和创建新版本；最新版本的可编辑校验由节点执行。中心后台可独立暂停 iOS／Android 转发。含节点管理与通信协议的完整中文文档见 [api-reference.md](docs/api-reference.md)，机器可读定义见 [openapi.yaml](docs/openapi.yaml)。能力与测试对应见 [provider-capabilities.md](docs/provider-capabilities.md)，验证和清理记录见 [verification.md](docs/verification.md)。Apple 和 Google 商店操作由本地 Rust Provider 执行，不需要 Ruby、fastlane 或旧 Go 进程。
+业务接入先看 [商店业务与图片上传接口](docs/store-api.md)，包含 10 个商店操作、2 个商店节点查询／绑定、6 个截图节点／任务和 2 个上传接口。iOS 支持查询各版本状态和创建新版本；最新版本的可编辑校验由节点执行。中心后台可独立暂停 iOS／Android 转发。含节点管理与通信协议的完整中文文档见 [api-reference.md](docs/api-reference.md)，机器可读定义见 [openapi.yaml](docs/openapi.yaml)。能力与测试对应见 [provider-capabilities.md](docs/provider-capabilities.md)，验证和清理记录见 [verification.md](docs/verification.md)。Apple 和 Google 商店操作由本地 Rust Provider 执行，不需要 Ruby、fastlane 或旧 Go 进程。
 
 ## API 服务配置
 

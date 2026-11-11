@@ -175,6 +175,268 @@ async fn integration(app: &Router, name: &str, nodes: &[&str]) -> String {
     value(response).await["token"].as_str().unwrap().into()
 }
 
+async fn bind_app(app: &Router, token: &str, node: &str) {
+    let response = send(
+        app,
+        "PUT",
+        "/v1/apps/ios/com.example.app/screenshot-connector",
+        token,
+        json!({"connectorId":node}),
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+}
+
+#[tokio::test]
+async fn screenshot_discovery_and_app_bindings_route_precisely_without_touching_store_bindings() {
+    let dir = tempfile::tempdir().unwrap();
+    let database = dir.path().join("routing.sqlite");
+    let state = state_with_database(PathBuf::from("unused-releases"), database.to_str().unwrap());
+    let app = store_api::router(state.clone());
+    let (mac_a, token_a) = node(&app, "Mac A", "screenshot").await;
+    let (mac_b, _) = node(&app, "Mac B", "screenshot").await;
+    let (disabled, _) = node(&app, "Disabled Mac", "screenshot").await;
+    let (store, _) = node(&app, "Store", "store").await;
+    let token = integration(&app, "routing", &[]).await;
+    state.registry.set_enabled(&disabled, false).unwrap();
+    assert_eq!(
+        send(
+            &app,
+            "GET",
+            "/v1/screenshot-connectors",
+            BUSINESS,
+            Value::Null
+        )
+        .await
+        .status(),
+        403
+    );
+    let listed = value(
+        send(
+            &app,
+            "GET",
+            "/v1/screenshot-connectors",
+            &token,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    let nodes = listed["connectors"].as_array().unwrap();
+    assert_eq!(nodes.len(), 2);
+    assert!(nodes
+        .iter()
+        .all(|n| n["kind"] == "screenshot" && n["enabled"] == true));
+    assert!(!listed.to_string().contains(&token_a));
+    let ios = "/v1/apps/ios/com.example.App/screenshot-connector";
+    let android = "/v1/apps/android/com.example.App/screenshot-connector";
+    let payload = json!({"platform":"ios","bundleIdentifier":"com.example.App","prompt":"  完整截图要求\n  "});
+    assert_eq!(
+        send(&app, "POST", "/v1/screenshot-jobs", &token, payload.clone())
+            .await
+            .status(),
+        404
+    );
+    for (id, status) in [(&store, 422), (&disabled, 409)] {
+        assert_eq!(
+            send(&app, "PUT", ios, &token, json!({"connectorId":id}))
+                .await
+                .status(),
+            status
+        );
+    }
+    assert_eq!(
+        send(&app, "PUT", ios, BUSINESS, json!({"connectorId":mac_a}))
+            .await
+            .status(),
+        401
+    );
+    assert_eq!(
+        send(&app, "PUT", ios, &token, json!({"connectorId":mac_a}))
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        send(&app, "PUT", android, &token, json!({"connectorId":mac_b}))
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        send(
+            &app,
+            "PUT",
+            "/v1/apps/ios/com.example.App/connector",
+            ADMIN,
+            json!({"connectorId":store})
+        )
+        .await
+        .status(),
+        200
+    );
+    let store_binding = value(
+        send(
+            &app,
+            "GET",
+            "/v1/apps/ios/com.example.App/connector",
+            ADMIN,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(store_binding["connectorId"], store);
+    assert_eq!(
+        value(send(&app, "GET", ios, &token, Value::Null).await).await["connector"]["connectorId"],
+        mac_a
+    );
+    assert_eq!(
+        send(
+            &app,
+            "GET",
+            "/v1/apps/ios/com.example.app/screenshot-connector",
+            &token,
+            Value::Null
+        )
+        .await
+        .status(),
+        404
+    );
+    let first =
+        value(send(&app, "POST", "/v1/screenshot-jobs", &token, payload.clone()).await).await;
+    assert_eq!(first["connectorId"], mac_a);
+    assert_eq!(first["platform"], "ios");
+    let mut other = payload.clone();
+    other["platform"] = json!("android");
+    assert_eq!(
+        value(send(&app, "POST", "/v1/screenshot-jobs", &token, other).await).await["connectorId"],
+        mac_b
+    );
+    assert_eq!(
+        send(&app, "PUT", ios, &token, json!({"connectorId":mac_b}))
+            .await
+            .status(),
+        200
+    );
+    assert_eq!(
+        value(send(&app, "POST", "/v1/screenshot-jobs", &token, payload.clone()).await).await
+            ["connectorId"],
+        mac_b
+    );
+    let persisted =
+        state_with_database(PathBuf::from("unused-releases"), database.to_str().unwrap());
+    let persisted = store_api::router(persisted);
+    assert_eq!(
+        value(send(&persisted, "GET", ios, &token, Value::Null).await).await["connector"]
+            ["connectorId"],
+        mac_b
+    );
+    let claim = value(
+        send(
+            &app,
+            "POST",
+            &format!("/v1/connectors/{mac_a}/screenshot-jobs/claim"),
+            &token_a,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(claim["jobId"], first["jobId"]);
+    assert!(claim["prompt"]
+        .as_str()
+        .unwrap()
+        .ends_with(payload["prompt"].as_str().unwrap()));
+    assert!(claim["prompt"]
+        .as_str()
+        .unwrap()
+        .contains("com.example.App"));
+    assert_eq!(
+        send(&app, "DELETE", ios, &token, Value::Null)
+            .await
+            .status(),
+        204
+    );
+    assert_eq!(
+        send(&app, "GET", ios, &token, Value::Null).await.status(),
+        404
+    );
+    assert_eq!(
+        send(&app, "POST", "/v1/screenshot-jobs", &token, payload.clone())
+            .await
+            .status(),
+        404
+    );
+    assert_eq!(
+        send(
+            &app,
+            "POST",
+            "/v1/screenshot-jobs",
+            &token,
+            json!({"connectorId":mac_a,"prompt":"legacy"})
+        )
+        .await
+        .status(),
+        422
+    );
+    assert_eq!(
+        send(&app, "PUT", ios, ADMIN, json!({"connectorId":mac_a}))
+            .await
+            .status(),
+        200
+    );
+    state.registry.set_enabled(&mac_a, false).unwrap();
+    assert_eq!(
+        send(&app, "POST", "/v1/screenshot-jobs", &token, payload)
+            .await
+            .status(),
+        503
+    );
+}
+
+#[tokio::test]
+async fn old_screenshot_jobs_survive_schema_migration_with_their_original_prompt() {
+    let dir = tempfile::tempdir().unwrap();
+    let database = dir.path().join("old.sqlite");
+    rusqlite::Connection::open(&database).unwrap().execute_batch("CREATE TABLE screenshot_jobs(id TEXT PRIMARY KEY,connector_id TEXT NOT NULL,integration_id TEXT NOT NULL,profile TEXT NOT NULL,prompt TEXT NOT NULL,status TEXT NOT NULL,created_at INTEGER NOT NULL,deadline INTEGER NOT NULL,lease TEXT,result TEXT,error TEXT);").unwrap();
+    let state = state_with_database(PathBuf::from("unused-releases"), database.to_str().unwrap());
+    let app = store_api::router(state);
+    let (mac, mac_token) = node(&app, "Legacy Mac", "screenshot").await;
+    let token = integration(&app, "legacy", &[]).await;
+    let integrations = value(send(&app, "GET", "/v1/integrations", ADMIN, Value::Null).await).await;
+    let id = "00000000-0000-4000-8000-000000000001";
+    let now = store_protocol::upload::now().unwrap() as i64;
+    rusqlite::Connection::open(&database).unwrap().execute("INSERT INTO screenshot_jobs(id,connector_id,integration_id,profile,prompt,status,created_at,deadline) VALUES(?1,?2,?3,'','old prompt','queued',?4,?5)",rusqlite::params![id,mac,integrations["integrations"][0]["id"].as_str().unwrap(),now,now+60]).unwrap();
+    let claimed = value(
+        send(
+            &app,
+            "POST",
+            &format!("/v1/connectors/{mac}/screenshot-jobs/claim"),
+            &mac_token,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(claimed["prompt"], "old prompt");
+    assert_eq!(claimed["platform"], Value::Null);
+    assert_eq!(
+        value(
+            send(
+                &app,
+                "GET",
+                &format!("/v1/screenshot-jobs/{id}"),
+                &token,
+                Value::Null
+            )
+            .await
+        )
+        .await["status"],
+        "running"
+    );
+}
+
 #[tokio::test]
 async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     let (messages, mut received) = mpsc::unbounded_channel();
@@ -231,10 +493,11 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     assert!(state.transport.connected(&mac));
     let (store, store_token) = node(&app, "Store Connector", "store").await;
     let client = integration(&app, "screenshots", &[&store]).await;
+    bind_app(&app, &client, &mac).await;
     let peer = integration(&app, "same Mac, different integration", &[&mac]).await;
     let submit = "/v1/screenshot-jobs";
     let prompt = "  请打开设置并保留当前页面。\n  ";
-    let payload = json!({"connectorId":mac,"profile":"ios-iphone","prompt":prompt});
+    let payload = json!({"platform":"ios","bundleIdentifier":"com.example.app","profile":"ios-iphone","prompt":prompt});
     assert_eq!(
         send(&app, "POST", submit, BUSINESS, payload.clone())
             .await
@@ -300,7 +563,12 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     );
     let claim_reply = value(send(&app, "POST", &claim, &mac_token, Value::Null).await).await;
     assert_eq!(claim_reply["jobId"], id);
-    assert_eq!(claim_reply["prompt"], prompt);
+    assert!(claim_reply["prompt"].as_str().unwrap().ends_with(prompt));
+    assert!(claim_reply["prompt"]
+        .as_str()
+        .unwrap()
+        .contains("com.example.app"));
+    assert_eq!(claim_reply["platform"], "ios");
     assert_eq!(
         send(&app, "POST", &claim, &mac_token, Value::Null)
             .await
@@ -395,7 +663,7 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
         "POST",
         submit,
         &client,
-        json!({"connectorId":mac,"prompt":prompt}),
+        json!({"platform":"ios","bundleIdentifier":"com.example.app","prompt":prompt}),
     )
     .await;
     assert_eq!(next.status(), 202);
@@ -421,7 +689,7 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     let claimed = value(send(&app, "POST", &claim, &mac_token, Value::Null).await).await;
     assert_eq!(claimed["jobId"], next["jobId"]);
     assert_eq!(claimed.get("profile"), Some(&Value::Null));
-    assert_eq!(claimed["prompt"], prompt);
+    assert!(claimed["prompt"].as_str().unwrap().ends_with(prompt));
 
     assert_eq!(
         send(&app, "GET", "/v1/screenshot-artifacts", ADMIN, Value::Null)
@@ -532,7 +800,9 @@ async fn jobs_run_without_a_destination_and_only_image_delivery_fails() {
     let app = store_api::router(state());
     let (mac, mac_token) = node(&app, "Mac", "screenshot").await;
     let token = integration(&app, "external", &[&mac]).await;
-    let payload = json!({"connectorId":mac,"prompt":"Open settings"});
+    bind_app(&app, &token, &mac).await;
+    let payload =
+        json!({"platform":"ios","bundleIdentifier":"com.example.app","prompt":"Open settings"});
     let submit = "/v1/screenshot-jobs";
     let response = app
         .clone()
@@ -559,7 +829,10 @@ async fn jobs_run_without_a_destination_and_only_image_delivery_fails() {
     assert_eq!(response.status(), 200);
     let claimed = value(response).await;
     assert_eq!(claimed["jobId"], id);
-    assert_eq!(claimed["prompt"], "Open settings");
+    assert!(claimed["prompt"]
+        .as_str()
+        .unwrap()
+        .ends_with("Open settings"));
     let job_status = format!("{submit}/{id}");
     let mut png = Cursor::new(Vec::new());
     image::DynamicImage::new_rgba8(2, 2)

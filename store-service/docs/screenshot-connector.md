@@ -1,6 +1,6 @@
 # macOS 截图 Connector
 
-外部系统提交节点 ID 和截图要求。Mac 上的 Connector 为每个任务开启独立的 Codex Goal 会话。Codex 自行发现项目、准备模拟器和操作 App，并在同一会话中调用 Connector 提供的校验、截图和回传工具。中心将 PNG 转发给配置的外部服务。
+外部系统按平台、包名绑定截图节点，提交平台、包名和截图要求。Mac 上的 Connector 为每个任务开启独立的 Codex Goal 会话。Codex 自行发现项目、准备模拟器和操作 App，并在同一会话中调用 Connector 提供的校验、截图和回传工具。中心将 PNG 转发给配置的外部服务。
 
 ## 创建节点
 
@@ -18,20 +18,9 @@ Content-Type: application/json
 
 已有和新发放的接入 Token 均可调用全部启用的截图节点。接入系统用同一枚 Token 调用商店和截图接口，并用发起任务的 Token 查询任务状态。通用商店 Token 无法派截图任务。 [接入凭据管理](connector-setup.md)
 
-## 外部系统
+## 外部对接文档
 
-```http
-POST /v1/screenshot-jobs
-Authorization: Bearer INTEGRATION_TOKEN
-Content-Type: application/json
-
-{
-  "connectorId":"11111111-1111-4111-8111-111111111111",
-  "prompt":"截 Amberia iOS 的 iPhone 首页，用于 App Store 商店页。竖屏，保留完整画面和原始分辨率。"
-}
-```
-
-成功返回 `202` 和 `{"jobId":"…","status":"queued"}`。`prompt` 只需描述应用、页面、设备偏好和画面要求。Connector 将其原样作为首轮用户消息，工具和完成条件由 Connector 单独设置。提示词不能为空，上限为 16 KiB。`profile` 是可选的任务提示，允许 1–64 个 ASCII 字母、数字、下划线或短横线。查询省略该字段的任务时返回 `"profile":null`。发起任务的系统用同一枚 Token 请求 `GET /v1/screenshot-jobs/{jobId}`。状态为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。成功时 `result` 可包含外部服务返回的 HTTPS `imageUrl`，失败时 `error` 为中心错误代码。每个 Mac 同时处理一个任务，最多排队 20 个，任务记录保留约七天。
+截图节点列表、按包名绑定、触发和查询任务的唯一对接说明已合并到 [中心统一接口文档](store-api.md#截图节点与截图任务https)。触发只需 platform、bundleIdentifier 和 prompt，不再传 connectorId；本页仅保留实体 Mac 部署运维说明。中心会附加目标应用身份，完整保留外部提示词；无需重新安装 Worker。
 
 ## 在实体 Mac 上运行
 

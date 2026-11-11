@@ -11,9 +11,35 @@ pub(super) fn create_schema(db: &Connection) -> Result<()> {
             lease TEXT, result TEXT, error TEXT
          );
          CREATE INDEX IF NOT EXISTS screenshot_jobs_queue
-            ON screenshot_jobs(connector_id,status,created_at,id);",
+            ON screenshot_jobs(connector_id,status,created_at,id);
+         CREATE TABLE IF NOT EXISTS screenshot_app_bindings (
+            platform TEXT NOT NULL CHECK(platform IN ('ios','android')),
+            bundle_identifier TEXT NOT NULL,
+            connector_id TEXT NOT NULL REFERENCES connectors(id),
+            PRIMARY KEY(platform,bundle_identifier));",
     )
-    .map_err(database_error)
+    .map_err(database_error)?;
+    let columns: Vec<String> = {
+        let mut statement = db
+            .prepare("PRAGMA table_info(screenshot_jobs)")
+            .map_err(database_error)?;
+        let values = statement
+            .query_map([], |row| row.get(1))
+            .map_err(database_error)?;
+        values
+            .collect::<std::result::Result<_, _>>()
+            .map_err(database_error)?
+    };
+    for column in ["platform", "bundle_identifier"] {
+        if !columns.iter().any(|name| name == column) {
+            db.execute(
+                &format!("ALTER TABLE screenshot_jobs ADD COLUMN {column} TEXT"),
+                [],
+            )
+            .map_err(database_error)?;
+        }
+    }
+    Ok(())
 }
 
 fn timestamp() -> Result<i64> {
@@ -45,38 +71,120 @@ fn invalid_lease() -> StoreError {
     )
 }
 
+type QueuedScreenshot = (String, String, String, Option<String>, Option<String>);
 fn claimable_screenshot(
     db: &Connection,
     node: &str,
     time: i64,
-) -> Result<Option<(String, String, String)>> {
+) -> Result<Option<QueuedScreenshot>> {
     db.query_row(
-        "SELECT id,profile,prompt FROM screenshot_jobs j WHERE connector_id=?1 AND status='queued'
+        "SELECT id,profile,prompt,platform,bundle_identifier FROM screenshot_jobs j WHERE connector_id=?1 AND status='queued'
          AND deadline>?2 AND EXISTS(SELECT 1 FROM integrations WHERE id=j.integration_id)
          AND NOT EXISTS(SELECT 1 FROM screenshot_jobs WHERE connector_id=?1
                         AND status IN ('running','uploading') AND deadline>?2)
          ORDER BY created_at,rowid LIMIT 1",
         params![node, time],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?,row.get(3)?,row.get(4)?)),
     )
     .optional()
     .map_err(database_error)
 }
 
 impl Registry {
+    pub(crate) fn bind_screenshot(
+        &self,
+        platform: Platform,
+        identifier: &str,
+        id: &str,
+    ) -> Result<Connector> {
+        validate_identifier(identifier)?;
+        {
+            let mut db = self.db.lock().unwrap();
+            let tx = db
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(database_error)?;
+            let node: Option<(bool, String)> = tx
+                .query_row(
+                    "SELECT enabled,mode FROM connectors WHERE id=?1",
+                    [id],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .optional()
+                .map_err(database_error)?;
+            match node {
+                None => {
+                    return Err(StoreError::new(
+                        404,
+                        "connector_not_found",
+                        "Connector not found",
+                    ))
+                }
+                Some((false, _)) => {
+                    return Err(StoreError::new(
+                        409,
+                        "connector_disabled",
+                        "Connector is disabled",
+                    ))
+                }
+                Some((true, kind)) if kind != "screenshot" => {
+                    return Err(StoreError::new(
+                        422,
+                        "invalid_screenshot_connector",
+                        "Select a Screenshot Connector",
+                    ))
+                }
+                _ => {}
+            }
+            tx.execute("INSERT INTO screenshot_app_bindings(platform,bundle_identifier,connector_id) VALUES(?1,?2,?3) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET connector_id=excluded.connector_id",params![platform.to_string(),identifier,id]).map_err(database_error)?;
+            tx.commit().map_err(database_error)?;
+        }
+        self.get(id)
+    }
+    pub(crate) fn screenshot_binding(
+        &self,
+        platform: Platform,
+        identifier: &str,
+    ) -> Result<Connector> {
+        validate_identifier(identifier)?;
+        let id:Option<String>=self.db.lock().unwrap().query_row("SELECT connector_id FROM screenshot_app_bindings WHERE platform=?1 AND bundle_identifier=?2",params![platform.to_string(),identifier],|row|row.get(0)).optional().map_err(database_error)?;
+        self.get(&id.ok_or_else(missing_screenshot_binding)?)
+    }
+    pub(crate) fn unbind_screenshot(&self, platform: Platform, identifier: &str) -> Result<()> {
+        validate_identifier(identifier)?;
+        self.db
+            .lock()
+            .unwrap()
+            .execute(
+                "DELETE FROM screenshot_app_bindings WHERE platform=?1 AND bundle_identifier=?2",
+                params![platform.to_string(), identifier],
+            )
+            .map_err(database_error)?;
+        Ok(())
+    }
     pub(crate) fn enqueue_screenshot(
         &self,
         access: &Integration,
-        node: &str,
+        platform: Platform,
+        identifier: &str,
         profile: &str,
         prompt: &str,
     ) -> Result<Value> {
+        validate_identifier(identifier)?;
         let time = timestamp()?;
         let mut db = self.db.lock().unwrap();
         let tx = db
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
         expire(&tx, time)?;
+        let binding:Option<(String,bool)>=tx.query_row("SELECT c.id,c.enabled FROM screenshot_app_bindings b JOIN connectors c ON c.id=b.connector_id WHERE b.platform=?1 AND b.bundle_identifier=?2 AND c.mode='screenshot'",params![platform.to_string(),identifier],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(database_error)?;
+        let (node, enabled) = binding.ok_or_else(missing_screenshot_binding)?;
+        if !enabled {
+            return Err(StoreError::new(
+                503,
+                "screenshot_connector_disabled",
+                "Bound Screenshot Connector is disabled",
+            ));
+        }
         let permitted: bool = tx
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM connectors WHERE id=?1 AND enabled=1 AND mode='screenshot'
@@ -95,7 +203,7 @@ impl Registry {
         let queued: u32 = tx
             .query_row(
                 "SELECT count(*) FROM screenshot_jobs WHERE connector_id=?1 AND status='queued'",
-                [node],
+                [&node],
                 |row| row.get(0),
             )
             .map_err(database_error)?;
@@ -108,26 +216,29 @@ impl Registry {
         }
         let id = Uuid::new_v4().to_string();
         tx.execute(
-            "INSERT INTO screenshot_jobs(id,connector_id,integration_id,profile,prompt,status,created_at,deadline)
-             VALUES(?1,?2,?3,?4,?5,'queued',?6,?7)",
-            params![id, node, access.id, profile, prompt, time, time + 86400],
+            "INSERT INTO screenshot_jobs(id,connector_id,integration_id,profile,prompt,status,created_at,deadline,platform,bundle_identifier)
+             VALUES(?1,?2,?3,?4,?5,'queued',?6,?7,?8,?9)",
+            params![id, node, access.id, profile, prompt, time, time + 86400,platform.to_string(),identifier],
         ).map_err(database_error)?;
         tx.commit().map_err(database_error)?;
-        Ok(json!({"jobId":id,"status":"queued"}))
+        Ok(
+            json!({"jobId":id,"status":"queued","connectorId":node,"platform":platform,"bundleIdentifier":identifier}),
+        )
     }
 
     pub(crate) fn screenshot_status(&self, access: &Integration, id: &str) -> Result<Value> {
         let db = self.db.lock().unwrap();
         expire(&db, timestamp()?)?;
         let job = db.query_row(
-            "SELECT connector_id,profile,status,result,error FROM screenshot_jobs WHERE id=?1 AND integration_id=?2",
+            "SELECT connector_id,profile,status,result,error,platform,bundle_identifier FROM screenshot_jobs WHERE id=?1 AND integration_id=?2",
             params![id, access.id],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?,
-                      row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?)),
+                      row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?,row.get::<_,Option<String>>(5)?,row.get::<_,Option<String>>(6)?)),
         ).optional().map_err(database_error)?;
-        let (node, profile, status, result, error) = job.ok_or_else(|| {
-            StoreError::new(404, "screenshot_job_not_found", "Screenshot job not found")
-        })?;
+        let (node, profile, status, result, error, platform, identifier) =
+            job.ok_or_else(|| {
+                StoreError::new(404, "screenshot_job_not_found", "Screenshot job not found")
+            })?;
         let result = result
             .map(|body| serde_json::from_str::<Value>(&body))
             .transpose()
@@ -136,7 +247,7 @@ impl Registry {
             })?;
         let profile = (!profile.is_empty()).then_some(profile);
         Ok(
-            json!({"jobId":id,"connectorId":node,"profile":profile,"status":status,"result":result,"error":error}),
+            json!({"jobId":id,"connectorId":node,"platform":platform,"bundleIdentifier":identifier,"profile":profile,"status":status,"result":result,"error":error}),
         )
     }
 
@@ -147,14 +258,24 @@ impl Registry {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
         expire(&tx, time)?;
-        let claimed = if let Some((id, profile, prompt)) = claimable_screenshot(&tx, node, time)? {
+        let claimed = if let Some((id, profile, prompt, platform, identifier)) =
+            claimable_screenshot(&tx, node, time)?
+        {
             let lease = Uuid::new_v4().to_string();
             tx.execute(
                 "UPDATE screenshot_jobs SET status='running', deadline=?2, lease=?3, prompt='' WHERE id=?1",
                 params![id, time + 1800, lease],
             ).map_err(database_error)?;
             let profile = (!profile.is_empty()).then_some(profile);
-            Some(json!({"jobId":id,"profile":profile,"prompt":prompt,"lease":lease}))
+            let prompt = match (&platform, &identifier) {
+                (Some(platform), Some(identifier)) => {
+                    format!("应用平台：{platform}\n应用包名 / Bundle ID：{identifier}\n\n{prompt}")
+                }
+                _ => prompt,
+            };
+            Some(
+                json!({"jobId":id,"platform":platform,"bundleIdentifier":identifier,"profile":profile,"prompt":prompt,"lease":lease}),
+            )
         } else {
             None
         };
@@ -212,4 +333,12 @@ impl Registry {
         }
         Ok(())
     }
+}
+
+fn missing_screenshot_binding() -> StoreError {
+    StoreError::new(
+        404,
+        "screenshot_app_not_found",
+        "No Screenshot Connector is bound to this platform and package",
+    )
 }

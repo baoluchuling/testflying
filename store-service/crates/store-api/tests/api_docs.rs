@@ -76,7 +76,7 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert_eq!(catalog["schemaVersion"], 1);
     assert_eq!(catalog["contractVersion"], "2026-11-11");
     let endpoints = catalog["endpoints"].as_array().unwrap();
-    assert_eq!(endpoints.len(), 12);
+    assert_eq!(endpoints.len(), 18);
     assert_eq!(
         endpoints
             .iter()
@@ -100,7 +100,39 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
             )
         })
         .collect();
-    assert_eq!(unique.len(), 12);
+    assert_eq!(unique.len(), 18);
+    assert_eq!(
+        endpoints
+            .iter()
+            .filter(|e| e["group"] == "screenshot")
+            .count(),
+        6
+    );
+    for (method, path) in [
+        ("GET", "/v1/screenshot-connectors"),
+        (
+            "PUT",
+            "/v1/apps/{platform}/{bundleIdentifier}/screenshot-connector",
+        ),
+        (
+            "GET",
+            "/v1/apps/{platform}/{bundleIdentifier}/screenshot-connector",
+        ),
+        (
+            "DELETE",
+            "/v1/apps/{platform}/{bundleIdentifier}/screenshot-connector",
+        ),
+        ("POST", "/v1/screenshot-jobs"),
+        ("GET", "/v1/screenshot-jobs/{jobId}"),
+    ] {
+        assert!(unique.contains(&(method, path)));
+    }
+    assert_eq!(
+        catalog["screenshots"]["required"],
+        json!(["platform", "bundleIdentifier", "prompt"])
+    );
+    assert_eq!(catalog["screenshots"]["connectorIdInSubmit"], false);
+    assert_eq!(catalog["screenshots"]["requiresConnectorUpgrade"], false);
     for (method, resource) in [
         ("GET", "supported-locales"),
         ("GET", "store-listings"),

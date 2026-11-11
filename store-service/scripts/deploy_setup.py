@@ -330,11 +330,12 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                 check(status == 200 and catalog["contractVersion"] == "2026-11-11",
                       scheme + " business-token documentation available")
                 endpoints = catalog["endpoints"]
-                check(len(endpoints) == 12
+                check(len(endpoints) == 18
                       and sum(row["group"] == "store" for row in endpoints) == 10
                       and sum(row["group"] == "node" for row in endpoints) == 2
+                      and sum(row["group"] == "screenshot" for row in endpoints) == 6
                       and len(catalog["uploadEndpoints"]) == 2,
-                      scheme + " ten store and two node endpoints plus upload helpers")
+                      scheme + " ten store, two node and six screenshot endpoints plus upload helpers")
                 check(catalog["imageQuery"]["parameters"][1]["enum"] == ["phone", "tablet", "foldable"]
                       and "foldable" not in catalog["imageQuery"]["android"]["devices"],
                       scheme + " language and device options with platform limits")
@@ -473,9 +474,9 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                 check(status == 200 and {row["connectorId"] for row in json.loads(body)["connectors"]} == business_nodes,
                       "new integration lists all enabled store nodes")
                 status, body = request("/v1/screenshot-jobs", token, "POST",
-                                       {"connectorId": connector_id, "prompt": "verify"})
-                check((status, json.loads(body)["error"]["code"]) == (422, "invalid_screenshot_connector"),
-                      "profile-free screenshot submission validates the node independently of the upload destination")
+                                       {"platform":"ios","bundleIdentifier":"com.example.verify","prompt":"verify"})
+                check((status, json.loads(body)["error"]["code"]) == (404, "screenshot_app_not_found"),
+                      "profile-free screenshot submission requires app binding before upload configuration")
             finally:
                 status, body = request(management, snapshot["admin"])
                 check(status == 200, "temporary integration cleanup listing available")

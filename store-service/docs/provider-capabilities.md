@@ -33,7 +33,7 @@ The following are actual in-process HTTP integration tests in `crates/store-prov
 
 Scope and limits:
 
-- iOS version listing returns all paginated version states, latest marker and node-derived editability. Creation resolves the trusted app identity and creates a MANUAL IOS version without build attachment or review submission. `apple_versions_report_all_states_and_locked_latest_stops_followup_calls` and `apple_create_version_is_manual_without_submission_and_validates_on_the_node` cover real fake-Apple HTTP, no real accounts.
+- iOS version listing returns all paginated version states, latest marker and node-derived editability. Creation resolves the trusted app identity and creates a MANUAL IOS version without build attachment or review submission. `apple_versions_report_all_states_and_only_writes_stop_when_latest_locked` and `apple_create_version_is_manual_without_submission_and_validates_on_the_node` cover real fake-Apple HTTP, no real accounts.
 
 - Apple `store_releases` returns version states and editability; Android PPO list returns an empty list. Android version creation, PPO creation and marketing page writes are explicitly rejected. There is no independent review submission, publishing, release rollout, or review reply operation; normal Google edit commits may send changes for review.
 - Resource lists preserve the Go request limits except Apple screenshot reads, which follow up to 20 same-origin, same-path collection pages with a 10,000-object bound. Reviews expose continuation.

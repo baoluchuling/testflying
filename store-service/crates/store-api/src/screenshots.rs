@@ -151,6 +151,7 @@ pub(super) fn routes(
     uploader: Option<ScreenshotUploader>,
 ) -> Router<Arc<ApiState>> {
     let external = Router::new()
+        .route("/v1/screenshot-connectors", get(list_nodes))
         .route("/v1/screenshot-jobs", post(submit))
         .route("/v1/screenshot-jobs/{job}", get(status))
         .route_layer(middleware::from_fn_with_state(
@@ -162,9 +163,22 @@ pub(super) fn routes(
             "/v1/connectors/{id}/screenshot-installer",
             get(screenshot_installer),
         )
-        .route_layer(middleware::from_fn_with_state(state, authorize_admin));
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            authorize_admin,
+        ));
+    let binding = Router::new()
+        .route(
+            "/v1/apps/{platform}/{identifier}/screenshot-connector",
+            get(binding).put(bind).delete(unbind),
+        )
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            integrations::authorize_binding,
+        ));
     external
         .merge(admin)
+        .merge(binding)
         .route("/v1/connectors/{id}/screenshot-jobs/claim", post(claim))
         .route(
             "/v1/connectors/{id}/screenshot-jobs/{job}/failure",
@@ -271,7 +285,8 @@ fn installer_archive(config: &[u8], executable: &[u8]) -> zip::result::ZipResult
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Submit {
-    connector_id: String,
+    platform: Platform,
+    bundle_identifier: String,
     profile: Option<String>,
     prompt: String,
 }
@@ -311,12 +326,60 @@ async fn submit(
     }
     let job = state.registry.enqueue_screenshot(
         &access,
-        &input.connector_id,
+        input.platform,
+        &input.bundle_identifier,
         input.profile.as_deref().unwrap_or_default(),
         &input.prompt,
     )?;
-    state.transport.notify_screenshot(&input.connector_id);
+    state.transport.notify_screenshot(
+        job["connectorId"]
+            .as_str()
+            .expect("validated screenshot routing"),
+    );
     Ok((StatusCode::ACCEPTED, Json(job)))
+}
+
+async fn list_nodes(
+    State(state): State<Arc<ApiState>>,
+    access: Option<Extension<Integration>>,
+) -> Result<Json<Value>> {
+    require_integration(access)?;
+    let nodes = state
+        .registry
+        .list()?
+        .into_iter()
+        .filter(|node| node.kind == ConnectorKind::Screenshot && node.enabled)
+        .map(|node| node_view(&state, node))
+        .collect::<Vec<_>>();
+    Ok(Json(json!({"connectors":nodes})))
+}
+async fn bind(
+    State(state): State<Arc<ApiState>>,
+    Path((platform, identifier)): Path<(Platform, String)>,
+    Json(input): Json<BindInput>,
+) -> Result<Json<Value>> {
+    let node = state
+        .registry
+        .bind_screenshot(platform, &identifier, &input.connector_id)?;
+    Ok(Json(
+        json!({"platform":platform,"bundleIdentifier":identifier,"connector":node_view(&state,node)}),
+    ))
+}
+async fn binding(
+    State(state): State<Arc<ApiState>>,
+    Path((platform, identifier)): Path<(Platform, String)>,
+) -> Result<Json<Value>> {
+    let node = state.registry.screenshot_binding(platform, &identifier)?;
+    Ok(Json(
+        json!({"platform":platform,"bundleIdentifier":identifier,"connector":node_view(&state,node)}),
+    ))
+}
+async fn unbind(
+    State(state): State<Arc<ApiState>>,
+    Path((platform, identifier)): Path<(Platform, String)>,
+) -> Result<StatusCode> {
+    state.registry.unbind_screenshot(platform, &identifier)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn status(

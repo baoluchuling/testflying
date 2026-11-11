@@ -1,16 +1,16 @@
 openapi: 3.1.0
 info:
-  title: Independent Store API
+  title: Unified Center API - Stores, Nodes and Screenshots
   version: '2026-11-11'
   description: >-
-    Pure real-time Apple/Google API. Application identity is platform plus exact
-    Bundle ID/package name. Multiple apps map to one account Connector.
-    No drafts, content database, task persistence, automatic mutation retries or replay.
+    Store calls are real-time without drafts or automatic mutation retries.
+    Screenshot jobs are asynchronous, routed by exact platform/package bindings and retained for seven days.
+    Screenshot images are forwarded without center file persistence. Screenshot routes require HTTPS.
 servers:
   - url: http://localhost:8200
 components:
   securitySchemes:
-    integrationToken: {type: http, scheme: bearer, description: 'Integration credential; HTTPS only; all enabled store nodes, bindings and store business calls.'}
+    integrationToken: {type: http, scheme: bearer, description: 'HTTPS integration credential; enabled store and screenshot nodes, independent app bindings and business calls. Screenshot job visibility is limited to the creating integration.'}
     clientToken: {type: http, scheme: bearer, description: STORE_API_TOKEN}
     adminToken: {type: http, scheme: bearer, description: STORE_API_ADMIN_TOKEN}
     nodeToken: {type: http, scheme: bearer, description: Individually provisioned Connector token}
@@ -42,6 +42,33 @@ components:
       description: For store-images only. Omit or blank for all. iOS supports all three; Android supports phone/tablet and rejects foldable with 422 unsupported_image_device. Do not send all or duo.
       schema: {type: string, enum: [phone, tablet, foldable, '']}
   schemas:
+    ScreenshotBindingInput:
+      type: object
+      additionalProperties: false
+      required: [connectorId]
+      properties:
+        connectorId: {type: string, format: uuid}
+    ScreenshotJobInput:
+      type: object
+      additionalProperties: false
+      required: [platform, bundleIdentifier, prompt]
+      properties:
+        platform: {type: string, enum: [ios, android]}
+        bundleIdentifier: {type: string, minLength: 1, maxLength: 180, pattern: '^[A-Za-z0-9_.-]+$', description: 'Exact case-sensitive Bundle ID or package, independently bound to a screenshot node.'}
+        prompt: {type: string, minLength: 1, maxLength: 16384, description: At most 16 KiB UTF-8 bytes; preserved in full. Center prepends target app identity for Codex.}
+        profile: {type: [string, 'null'], minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$', description: Optional task hint; no fixed profiles required.}
+      description: connectorId is not accepted here. No store binding or store credentials required.
+    ScreenshotJob:
+      type: object
+      properties:
+        jobId: {type: string, format: uuid}
+        connectorId: {type: string, format: uuid}
+        platform: {type: [string, 'null'], enum: [ios, android, null]}
+        bundleIdentifier: {type: [string, 'null']}
+        profile: {type: [string, 'null']}
+        status: {type: string, enum: [queued, running, uploading, succeeded, failed]}
+        result: {type: [object, 'null'], properties: {imageUrl: {type: string, format: uri}}}
+        error: {type: [string, 'null']}
     CreateStoreRelease:
       type: object
       required: [versionString]
@@ -65,12 +92,14 @@ components:
       required: [name]
       properties:
         name: {type: string, minLength: 1, maxLength: 160}
+        kind: {type: string, enum: [store, screenshot], default: store}
     Connector:
       type: object
       required: [connectorId, name, enabled, appCount, connected]
       properties:
         connectorId: {type: string, format: uuid}
         name: {type: string}
+        kind: {type: string, enum: [store, screenshot]}
         baseUrl: {type: [string, 'null'], description: Reported by authenticated Connector; used only for internal HTTP fallback.}
         enabled: {type: boolean}
         appCount: {type: integer, minimum: 0}
@@ -223,6 +252,56 @@ components:
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
 security: [{integrationToken: []}, {clientToken: []}]
 paths:
+  /v1/screenshot-connectors:
+    get:
+      summary: List all enabled Screenshot Connectors, including offline Macs
+      description: HTTPS only. No node tokens or store nodes returned. Store forwarding pauses do not block screenshot operations.
+      security: [{integrationToken: []}]
+      responses:
+        '200':
+          description: Screenshot nodes with kind, appCount, enabled and connected state.
+          content: {application/json: {schema: {type: object, properties: {connectors: {type: array, items: {$ref: '#/components/schemas/Connector'}}}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector:
+    parameters: [{$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}]
+    put:
+      summary: Bind or replace the app's screenshot Mac independently of its store binding
+      description: HTTPS only. Requires an enabled Screenshot Connector; offline is permitted. Rebinding only affects future jobs; already-created jobs keep their assigned node. Persistent across center restarts.
+      security: [{integrationToken: []}, {adminToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotBindingInput'}}}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    get:
+      summary: Read the app's screenshot binding, even if the node has since been disabled
+      description: HTTPS only; missing binding returns 404 screenshot_app_not_found.
+      security: [{integrationToken: []}, {adminToken: []}]
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    delete:
+      summary: Remove a screenshot app binding without canceling existing jobs
+      description: HTTPS only; idempotent; store binding unaffected.
+      security: [{integrationToken: []}, {adminToken: []}]
+      responses: {'204': {description: Screenshot binding removed or already absent}, default: {$ref: '#/components/responses/Error'}}
+  /v1/screenshot-jobs:
+    post:
+      summary: Trigger a screenshot with platform, package and prompt; no connectorId
+      description: HTTPS only; exact screenshot binding required. No random fallback. Offline enabled nodes may queue. At most 20 queued and one running per node. 202 means queued, not completed; no submit deduplication or automatic replay. Missing external upload destination does not block execution. Existing workers need no upgrade.
+      security: [{integrationToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotJobInput'}}}
+      responses:
+        '202': {description: Job queued with jobId and resolved connector/app identity, content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotJob'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/screenshot-jobs/{jobId}:
+    get:
+      summary: Read screenshot status using the same integration token that created it
+      description: HTTPS only. Other integrations receive 404 even for the same Mac. Results may contain an external HTTPS imageUrl; center stores no PNG. Legacy jobs may have null app identity. History retained for approximately seven days.
+      security: [{integrationToken: []}]
+      parameters: [{name: jobId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Screenshot job state and result, content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotJob'}}}}
+        default: {$ref: '#/components/responses/Error'}
   /v1/forwarding:
     get:
       summary: Read persistent per-platform forwarding switches
@@ -312,7 +391,7 @@ paths:
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
   /v1/store-management/api-docs:
     get:
-      summary: Read the ten store and two node endpoint contract, version creation, image options and full documentation
+      summary: Read the unified contract for ten store, two node and six screenshot endpoints, plus upload helpers
       description: Requires no app binding, node or store account. Describes the center contract, not live node capabilities. Integration tokens require HTTPS; business tokens support HTTP and HTTPS. Cache-Control no-store. Administrator tokens do not authenticate this route.
       parameters:
         - name: format
