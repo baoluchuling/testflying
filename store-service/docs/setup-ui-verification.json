@@ -1,5 +1,5 @@
 {
-  "runId": "a8468c4bd9494d4d8c53c69b90938342",
+  "runId": "4f9b0709f01f4a7ca62edf3bd61347bb",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -19,7 +19,11 @@
     "HTTP displays the HTTPS link without prompting for credentials or contacting the node API",
     "wrong Token stays locked and transient unlock failure can be retried",
     "node setup and integration management appear only after shared HTTPS administrator unlock",
+    "mock OSS and pending notification settings save without notifying; secrets clear before the response and only configured flags return",
+    "blank screenshot passwords are omitted to preserve configured secrets and masked refresh retains ordinary fields",
+    "AccessKey changes require a new Secret; failed settings saves keep the admin unlocked and display a fixed safe error",
     "administrator can pause iOS and Android independently and refresh persisted forwarding state",
+    "mobile layout with expanded OSS and notification settings has no horizontal overflow",
     "Apple Key ID recognized from the original filename",
     "failed download retains the newly created node",
     "real Windows executable preserved in a downloadable dual-platform private ZIP",
@@ -29,21 +33,23 @@
     "node log download uses the authenticated session and hides unsupported old nodes",
     "seven-day logs support application filters and request traces without rendering HTML",
     "locking cancels a pending credential reveal and clears local files and secrets",
+    "locking hides screenshot settings and clears all unsaved OSS and notification passwords",
     "screenshot node is available in its own deployment panel and excluded from Store Connector downloads",
     "admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it",
     "unlocked admin can provision a screenshot node and download its macOS deployment ZIP",
+    "locking aborts an in-flight screenshot settings refresh and prevents a late response from restoring the form",
     "refresh restores the HTTPS session and clears local files without writing to web storage",
     "locking clears the cookie and a subsequent refresh stays locked",
     "mobile layout has no horizontal overflow",
     "no credential file or account fields are uploaded and CSP passes"
   ],
-  "windowsExecutableSha256": "9366238557a8fa8aee2a1e7a932a4a14b7c034629ba0acfeb204ab48d7f3eb14",
+  "windowsExecutableSha256": "5c775b3d1739f75b4edec8269d6b6835e8a5336e887ac32c14778b490df03a6c",
   "credentialFilesUploaded": false,
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "529a2ba6-8f19-40b8-a8f0-510b967c7f8c",
-    "1a2ed49a-dcf3-4a22-9d92-a78765c7527e"
+    "9379d07e-eac5-4ca0-b65c-d8a765ca7e54",
+    "b2415039-66a9-4720-94ff-55f6ffb1fb21"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0
