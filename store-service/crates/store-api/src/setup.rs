@@ -119,6 +119,14 @@ async fn authorize_setup(
 
 pub(super) fn routes(state: Arc<super::ApiState>) -> Router<Arc<super::ApiState>> {
     let setup_api = Router::new()
+        .route(
+            "/connector-setup/api/forwarding",
+            get(super::forwarding::read),
+        )
+        .route(
+            "/connector-setup/api/forwarding/{platform}",
+            axum::routing::put(super::forwarding::update),
+        )
         .route("/connector-setup/api/logs", get(super::logs::read))
         .route(
             "/connector-setup/api/connectors/{id}/logs/latest",
@@ -205,6 +213,10 @@ async fn asset(Path(name): Path<String>) -> Response {
         "logs.mjs" => (
             "text/javascript; charset=utf-8",
             include_bytes!("setup/logs.mjs"),
+        ),
+        "forwarding.mjs" => (
+            "text/javascript; charset=utf-8",
+            include_bytes!("setup/forwarding.mjs"),
         ),
         "packager.mjs" => (
             "text/javascript; charset=utf-8",

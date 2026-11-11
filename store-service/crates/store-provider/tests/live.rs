@@ -225,6 +225,109 @@ fn request(platform: Platform, operation: Operation, payload: Value) -> StoreReq
 }
 
 #[tokio::test]
+async fn apple_versions_report_all_states_and_locked_latest_stops_followup_calls() {
+    let fake=Fake::new(|r| {
+        if r.uri.contains("/appStoreVersions?") {
+            return ok(json!({"data":[
+                {"id":"older","attributes":{"platform":"IOS","versionString":"1.0","createdDate":"2025-01-01T00:00:00Z","appStoreState":"PREPARE_FOR_SUBMISSION"}},
+                {"id":"latest","attributes":{"platform":"IOS","versionString":"2.0","createdDate":"2026-01-01T00:00:00Z","appStoreState":"IN_REVIEW","appVersionState":"IN_REVIEW"}}
+            ]}));
+        }
+        apple_base(r).unwrap_or_else(||ok(json!({})))
+    }).await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let response = gateway
+        .execute(&request(Platform::Ios, Operation::StoreReleases, json!({})))
+        .await
+        .unwrap();
+    assert_eq!(response["releases"].as_array().unwrap().len(), 2);
+    assert_eq!(response["releases"][0]["id"], "latest");
+    assert_eq!(response["releases"][0]["state"], "IN_REVIEW");
+    assert_eq!(response["releases"][0]["editable"], false);
+    assert_eq!(response["releases"][0]["isLatest"], true);
+    assert_eq!(response["releases"][1]["editable"], true);
+    for operation in [
+        Operation::SupportedLocales,
+        Operation::StoreListings,
+        Operation::StoreImages,
+    ] {
+        assert_eq!(
+            gateway
+                .execute(&request(Platform::Ios, operation, json!({})))
+                .await
+                .unwrap_err()
+                .code,
+            "store_version_not_editable"
+        );
+    }
+    let preflight = gateway
+        .execute(&request(
+            Platform::Ios,
+            Operation::Preflight,
+            json!({"operation":"update_app_metadata"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(preflight["canSync"], false);
+    let sync = gateway
+        .execute(&request(
+            Platform::Ios,
+            Operation::Sync,
+            json!({"operation":"update_release_notes","locale":"en-US","releaseNotes":"notes"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(sync["errorCode"], "store_version_not_editable");
+    assert!(fake.records().iter().all(|r| r.method == "GET"
+        && (r.uri.starts_with("/v1/apps?") || r.uri.contains("/appStoreVersions?"))));
+}
+
+#[tokio::test]
+async fn apple_create_version_is_manual_without_submission_and_validates_on_the_node() {
+    let fake=Fake::new(|r| {
+        if r.method=="POST"&&r.uri=="/v1/appStoreVersions" {
+            let body=r.body();
+            assert_eq!(body["data"]["type"],"appStoreVersions");
+            assert_eq!(body["data"]["attributes"],json!({"platform":"IOS","versionString":"2.1","releaseType":"MANUAL","copyright":"Example"}));
+            assert_eq!(body["data"]["relationships"]["app"]["data"],json!({"type":"apps","id":"resolved-app"}));
+            return ok(json!({"data":{"id":"created-version","attributes":{"versionString":"2.1","appVersionState":"PREPARE_FOR_SUBMISSION"}}}));
+        }
+        apple_base(r).unwrap_or_else(||ok(json!({})))
+    }).await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    for (p, payload) in [
+        (Platform::Ios, json!({})),
+        (Platform::Ios, json!({"versionString":123})),
+        (Platform::Android, json!({"versionString":"2.1"})),
+    ] {
+        assert_eq!(
+            gateway
+                .execute(&request(p, Operation::CreateStoreRelease, payload))
+                .await
+                .unwrap_err()
+                .status,
+            422
+        );
+    }
+    assert!(fake.records().is_empty());
+    let created = gateway
+        .execute(&request(
+            Platform::Ios,
+            Operation::CreateStoreRelease,
+            json!({"versionString":"2.1","copyright":"Example","appId":"untrusted"}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(created["release"]["id"], "created-version");
+    assert_eq!(created["release"]["editable"], true);
+    let records = fake.records();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records.iter().filter(|r| r.method == "POST").count(), 1);
+}
+
+#[tokio::test]
 async fn google_empty_commit_declares_zero_length_and_records_safe_step_logs() {
     let fake = Fake::new(|r| {
         if r.uri.contains(":commit?") {
@@ -1598,7 +1701,7 @@ async fn apple_adaptive_rate_limit_and_identity_mismatch_fail_closed() {
         let mut reply = apple_base(r).unwrap_or_else(|| ok(json!({})));
         reply
             .1
-            .push(("x-rate-limit", "user-hour-lim:2;user-hour-rem:1;".into()));
+            .push(("x-rate-limit", "user-hour-lim:3;user-hour-rem:2;".into()));
         reply
     })
     .await;
@@ -1613,7 +1716,7 @@ async fn apple_adaptive_rate_limit_and_identity_mismatch_fail_closed() {
         .await
         .unwrap_err();
     assert_eq!(error.status, 429);
-    assert_eq!(fake.records().len(), 1);
+    assert_eq!(fake.records().len(), 2);
     let other = Fake::new(|_| {
         ok(json!({"data":[{"id":"foreign","attributes":{"bundleId":"com.other.App"}}]}))
     })

@@ -64,7 +64,7 @@ fn catalog() -> Value {
             4,
             "GET",
             "store-releases",
-            "查询 release；iOS 当前返回空列表",
+            "查询版本和状态；iOS 返回各版本及是否可编辑",
             json!([]),
             None,
         ),
@@ -122,6 +122,14 @@ fn catalog() -> Value {
             Some("Sync"),
         ),
     ];
+    endpoints.push(endpoint(
+        10,
+        "POST",
+        "store-releases",
+        "创建 iOS App Store 版本，不送审",
+        json!([]),
+        Some("CreateStoreRelease"),
+    ));
     endpoints.push(json!({"id":"list-connectors","group":"node","method":"GET",
         "path":"/v1/store-management/connectors","summary":"查询全部启用的商店节点",
         "authentication":["integrationToken","businessToken"],"requiresBinding":false,"parameters":[]}));
@@ -141,6 +149,8 @@ fn catalog() -> Value {
         "adminDiagnostics":{"authentication":["adminToken"],"method":"GET","path":"/v1/connectors/{id}/logs/latest",
             "summary":"读取指定商店节点最新 JSONL 日志文件；中心流式转发，不保存文件副本",
             "requiresConnectorUpgrade":true,"oldNodeError":{"status":409,"code":"logs_upgrade_required"}},
+        "forwarding":{"administratorRead":"/v1/forwarding","administratorUpdate":"/v1/forwarding/{platform}","requestBody":{"enabled":"boolean"},"disabledError":{"status":503,"code":"platform_forwarding_disabled"},"scope":"new store reads, writes and image uploads; existing admitted requests continue; connections, diagnostics and docs remain available"},
+        "iosVersions":{"creation":{"method":"POST","path":format!("{APP}/store-releases"),"platform":"ios","required":["versionString"],"releaseType":"MANUAL","submitsForReview":false},"listFields":["id","versionString","platform","state","appStoreState","appVersionState","editable","isLatest","createdDate"],"validationOwner":"connector","selection":"latest version only; locked versions stop version-related followup calls"},
         "uploadEndpoints":[
             {"method":"POST","path":format!("{APP}/uploads"),"summary":"申请图片上传凭据","requestSchema":"#/components/schemas/UploadInput","authentication":["integrationToken","businessToken"]},
             {"method":"PUT","path":format!("{APP}/uploads/{{assetId}}"),"summary":"按返回的 uploadUrl 上传原始文件字节","authentication":["uploadToken"],"contentTypes":["image/png","image/jpeg"],"maxBytes":67108864}
@@ -159,7 +169,7 @@ fn catalog() -> Value {
             "textSelection":"未传字段保留；选中文字字段的显式空字符串按清空处理；版本说明通过 update_release_notes 更新",
             "appleImages":"先上传 Asset Library 并确认处理和规格，再替换 placements 并排序；多步写入非事务，不自动重放"
         },
-        "limitations":["iOS release 列表未实现","Android 不支持独立折叠屏图片、CPP 或创建 PPO","无通用送审、发布、评论回复、CPP 列表或删除、PPO 启停接口"],
+        "limitations":["Android 不支持创建新版本、独立折叠屏图片、CPP 或创建 PPO","无独立通用送审、发布、评论回复、CPP 列表或删除、PPO 启停接口"],
         "documentation":{"formats":["json","markdown","openapi"],"markdownUrl":format!("{PATH}?format=markdown"),"openapiUrl":format!("{PATH}?format=openapi"),"markdown":MARKDOWN}
     })
 }

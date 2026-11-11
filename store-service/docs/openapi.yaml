@@ -42,6 +42,13 @@ components:
       description: For store-images only. Omit or blank for all. iOS supports all three; Android supports phone/tablet and rejects foldable with 422 unsupported_image_device. Do not send all or duo.
       schema: {type: string, enum: [phone, tablet, foldable, '']}
   schemas:
+    CreateStoreRelease:
+      type: object
+      required: [versionString]
+      properties:
+        versionString: {type: string, minLength: 1}
+        copyright: {type: string}
+      description: iOS only. Node resolves the app and creates an IOS version with releaseType MANUAL, without review submission or build attachment.
     Error:
       type: object
       properties:
@@ -216,6 +223,35 @@ components:
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
 security: [{integrationToken: []}, {clientToken: []}]
 paths:
+  /v1/forwarding:
+    get:
+      summary: Read persistent per-platform forwarding switches
+      security: [{adminToken: []}]
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+  /v1/forwarding/{platform}:
+    put:
+      summary: Enable or pause all new store requests and uploads for one platform
+      description: Persistent across restarts. Admitted requests continue; node connections and diagnostics remain available. Disabled requests return 503 platform_forwarding_disabled without contacting a node.
+      security: [{adminToken: []}]
+      parameters: [{$ref: '#/components/parameters/platform'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: false, required: [enabled], properties: {enabled: {type: boolean}}}}}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+  /v1/store-management/apps/{platform}/{bundleIdentifier}/store-releases:
+    get:
+      summary: List iOS version states and editability or Android track releases
+      description: Node resolves version state. iOS returns id, versionString, platform, state, appStoreState, appVersionState, editable, isLatest and createdDate. No fallback to an older editable version. The center never inspects Apple version state.
+      parameters: [{$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}]
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    post:
+      summary: Create an iOS App Store version without review submission
+      description: Node resolves Bundle ID then creates IOS appStoreVersions with releaseType MANUAL. No build attachment or review submission. Old nodes return 409 connector_upgrade_required. No center Apple-state validation.
+      parameters: [{$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateStoreRelease'}}}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
   /v1/connectors/{id}/logs/latest:
     get:
       summary: Stream the latest Store Connector log snapshot; administrator only
@@ -276,7 +312,7 @@ paths:
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
   /v1/store-management/api-docs:
     get:
-      summary: Read the nine store and two node endpoint contract, image query options and full documentation
+      summary: Read the ten store and two node endpoint contract, version creation, image options and full documentation
       description: Requires no app binding, node or store account. Describes the center contract, not live node capabilities. Integration tokens require HTTPS; business tokens support HTTP and HTTPS. Cache-Control no-store. Administrator tokens do not authenticate this route.
       parameters:
         - name: format

@@ -236,6 +236,9 @@ impl Gateway {
             Operation::StoreListings => json!({"listings":[]}),
             Operation::StoreImages => json!({"locales":[]}),
             Operation::StoreReleases => json!({"releases":[]}),
+            Operation::CreateStoreRelease => {
+                json!({"release":{"id":"mock-version","versionString":r.payload["versionString"],"state":"PREPARE_FOR_SUBMISSION","editable":true,"isLatest":true}})
+            }
             Operation::StoreReviews => json!({"reviews":[]}),
             Operation::ProductPageOptimizations => json!({"experiments":[]}),
             Operation::CreateProductPageOptimization => {

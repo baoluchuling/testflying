@@ -404,6 +404,22 @@ async fn websocket_routes_multiple_apps_and_rejects_duplicate_nodes() {
         .await
         .unwrap_err();
     assert_eq!(unsupported.code, "logs_upgrade_required");
+    let unsupported = state
+        .transport
+        .dispatch(
+            &node,
+            &token,
+            StoreRequest {
+                request_id: "legacy-version-check".into(),
+                platform: Platform::Ios,
+                bundle_identifier: "com.example.app".into(),
+                operation: Operation::CreateStoreRelease,
+                payload: json!({"versionString":"2.0"}),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(unsupported.code, "connector_upgrade_required");
     assert!(state.transport.connected(&node.connector_id));
     let mut duplicate = format!(
         "{}/v1/connectors/{}/ws",
@@ -792,6 +808,23 @@ async fn real_connector_active_loop_and_api_round_trip() {
     assert_eq!(
         response.json::<Value>().await.unwrap()["locales"][0],
         "en-US"
+    );
+    let created = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .unwrap()
+        .post(format!(
+            "{base}/v1/store-management/apps/ios/com.example.app/store-releases"
+        ))
+        .bearer_auth(CLIENT)
+        .json(&json!({"versionString":"2.0"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(created.status(), 200);
+    assert_eq!(
+        created.json::<Value>().await.unwrap()["release"]["versionString"],
+        "2.0"
     );
     stop.send(true).unwrap();
     tokio::time::timeout(Duration::from_secs(2), connector)

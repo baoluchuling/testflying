@@ -294,7 +294,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                   "center startup and subsequent HTTP requests recorded")
             check(request("/v1/logs", snapshot["token"])[0] == 401,
                   "business credentials cannot read administrator logs")
-            for asset in ("logs.mjs", "app.mjs", "index.html"):
+            for asset in ("logs.mjs", "app.mjs", "index.html","forwarding.mjs"):
                 path = "/connector-setup/" + ("" if asset == "index.html" else asset)
                 status, content = request(path)
                 check(status == 200 and content == (PROJECT / "crates/store-api/src/setup" / asset).read_bytes(),
@@ -330,11 +330,11 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                 check(status == 200 and catalog["contractVersion"] == "2026-11-11",
                       scheme + " business-token documentation available")
                 endpoints = catalog["endpoints"]
-                check(len(endpoints) == 11
-                      and sum(row["group"] == "store" for row in endpoints) == 9
+                check(len(endpoints) == 12
+                      and sum(row["group"] == "store" for row in endpoints) == 10
                       and sum(row["group"] == "node" for row in endpoints) == 2
                       and len(catalog["uploadEndpoints"]) == 2,
-                      scheme + " nine store and two node endpoints plus upload helpers")
+                      scheme + " ten store and two node endpoints plus upload helpers")
                 check(catalog["imageQuery"]["parameters"][1]["enum"] == ["phone", "tablet", "foldable"]
                       and "foldable" not in catalog["imageQuery"]["android"]["devices"],
                       scheme + " language and device options with platform limits")

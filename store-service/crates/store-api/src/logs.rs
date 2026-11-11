@@ -271,6 +271,8 @@ pub(crate) fn error_summary(code: &str, message: &str) -> ErrorSummary {
         "connector_rejected" => "connector_rejected",
         "invalid_connector_reply" => "invalid_connector_reply",
         "connector_disabled" => "connector_disabled",
+        "connector_upgrade_required" => "connector_upgrade_required",
+        "platform_forwarding_disabled" => "platform_forwarding_disabled",
         "app_not_found" => "app_not_found",
         "unauthorized" => "unauthorized",
         "forbidden" => "forbidden",

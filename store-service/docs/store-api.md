@@ -1,6 +1,6 @@
 # 商店业务与节点接入接口
 
-外部后台用同一枚接入 Token 查询可用节点、绑定应用，再调用商店查询、同步和图片上传接口。本文完整覆盖 **9 个商店业务接口、2 个外部节点查询／绑定接口**，另附图片上传配套接口与管理员查询接口。契约版本：`2026-11-11`。
+外部后台用同一枚接入 Token 查询可用节点、绑定应用，再调用商店查询、同步和图片上传接口。本文完整覆盖 **10 个商店业务接口、2 个外部节点查询／绑定接口**，另附图片上传配套接口与管理员查询接口。契约版本：`2026-11-11`。
 
 ## 在线获取文档和功能目录
 
@@ -13,7 +13,7 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 | format 参数 | 响应类型 | 内容 |
 |---|---|---|
-| 省略或 json | application/json | schemaVersion、contractVersion、11 个核心接口的 endpoints、2 个配套 uploadEndpoints、imageQuery、sync、limitations 及完整 Markdown 文档 |
+| 省略或 json | application/json | schemaVersion、contractVersion、12 个核心接口的 endpoints、2 个配套 uploadEndpoints、imageQuery、sync、iosVersions、forwarding、limitations 及完整 Markdown 文档 |
 | markdown | text/markdown | 本文完整内容 |
 | openapi | application/yaml | 可导入工具的完整 OpenAPI 定义 |
 
@@ -97,13 +97,14 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 | 7 | POST | {APP}/product-page-optimizations | 创建 Apple PPO 实验 |
 | 8 | POST | {APP}/preflight | 检查当前写入条件 |
 | 9 | POST | {APP}/sync | 单项或多字段同步内容 |
+| 10 | POST | {APP}/store-releases | 创建 iOS App Store 新版本 |
 
-图片上传配套接口（不计入上述 9 个商店业务接口）：
+图片上传配套接口（不计入上述 10 个商店业务接口）：
 
 | 序号 | 方法 | 路径 | 用途 |
 |---|---|---|---|
-| 10 | POST | {APP}/uploads | 申请图片上传凭据 |
-| 11 | PUT | {APP}/uploads/{assetId} | 经中心上传图片文件字节 |
+| — | POST | {APP}/uploads | 申请图片上传凭据 |
+| — | PUT | {APP}/uploads/{assetId} | 经中心上传图片文件字节 |
 
 功能与平台范围：
 
@@ -315,7 +316,25 @@ GET /v1/store-management/apps/android/com.example.reader/store-releases
 }
 ```
 
-Android 按最高数值 versionCode 倒序返回。**iOS 当前未实现版本列表查询，固定返回 `{"releases":[]}`。**
+Android 按最高数值 versionCode 倒序返回。iOS 由节点分页读取全部 IOS 版本，按创建时间、数值版本号倒序返回，不调用版本的 localizations 或其他后续资源。示例：
+
+```json
+{"releases":[{"id":"apple-version-id","versionString":"2.0","platform":"ios","state":"IN_REVIEW","appStoreState":"IN_REVIEW","appVersionState":"IN_REVIEW","editable":false,"isLatest":true,"createdDate":"2026-11-11T00:00:00Z"}]}
+```
+
+`state` 优先采用 Apple 的 appVersionState，缺失时采用 appStoreState；两个原始字段同时保留，缺失为 null。`editable` 由节点按状态判断：PREPARE_FOR_SUBMISSION、DEVELOPER_REJECTED、REJECTED、METADATA_REJECTED、INVALID_BINARY、READY_FOR_REVIEW 为 true，其他及未知状态为 false。`isLatest` 标记当前最新版本，不代表可编辑；不回退选择旧可编辑版本。节点在版本关联的语言、文案、截图后续查询和写入前检查最新版本状态，不可编辑立即停止：preflight 返回 canSync:false，sync 返回业务失败 status:failed，关联查询返回 409 store_version_not_editable。中心不查 Apple 版本或校验编辑状态，只转发请求。app 范围的评论、CPP/PPO 和新建版本不属于修改旧版本。分页超过 100 页、链接异常或结果超过安全消息上限直接失败，不返回不完整列表。旧节点需升级，WSS 返回 409 connector_upgrade_required。
+
+### 创建 iOS 新版本
+
+```http
+POST /v1/store-management/apps/ios/com.example.reader/store-releases
+Authorization: Bearer INTEGRATION_TOKEN
+Content-Type: application/json
+
+{"versionString":"2.1.0","copyright":"Example Company"}
+```
+
+`versionString` 必填字符串；`copyright` 可选。节点根据 Bundle ID 找到 Apple app，再调用 POST /v1/appStoreVersions，platform 固定 IOS，releaseType 固定 MANUAL。成功 HTTP 200 返回 `{"release":{...}}`，字段同上述版本列表。只创建版本资源，不上传构建、送审或发布，不修改旧版本，不执行 Android track 操作。版本格式和 Apple 当前能否创建由节点调用 Apple 后返回结果；不要求旧版本可编辑才可创建新版本。Android 返回 422 unsupported_platform。中心不新增 Apple 状态检查；新节点握手声明 storeVersionsVersion:1，旧节点明确提示升级，不发送无法识别的新操作。
 
 ## 5. 查询评论
 
@@ -697,6 +716,14 @@ STORE_API_TOKEN="$INTEGRATION_TOKEN" python3 examples/upload-image.py \
 中心每次请求生成 `X-Testflying-Request-Id` 响应头，受控失败 JSON 的 `error.requestId` 与之相同。排障时保留此 ID；框架解析失败也有响应头。调用方传入的同名请求头不会作为中心 ID 使用。
 
 ### 中心日志（管理员专用）
+
+### 平台转发开关（管理员专用）
+
+后台「商店接口转发」可独立暂停／开启 iOS 和 Android，设置保存到中心注册表，重启不重置。管理员 GET `/v1/forwarding` 返回 `{"ios":true,"android":false}`；PUT `/v1/forwarding/ios` 或 `/v1/forwarding/android`，正文 `{"enabled":false}`，只修改指定平台。普通业务和接入 Token 无权读写该管理接口。后台 HTTPS 会话使用 `/connector-setup/api/forwarding` 和 `/connector-setup/api/forwarding/{platform}`。
+
+暂停时，该平台后续商店查询、preflight、同步、创建版本、PPO 创建、申请上传和新的上传 PUT 返回 `503 platform_forwarding_disabled`，不转发给节点。已经受理或已转发的请求、上传继续完成；不回滚商店更改，不自动中断或重放任务。节点连接、部署包、日志、应用绑定和文档不受影响。两平台独立，不改变节点配置。状态以管理接口实时返回值为准。
+
+### 中心日志查询
 
 后台「中心商店日志 · 最近七天」可按应用标识、平台、节点和请求 ID 查询，点击「查看此请求全过程」关联开始、参数摘要、节点转发、返回及耗时。普通业务或接入 Token 无权读取日志。
 

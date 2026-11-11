@@ -1,6 +1,7 @@
 import { CREDENTIAL_LIMIT, validateAccount, buildInstaller, installationFiles } from "./packager.mjs";
 import { bindIntegrations } from "./integrations.mjs";
 import { bindLogs } from "./logs.mjs";
+import { bindForwarding } from "./forwarding.mjs";
 
 const $ = (id) => document.getElementById(id);
 const api = new URL("api/", window.location.href);
@@ -10,6 +11,7 @@ let nodes = [];
 let automaticKeyId = "";
 const integrations = bindIntegrations(request, () => $("setupForm").hidden ? undefined : session);
 const logs = bindLogs(request, () => $("setupForm").hidden ? undefined : session);
+const forwarding=bindForwarding(request,()=>$("setupForm").hidden?undefined:session);
 
 function status(message, kind = "info") {
   $("status").hidden = false;
@@ -191,6 +193,7 @@ function resetSession() {
   $("adminUnlock").hidden = !securePage;
   integrations.reset();
   logs.reset();
+  forwarding.reset();
   $("screenshotWorkspace").open = false;
   $("screenshotWorkspace").hidden = true;
   $("screenshotStatus").textContent = "";
@@ -223,6 +226,7 @@ async function restoreSession(token = "") {
     $("adminUnlock").hidden = true;
     $("adminLock").hidden = false;
     $("setupForm").hidden = false;
+    forwarding.show();
     $("status").hidden = true;
   } catch (error) {
     if (!active.signal.aborted) {

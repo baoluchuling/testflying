@@ -10,6 +10,9 @@ const IMAGE_TYPES: &[(&str, &str)] = &[
 ];
 impl Gateway {
     pub(super) async fn google_execute(&self, r: &StoreRequest) -> Result<Value> {
+        if r.operation == Operation::CreateStoreRelease {
+            return Err(invalid("Creating a store version requires iOS"));
+        }
         if r.operation == Operation::StoreReviews {
             return self.google_reviews(r).await;
         }

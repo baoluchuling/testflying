@@ -1,5 +1,5 @@
 {
-  "runId": "7d91c77f3e18466e9270586c88fb7f90",
+  "runId": "a8468c4bd9494d4d8c53c69b90938342",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -19,6 +19,7 @@
     "HTTP displays the HTTPS link without prompting for credentials or contacting the node API",
     "wrong Token stays locked and transient unlock failure can be retried",
     "node setup and integration management appear only after shared HTTPS administrator unlock",
+    "administrator can pause iOS and Android independently and refresh persisted forwarding state",
     "Apple Key ID recognized from the original filename",
     "failed download retains the newly created node",
     "real Windows executable preserved in a downloadable dual-platform private ZIP",
@@ -36,13 +37,13 @@
     "mobile layout has no horizontal overflow",
     "no credential file or account fields are uploaded and CSP passes"
   ],
-  "windowsExecutableSha256": "62d2148ab8607f3be81e8e84983c59aa0ab7b9459f864ded5b0f3fb82ab811ef",
+  "windowsExecutableSha256": "9366238557a8fa8aee2a1e7a932a4a14b7c034629ba0acfeb204ab48d7f3eb14",
   "credentialFilesUploaded": false,
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "47951c3f-aad3-46f2-897d-c5546c8e3387",
-    "75931409-e5f3-40f3-ba7d-334dc976cfba"
+    "529a2ba6-8f19-40b8-a8f0-510b967c7f8c",
+    "1a2ed49a-dcf3-4a22-9d92-a78765c7527e"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0

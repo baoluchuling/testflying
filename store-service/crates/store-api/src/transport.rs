@@ -19,6 +19,7 @@ struct Connection {
     generation: Uuid,
     sender: mpsc::Sender<NodeRequest>,
     logs_supported: bool,
+    store_versions_supported: bool,
     close: watch::Sender<bool>,
     screenshot_wake: watch::Sender<()>,
     pending: Pending,
@@ -256,6 +257,26 @@ impl Transport {
         request: StoreRequest,
         websocket: bool,
     ) -> Result<StoreReply> {
+        if websocket
+            && matches!(
+                request.operation,
+                store_protocol::Operation::CreateStoreRelease
+                    | store_protocol::Operation::StoreReleases
+            )
+            && request.platform == store_protocol::Platform::Ios
+            && !self
+                .connections
+                .lock()
+                .unwrap()
+                .get(&node.connector_id)
+                .is_some_and(|c| c.store_versions_supported)
+        {
+            return Err(StoreError::new(
+                409,
+                "connector_upgrade_required",
+                "Upgrade this node to query or create iOS versions",
+            ));
+        }
         let lock = self
             .locks
             .lock()
@@ -401,10 +422,17 @@ impl Transport {
             if channel.decrypt(&confirm)?.as_deref() != Some(b"confirm") {
                 return Err(crypto::error());
             }
-            Ok((channel, endpoint, registration.logs_version == Some(1)))
+            Ok((
+                channel,
+                endpoint,
+                registration.logs_version == Some(1),
+                registration.store_versions_version == Some(1),
+            ))
         })
         .await;
-        let Ok(Ok((mut channel, endpoint, logs_supported))) = authenticated else {
+        let Ok(Ok((mut channel, endpoint, logs_supported, store_versions_supported))) =
+            authenticated
+        else {
             self.connection_event(
                 &id,
                 "connector.handshake_failed",
@@ -436,6 +464,7 @@ impl Transport {
                     screenshot_wake,
                     pending: pending.clone(),
                     logs_supported,
+                    store_versions_supported,
                 },
             );
         }

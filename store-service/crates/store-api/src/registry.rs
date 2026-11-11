@@ -89,6 +89,13 @@ impl Registry {
             PRIMARY KEY(integration_id,connector_id));",
         )
         .map_err(database_error)?;
+        db.execute_batch(
+            "CREATE TABLE IF NOT EXISTS platform_forwarding (
+            platform TEXT PRIMARY KEY CHECK(platform IN ('ios','android')),
+            enabled INTEGER NOT NULL CHECK(enabled IN (0,1)));
+            INSERT OR IGNORE INTO platform_forwarding VALUES ('ios',1),('android',1);",
+        )
+        .map_err(database_error)?;
         screenshots::create_schema(&db)?;
         let db = Arc::new(Mutex::new(db));
         let logs = crate::logs::LogStore::new(db.clone())?;
@@ -101,6 +108,50 @@ impl Registry {
 
     pub fn create(&self, input: ConnectorInput) -> Result<Connector> {
         self.create_with_kind(input, ConnectorKind::Store)
+    }
+
+    pub fn forwarding(&self) -> Result<crate::forwarding::Settings> {
+        let db = self.db.lock().unwrap();
+        let enabled = |platform: &str| {
+            db.query_row(
+                "SELECT enabled FROM platform_forwarding WHERE platform=?1",
+                [platform],
+                |row| row.get(0),
+            )
+            .map_err(database_error)
+        };
+        Ok(crate::forwarding::Settings {
+            ios: enabled("ios")?,
+            android: enabled("android")?,
+        })
+    }
+
+    pub fn set_forwarding(&self, platform: Platform, enabled: bool) -> Result<()> {
+        self.db
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE platform_forwarding SET enabled=?1 WHERE platform=?2",
+                params![enabled, platform.to_string()],
+            )
+            .map_err(database_error)?;
+        Ok(())
+    }
+
+    pub fn require_forwarding(&self, platform: Platform) -> Result<()> {
+        let flags = self.forwarding()?;
+        if match platform {
+            Platform::Ios => flags.ios,
+            Platform::Android => flags.android,
+        } {
+            Ok(())
+        } else {
+            Err(StoreError::new(
+                503,
+                "platform_forwarding_disabled",
+                format!("{platform} store forwarding is paused"),
+            ))
+        }
     }
 
     pub fn create_with_kind(

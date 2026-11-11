@@ -13,6 +13,7 @@ pub(super) async fn prepare(
     Path((platform, app)): Path<(Platform, String)>,
     Json(file): Json<UploadInput>,
 ) -> Result<(StatusCode, Json<Value>)> {
+    state.registry.require_forwarding(platform)?;
     file.validate()?;
     let node = state.registry.resolve(platform, &app)?;
     if !state.transport.connected(&node.connector_id) && node.base_url.is_none() {
@@ -182,6 +183,7 @@ pub(super) async fn receive(
     if claims.platform != platform || claims.bundle_identifier != app || claims.asset_id != id {
         return Err(upload::invalid_token().into());
     }
+    state.registry.require_forwarding(platform)?;
     if let Some(length) = headers.get(header::CONTENT_LENGTH) {
         if length.to_str().ok().and_then(|s| s.parse::<u64>().ok()) != Some(claims.file.size_bytes)
         {

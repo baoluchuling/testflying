@@ -50,6 +50,7 @@ let base = process.env.SETUP_BASE_URL;
 let downloadAttempts = 0;
 let listAttempts = 0;
 let fixtureSession;
+const forwardingFixture={ios:true,android:true};
 let heldReveal;
 let revealStarted;
 let releaseReveal;
@@ -61,6 +62,7 @@ if (!production) {
     "app.mjs": [path.join(web, "app.mjs"), "text/javascript"],
     "integrations.mjs": [path.join(web, "integrations.mjs"), "text/javascript"],
     "logs.mjs": [path.join(web, "logs.mjs"), "text/javascript"],
+    "forwarding.mjs": [path.join(web,"forwarding.mjs"),"text/javascript"],
     "packager.mjs": [path.join(web, "packager.mjs"), "text/javascript"],
     "style.css": [path.join(web, "style.css"), "text/css"],
     "jszip.min.js": [path.join(web, "vendor/jszip.min.js"), "text/javascript"],
@@ -104,6 +106,15 @@ if (!production) {
         if (!fixtureSession || !req.headers.cookie?.split(/;\s*/).includes(`${sessionCookie}=${fixtureSession}`)) {
           res.writeHead(401).end("{}"); return;
         }
+      }
+      if (url.pathname===setupApi+"forwarding"||url.pathname.startsWith(setupApi+"forwarding/")) {
+        if(req.method==="PUT") {
+          const platform=url.pathname.split("/").at(-1);assert(["ios","android"].includes(platform));
+          let body="";for await(const part of req)body+=part;
+          const input=JSON.parse(body);assert.deepEqual(Object.keys(input),["enabled"]);assert.equal(typeof input.enabled,"boolean");
+          forwardingFixture[platform]=input.enabled;
+        }
+        res.end(JSON.stringify(forwardingFixture));return;
       }
       const screenshot = screenshotInstallerPath.exec(url.pathname);
       if (/\/connectors\/[^/]+\/logs\/latest$/.test(url.pathname)) {
@@ -310,6 +321,19 @@ try {
     return [typeof form.nodeName, typeof form.target];
   }), ["string", "string"]);
   checks.push("node setup and integration management appear only after shared HTTPS administrator unlock");
+  if(!production) {
+    await page.locator("#androidForwardingToggle:enabled").waitFor();
+    await page.locator("#androidForwardingToggle").click();
+    await page.getByText("转发已暂停",{exact:true}).waitFor();
+    assert.equal(forwardingFixture.android,false);assert.equal(forwardingFixture.ios,true);
+    await page.locator("#forwardingRefresh").click();
+    await page.locator("#androidForwardingToggle:enabled").waitFor();
+    assert.equal(await page.locator("#androidForwardingToggle").textContent(),"开启转发");
+    await page.locator("#iosForwardingToggle").click();
+    await page.locator("#iosForwardingToggle:enabled").waitFor();
+    assert.equal(forwardingFixture.ios,false);assert.equal(forwardingFixture.android,false);
+    checks.push("administrator can pause iOS and Android independently and refresh persisted forwarding state");
+  }
   if (!production) await page.screenshot({ path: path.join(tmp, "setup-preview.png"), fullPage: true });
   await page.locator("#connectorName").fill("Browser verification · dual platform");
   await page.locator("#issuerId").fill("test-issuer");
@@ -416,6 +440,7 @@ try {
     heldReveal = undefined;
     assert.equal(await page.locator("#integrationToken").inputValue(), "");
     assert.equal(await page.locator("#nodeLogSelect").inputValue(), "");
+    assert.equal(await page.locator("#forwardingWorkspace").isVisible(),false);
     assert.equal(await page.locator("#appleFile").inputValue(), "");
     assert.equal(await page.locator("#googleFile").inputValue(), "");
     assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);

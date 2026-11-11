@@ -1,4 +1,5 @@
 mod api_docs;
+pub mod forwarding;
 mod integrations;
 pub mod logs;
 mod node_logs;
@@ -172,6 +173,8 @@ pub fn router_with_screenshots(
     uploader: Option<ScreenshotUploader>,
 ) -> Router {
     let management = Router::new()
+        .route("/v1/forwarding", get(forwarding::read))
+        .route("/v1/forwarding/{platform}", put(forwarding::update))
         .route("/v1/logs", get(logs::read))
         .route("/v1/connectors/{id}/logs/latest", get(node_logs::latest))
         .route(
@@ -454,6 +457,7 @@ async fn execute(
     operation: Operation,
     payload: Value,
 ) -> Result<Response> {
+    state.registry.require_forwarding(platform)?;
     logs::business_event(
         &state.registry,
         &context,
@@ -538,6 +542,7 @@ async fn write_store(
         "sync" => Operation::Sync,
         "preflight" => Operation::Preflight,
         "product-page-optimizations" => Operation::CreateProductPageOptimization,
+        "store-releases" => Operation::CreateStoreRelease,
         _ => return Err(StoreError::new(404, "not_found", "Unknown store resource").into()),
     };
     if let Some(object) = payload.as_object_mut() {

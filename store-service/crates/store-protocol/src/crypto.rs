@@ -15,6 +15,8 @@ pub struct Registration {
     pub base_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logs_version: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store_versions_version: Option<u8>,
 }
 
 pub fn error() -> StoreError {

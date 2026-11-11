@@ -533,7 +533,7 @@ async fn connection(
             true,
         )?;
         let registration = serde_json::to_vec(
-            &json!({"connectorId":executor.config.connector_id,"baseUrl":executor.config.base_url,"logsVersion":1}),
+            &json!({"connectorId":executor.config.connector_id,"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1}),
         )
         .map_err(|_| crypto::error())?;
         let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];

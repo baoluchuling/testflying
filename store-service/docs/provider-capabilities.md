@@ -33,7 +33,9 @@ The following are actual in-process HTTP integration tests in `crates/store-prov
 
 Scope and limits:
 
-- Apple `store_releases` returns an empty list and Android PPO list returns an empty list, matching the Go provider. Android PPO creation and marketing page writes are explicitly rejected. There is no submission, publishing, release rollout, or review reply operation.
+- iOS version listing returns all paginated version states, latest marker and node-derived editability. Creation resolves the trusted app identity and creates a MANUAL IOS version without build attachment or review submission. `apple_versions_report_all_states_and_locked_latest_stops_followup_calls` and `apple_create_version_is_manual_without_submission_and_validates_on_the_node` cover real fake-Apple HTTP, no real accounts.
+
+- Apple `store_releases` returns version states and editability; Android PPO list returns an empty list. Android version creation, PPO creation and marketing page writes are explicitly rejected. There is no independent review submission, publishing, release rollout, or review reply operation; normal Google edit commits may send changes for review.
 - Resource lists preserve the Go request limits except Apple screenshot reads, which follow up to 20 same-origin, same-path collection pages with a 10,000-object bound. Reviews expose continuation.
 - CPP deep links and keywords are not writable fields in the Go CPP implementation and are not newly exposed. Existing CPP lookup verifies ownership before modifying a supplied page ID.
 - Review filtering operates on the returned upstream page; it does not fetch hidden extra pages to fill a filtered result. Dates use the selected IANA zone; response boundaries are UTC equivalents.

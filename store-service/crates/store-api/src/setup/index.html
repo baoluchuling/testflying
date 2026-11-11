@@ -56,6 +56,16 @@
         </section>
         <div class="download-bar"><p>生成的 ZIP 含私钥与节点凭据，请勿公开分享。</p><button id="downloadButton" type="submit">生成并下载 Windows 安装包</button></div>
       </form>
+      <section id="forwardingWorkspace" class="card" hidden>
+        <h3>商店接口转发</h3>
+        <p class="muted">独立控制所有节点的 iOS 和 Android 商店请求、图片上传。暂停不影响节点连接和日志；已转发的任务继续执行。</p>
+        <div class="grid">
+          <div><h4>iOS · App Store</h4><p id="iosForwardingState"></p><button id="iosForwardingToggle" type="button" disabled>暂停转发</button></div>
+          <div><h4>Android · Google Play</h4><p id="androidForwardingState"></p><button id="androidForwardingToggle" type="button" disabled>暂停转发</button></div>
+        </div>
+        <button id="forwardingRefresh" type="button" class="quiet">刷新转发状态</button>
+        <p id="forwardingStatus" role="status" aria-live="polite"></p>
+      </section>
       <details id="integrationWorkspace" class="card" hidden>
         <summary>接入凭据</summary>
         <p class="muted">接入 Token 授权全部节点，包括以后新增的节点。</p>

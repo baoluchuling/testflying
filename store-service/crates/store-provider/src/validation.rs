@@ -17,6 +17,17 @@ const SYNC_SCOPES: &[&str] = &[
 
 pub(super) fn validate(request: &StoreRequest) -> Result<()> {
     let payload = &request.payload;
+    if request.operation == Operation::CreateStoreRelease {
+        if request.platform != Platform::Ios {
+            return Err(StoreError::new(
+                422,
+                "unsupported_platform",
+                "Creating a store version requires iOS",
+            ));
+        }
+        required(payload, "versionString")?;
+        optional_strings(payload, &["copyright"])?;
+    }
     optional_strings(payload, &["operation", "locale"])?;
     if request.operation == Operation::StoreImages {
         image_query::ImageQuery::new(payload, request.platform)?;

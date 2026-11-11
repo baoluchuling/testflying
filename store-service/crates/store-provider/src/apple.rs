@@ -43,12 +43,39 @@ impl Gateway {
             Operation::ProductPageOptimizations => self.apple_ppo(app, None).await,
             Operation::CreateProductPageOptimization => self.apple_ppo(app, Some(&r.payload)).await,
             Operation::StoreReviews => self.apple_reviews(app, &r.payload).await,
-            Operation::StoreReleases => Ok(json!({"releases":[]})),
+            Operation::StoreReleases => {
+                let versions = self.apple_versions(app).await?;
+                let body = json!({"releases":versions.iter().enumerate().map(|(i,v)|apple_release(v,i==0)).collect::<Vec<_>>()});
+                if body.to_string().len() > store_protocol::crypto::MAX_JSON_BYTES - 16384 {
+                    return Err(upstream("Apple version list exceeded reply limit"));
+                }
+                Ok(body)
+            }
+            Operation::CreateStoreRelease => {
+                let mut attributes = json!({"platform":"IOS","versionString":required(&r.payload,"versionString")?,"releaseType":"MANUAL"});
+                if let Some(copyright) = r.payload.get("copyright") {
+                    attributes["copyright"] = copyright.clone();
+                }
+                let created=self.apple(Method::POST,"/v1/appStoreVersions",Some(json!({"data":{"type":"appStoreVersions","attributes":attributes,"relationships":{"app":{"data":{"type":"apps","id":app}}}}}))).await?;
+                id(&created["data"])?;
+                Ok(json!({"release":apple_release(&created["data"],true)}))
+            }
             Operation::Sync if s(&r.payload, "operation") == "update_marketing_page" => {
                 self.apple_marketing(app, &r.payload).await
             }
             _ => {
                 let version = self.apple_version(app).await?;
+                if !matches!(r.operation, Operation::Preflight | Operation::Sync)
+                    && version
+                        .as_ref()
+                        .is_some_and(|v| !editable(apple_version_state(v)))
+                {
+                    return Err(StoreError::new(
+                        409,
+                        "store_version_not_editable",
+                        "Latest store version is not editable",
+                    ));
+                }
                 match r.operation {
                     Operation::Preflight => {
                         if s(&r.payload, "operation") == "update_marketing_page" {
@@ -56,7 +83,7 @@ impl Gateway {
                         }
                         Ok(match version {
                             Some(ref v) => {
-                                let state = s(&v["attributes"], "appStoreState");
+                                let state = apple_version_state(v);
                                 let editable = editable(state);
                                 preflight(
                                     editable,
@@ -143,7 +170,7 @@ impl Gateway {
             }
         }
     }
-    async fn apple_version(&self, app: &str) -> Result<Option<Value>> {
+    async fn apple_versions(&self, app: &str) -> Result<Vec<Value>> {
         let path = format!("/v1/apps/{}/appStoreVersions", escape(app));
         let mut next = query(
             &path,
@@ -152,7 +179,7 @@ impl Gateway {
                 ("filter[platform]", "IOS"),
                 (
                     "fields[appStoreVersions]",
-                    "versionString,createdDate,appStoreState,platform",
+                    "versionString,createdDate,appStoreState,appVersionState,platform",
                 ),
             ],
         );
@@ -163,7 +190,7 @@ impl Gateway {
         ))
         .map_err(|_| upstream("Invalid Apple version endpoint"))?;
         let mut seen = std::collections::HashSet::new();
-        let mut version: Option<Value> = None;
+        let mut versions = Vec::new();
         loop {
             if seen.len() >= 100 || !seen.insert(next.clone()) {
                 return Err(upstream("Apple version pagination did not finish"));
@@ -175,12 +202,7 @@ impl Gateway {
                 {
                     continue;
                 }
-                if version
-                    .as_ref()
-                    .is_none_or(|current| version_order(item) > version_order(current))
-                {
-                    version = Some(item.clone());
-                }
+                versions.push(item.clone());
             }
             let link = s(&response["links"], "next");
             if link.is_empty() {
@@ -205,6 +227,11 @@ impl Gateway {
                 parsed.query().map(|q| format!("?{q}")).unwrap_or_default()
             );
         }
+        versions.sort_by_key(|v| std::cmp::Reverse(version_order(v)));
+        Ok(versions)
+    }
+    async fn apple_version(&self, app: &str) -> Result<Option<Value>> {
+        let version = self.apple_versions(app).await?.into_iter().next();
         if let Some(log) = &self.inner.log {
             let number = version
                 .as_ref()
@@ -214,8 +241,11 @@ impl Gateway {
                         && s.bytes()
                             .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
                 });
-            log.context("apple.latest_version",json!({"versionString":number,"exists":version.is_some(),
-                "editable":version.as_ref().is_some_and(|v|editable(s(&v["attributes"],"appStoreState")))}));
+            log.context(
+                "apple.latest_version",
+                json!({"versionString":number,"exists":version.is_some(),
+                "editable":version.as_ref().is_some_and(|v|editable(apple_version_state(v)))}),
+            );
         }
         Ok(version)
     }
@@ -323,7 +353,7 @@ impl Gateway {
                 "Target store version does not exist",
             ));
         };
-        if !editable(s(&version["attributes"], "appStoreState")) {
+        if !editable(apple_version_state(&version)) {
             return Ok(failed(
                 "store_version_not_editable",
                 "Target store version is not editable",
@@ -710,6 +740,22 @@ fn editable(state: &str) -> bool {
             | "INVALID_BINARY"
             | "READY_FOR_REVIEW"
     )
+}
+fn apple_version_state(version: &Value) -> &str {
+    let attributes = &version["attributes"];
+    let state = s(attributes, "appVersionState");
+    if state.is_empty() {
+        s(attributes, "appStoreState")
+    } else {
+        state
+    }
+}
+fn apple_release(version: &Value, is_latest: bool) -> Value {
+    let attributes = &version["attributes"];
+    let state = apple_version_state(version);
+    json!({"id":s(version,"id"),"versionString":s(attributes,"versionString"),"platform":"ios",
+        "state":state,"appStoreState":attributes["appStoreState"],"appVersionState":attributes["appVersionState"],
+        "editable":editable(state),"isLatest":is_latest,"createdDate":attributes["createdDate"]})
 }
 fn version_order(value: &Value) -> (Option<i64>, Vec<u64>) {
     let attributes = &value["attributes"];

@@ -30,6 +30,7 @@ pub enum Operation {
     StoreListings,
     StoreImages,
     StoreReleases,
+    CreateStoreRelease,
     StoreReviews,
     ProductPageOptimizations,
     CreateProductPageOptimization,
