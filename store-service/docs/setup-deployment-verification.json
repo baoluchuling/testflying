@@ -1,15 +1,15 @@
 {
-  "runId": "361f9079193d4a029bbc14cc0646270f",
+  "runId": "9d13746b3cba4dee908e14e568e777d5",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-11T04:25:07.414751+00:00",
-  "deploymentCommit": "7585bd666052fc7096593316422b5c8f8b05448e",
-  "binarySourceCommit": "b529bce9fcb7c6e73c4ffd36a159479a6279f077",
-  "apiSha256": "8b60149bbf6874da8c0362d1979caa6dde7d0b1f4af0b61c40456833f2239d50",
+  "finishedAt": "2026-11-11T04:56:52.187867+00:00",
+  "deploymentCommit": "c65ede994b0024000447099deb16a6b125ae4ea2",
+  "binarySourceCommit": "d4fb874028ddea771cdb1482e4d1fe69d3ff8057",
+  "apiSha256": "260a2cab4f43e41317966ef6bb434b04817a59953cb4d1f67bbe41e9f6c0303b",
   "connectorBinarySha256": {
-    "linux-amd64": "aab2e4714f7be78040c262bead81dddff7e0cb30f93ccfc4bcd35ea1227556da",
-    "darwin-arm64": "b1331485cf8c8d3f5393ffa30b6c7f2e94fd011a75fb146774532984e10329de",
-    "windows-amd64": "9366238557a8fa8aee2a1e7a932a4a14b7c034629ba0acfeb204ab48d7f3eb14"
+    "linux-amd64": "3f79ab9f1e897f1203c9b81eeb5af0ce62b2f7dfe65c683e58486397b4c96eca",
+    "darwin-arm64": "5276d5c1881778dcada1f666bc653d862fe79e9ec702a45befdf8ccbd678748d",
+    "windows-amd64": "4b13495d5bf3397bea8d806dcff1859b7cf2039e0bf6b3f6c966f5dbbb3b9887"
   },
   "screenshotConnectorSha256": "a41f8006b9502f3f540a5d735f8eb92bc903910078c7ce42bb980e44f221f776",
   "screenshotUploadConfigured": false,
@@ -25,6 +25,7 @@
     "exact deployed log viewer asset logs.mjs",
     "exact deployed log viewer asset app.mjs",
     "exact deployed log viewer asset index.html",
+    "exact deployed log viewer asset forwarding.mjs",
     "previously connected nodes recovered after center restart",
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
@@ -37,13 +38,13 @@
     "windows-amd64 updated installation package available",
     "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
-    "http nine store and two node endpoints plus upload helpers",
+    "http ten store and two node endpoints plus upload helpers",
     "http language and device options with platform limits",
     "http exact deployed markdown document",
     "http exact deployed openapi document",
     "http anonymous documentation denied",
     "https business-token documentation available",
-    "https nine store and two node endpoints plus upload helpers",
+    "https ten store and two node endpoints plus upload helpers",
     "https language and device options with platform limits",
     "https exact deployed markdown document",
     "https exact deployed openapi document",
@@ -69,18 +70,19 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "361f9079193d4a029bbc14cc0646270f",
-    "sourceCommit": "7585bd666052fc7096593316422b5c8f8b05448e",
+    "runId": "9d13746b3cba4dee908e14e568e777d5",
+    "sourceCommit": "c65ede994b0024000447099deb16a6b125ae4ea2",
     "downloadVerified": {
-      "linux-amd64": "aab2e4714f7be78040c262bead81dddff7e0cb30f93ccfc4bcd35ea1227556da",
-      "darwin-arm64": "b1331485cf8c8d3f5393ffa30b6c7f2e94fd011a75fb146774532984e10329de",
-      "windows-amd64": "9366238557a8fa8aee2a1e7a932a4a14b7c034629ba0acfeb204ab48d7f3eb14"
+      "linux-amd64": "3f79ab9f1e897f1203c9b81eeb5af0ce62b2f7dfe65c683e58486397b4c96eca",
+      "darwin-arm64": "5276d5c1881778dcada1f666bc653d862fe79e9ec702a45befdf8ccbd678748d",
+      "windows-amd64": "4b13495d5bf3397bea8d806dcff1859b7cf2039e0bf6b3f6c966f5dbbb3b9887"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": true,
     "configurationMergeSupported": true,
     "actualStoreAccountsUsed": false,
     "nodeLogsRetentionDays": 7,
+    "iosVersionsProtocol": 1,
     "nodeLogDownloadProtocol": 1,
     "safeVendorErrorDiagnostics": true,
     "googleCommit": {
@@ -109,6 +111,11 @@
     "adminOnly": true,
     "oldNodesRemainConnected": true,
     "normalGoogleCommitDocumented": true,
+    "forwarding": {
+      "ios": true,
+      "android": false
+    },
+    "iosVersionCreationDocumented": true,
     "nodes": [
       {
         "connectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
@@ -130,6 +137,29 @@
         "kind": "store",
         "connected": true,
         "logsAvailable": true
+      }
+    ],
+    "realStoreRequests": 0
+  },
+  "platformForwardingVerification": {
+    "temporaryPauseRemoved": true,
+    "proxyRestoredSha256": "45a717e4036605b0cb3cf22c80521ceae23128c5faf2d348e72ebc35edb03210",
+    "forwarding": {
+      "ios": true,
+      "android": false
+    },
+    "publicChecks": [
+      {
+        "transport": "http",
+        "androidPaused": true,
+        "iosAuthenticationPreserved": true,
+        "centerCorrelationHeader": true
+      },
+      {
+        "transport": "https",
+        "androidPaused": true,
+        "iosAuthenticationPreserved": true,
+        "centerCorrelationHeader": true
       }
     ],
     "realStoreRequests": 0
