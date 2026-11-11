@@ -1,15 +1,15 @@
 {
-  "runId": "4ac3b51f67ef4212ba84eab84da92948",
+  "runId": "836d363e1c7941d0928a16a81c128c5e",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-10T12:59:50.360370+00:00",
-  "deploymentCommit": "1eb367d82134f0ebd7607656715cf751d0e88db0",
-  "binarySourceCommit": "cade09c8f136e4e610d1aff824467ea518a39266",
-  "apiSha256": "0ad37af19e7146c0e4dc74dcbc6630a08d33388ca8718dc01f2ec85c2cd910dd",
+  "finishedAt": "2026-11-11T02:44:04.393386+00:00",
+  "deploymentCommit": "a0af811932fdfce607ed0dee376ed47a7a0f4d03",
+  "binarySourceCommit": "7d12007fc1f07e99bbbe4f735e4f519975f474c4",
+  "apiSha256": "da73d7a4cac5a8ab9c46ae916ca2bfd5069bdb3b467c4b6ec35c8b8341ec91e0",
   "connectorBinarySha256": {
-    "linux-amd64": "4a188680e784850b31b81143548f93ce2ead2dad4437611d787179f086d6e698",
-    "darwin-arm64": "ac279fdf395e5ab4816b9c4c36dddb0ba4ffef8958d1d0c2b68ba10c087668e9",
-    "windows-amd64": "ffef9345e09d37bff0f44d51546c6e7729519d2da43a445e49fccfce77501fbc"
+    "linux-amd64": "f20cfef32c052d40ec4579804a0c97969fa6008d5cd28939d04db50766cf632f",
+    "darwin-arm64": "4ba1d6aa395216b03ae227bb457829397a3bb357ff61e1a973664fd964b0b61e",
+    "windows-amd64": "62d2148ab8607f3be81e8e84983c59aa0ab7b9459f864ded5b0f3fb82ab811ef"
   },
   "screenshotConnectorSha256": "a41f8006b9502f3f540a5d735f8eb92bc903910078c7ce42bb980e44f221f776",
   "screenshotUploadConfigured": false,
@@ -29,6 +29,13 @@
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
+    "existing Connector inventory available for download verification",
+    "linux-amd64 updated installation package available",
+    "linux-amd64 downloaded native installer preparation program verified",
+    "darwin-arm64 updated installation package available",
+    "darwin-arm64 downloaded native installer preparation program verified",
+    "windows-amd64 updated installation package available",
+    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
     "http nine store and two node endpoints plus upload helpers",
     "http language and device options with platform limits",
@@ -52,7 +59,7 @@
   "appBindingsWritten": 0,
   "actualStoreAccountsUsed": false,
   "apiDocumentation": {
-    "contractVersion": "2026-11-10",
+    "contractVersion": "2026-11-11",
     "formats": [
       "json",
       "markdown",
@@ -62,16 +69,28 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "168966315ea147a9983441f5583048bb",
-    "sourceCommit": "48b280245e504c897597929c96855c5a9026ae2f",
+    "runId": "836d363e1c7941d0928a16a81c128c5e",
+    "sourceCommit": "a0af811932fdfce607ed0dee376ed47a7a0f4d03",
     "downloadVerified": {
-      "linux-amd64": "4a188680e784850b31b81143548f93ce2ead2dad4437611d787179f086d6e698",
-      "darwin-arm64": "ac279fdf395e5ab4816b9c4c36dddb0ba4ffef8958d1d0c2b68ba10c087668e9",
-      "windows-amd64": "ffef9345e09d37bff0f44d51546c6e7729519d2da43a445e49fccfce77501fbc"
+      "linux-amd64": "f20cfef32c052d40ec4579804a0c97969fa6008d5cd28939d04db50766cf632f",
+      "darwin-arm64": "4ba1d6aa395216b03ae227bb457829397a3bb357ff61e1a973664fd964b0b61e",
+      "windows-amd64": "62d2148ab8607f3be81e8e84983c59aa0ab7b9459f864ded5b0f3fb82ab811ef"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": true,
     "configurationMergeSupported": true,
-    "actualStoreAccountsUsed": false
+    "actualStoreAccountsUsed": false,
+    "nodeLogsRetentionDays": 7,
+    "emptyPostContentLengthZero": true,
+    "iosLatestVersionOnly": true
+  },
+  "nativeLogSmoke": {
+    "nativeArm64BinaryRan": true,
+    "actualLogFileWritten": true,
+    "taskCorrelationVerified": true,
+    "shutdownRecorded": true,
+    "privateValuesExcluded": true,
+    "realStoreRequests": 0,
+    "processStopped": true
   }
 }
