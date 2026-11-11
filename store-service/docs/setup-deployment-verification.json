@@ -1,17 +1,17 @@
 {
-  "runId": "4300024ec1c4457bbb1362f8e089bb37",
+  "runId": "3e3725e105d24dcc9038e8d9708eae48",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-11T09:54:45.497772+00:00",
-  "deploymentCommit": "a046b528278324503b83c3bca3ccb3248054c783",
-  "binarySourceCommit": "0d6ff93673b312c9a63642ad9d8f10fef5c172d5",
-  "apiSha256": "04ebb1966d0180dc853c7d4076cda5c6c05f2af4b57f90ee47c75e4467a32ecd",
+  "finishedAt": "2026-11-11T12:24:37.589647+00:00",
+  "deploymentCommit": "936e3cc4cce27093be7a46eaa245960dbaa3a6d0",
+  "binarySourceCommit": "2ebf164e05f709bea53e6cba14e8f582fcca3796",
+  "apiSha256": "fdd8d864cee30b39c260e9b147f5441bf6c51d9b8c9a2de0bfe34e48177db00f",
   "connectorBinarySha256": {
-    "linux-amd64": "d526a9f383156ff2aadc401f4eb38e5689160a13df6c08edb16b74e5b089a838",
-    "darwin-arm64": "09c6085dd49cdf39fa4017e61664f7265a547a37f224b021c7d59309fb2f66c0",
-    "windows-amd64": "902c203419775dd3737e913dcf7c4a56a0c1f6af34bd6fc0509b0f96e10fd2c6"
+    "linux-amd64": "4e13711a2ebfe5069160d80e748275ab6df14d387c925b6caf94f50ec68a3581",
+    "darwin-arm64": "c050c85d8d232143ade6a252b5995e4679f5bd7b14a79f6540d353db31d0b4df",
+    "windows-amd64": "16c4d3e156932b07b40fd7b1adee74cacf55818078c851c1740e75ca9123584c"
   },
-  "screenshotConnectorSha256": "5e11696cfba68ce7043e74b97b44cdc391cac434cd5835d6836bd16e5616c629",
+  "screenshotConnectorSha256": "f9d2f261be8273a32f36f906ce3efb78db6c6bc864cf6cdf4feb03324c3d5cc0",
   "screenshotUploadConfigured": false,
   "checks": [
     "node connection inventory readable before rollout",
@@ -70,97 +70,59 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "4300024ec1c4457bbb1362f8e089bb37",
-    "sourceCommit": "a046b528278324503b83c3bca3ccb3248054c783",
+    "runId": "3e3725e105d24dcc9038e8d9708eae48",
+    "sourceCommit": "936e3cc4cce27093be7a46eaa245960dbaa3a6d0",
     "downloadVerified": {
-      "linux-amd64": "d526a9f383156ff2aadc401f4eb38e5689160a13df6c08edb16b74e5b089a838",
-      "darwin-arm64": "09c6085dd49cdf39fa4017e61664f7265a547a37f224b021c7d59309fb2f66c0",
-      "windows-amd64": "902c203419775dd3737e913dcf7c4a56a0c1f6af34bd6fc0509b0f96e10fd2c6"
+      "linux-amd64": "4e13711a2ebfe5069160d80e748275ab6df14d387c925b6caf94f50ec68a3581",
+      "darwin-arm64": "c050c85d8d232143ade6a252b5995e4679f5bd7b14a79f6540d353db31d0b4df",
+      "windows-amd64": "16c4d3e156932b07b40fd7b1adee74cacf55818078c851c1740e75ca9123584c"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
     "configurationMergeSupported": true,
-    "actualStoreAccountsUsed": false,
-    "iosVersionsProtocol": 1,
-    "nodeLogsRetentionDays": 7,
-    "nodeLogDownloadProtocol": 1,
-    "safeVendorErrorDiagnostics": true,
-    "emptyPostContentLengthZero": true,
-    "iosLatestVersionOnly": true,
-    "iosReadonlyQueriesAllowedForLockedVersions": true,
-    "iosImageSubmission": {
-      "processingStatePrecondition": false,
-      "processingStatePolling": false,
-      "createPlacementsAfterAcceptedCommit": true,
-      "orderingRequired": true
-    },
-    "googleCommit": {
-      "changesNotSentForReview": "omitted",
-      "changesInReviewBehavior": "ERROR_IF_IN_REVIEW",
-      "maySendForReview": true
-    }
+    "actualStoreAccountsUsed": false
   },
-  "nativeLogSmoke": {
-    "nativeArm64BinaryRan": true,
-    "actualLogFileWritten": true,
-    "taskCorrelationVerified": true,
-    "shutdownRecorded": true,
-    "privateValuesExcluded": true,
-    "realStoreRequests": 0,
-    "processStopped": true,
-    "logControlAuthenticationVerified": true,
-    "logSnapshotReadVerified": true
-  },
-  "screenshotOssVerification": {
+  "screenshotTargetForwarding": {
+    "taskProtocol": 2,
+    "externalJobId": true,
+    "required": [
+      "jobId",
+      "platform",
+      "bundleIdentifier",
+      "prompt",
+      "target"
+    ],
+    "multiTarget": true,
+    "queryLookupThroughHttpsProxyVerified": true,
+    "originalPromptPreserved": true,
+    "allTargetsConfirmedForSuccess": true,
+    "partialResultsOnFailure": true,
+    "notificationProtocol": "pending",
+    "settingsCiphertextUnchanged": true,
+    "appBindingsUnchanged": true,
+    "storeBindings": 6,
+    "screenshotBindings": 3,
     "forwarding": {
       "ios": true,
       "android": false
     },
-    "ossDraftSaved": true,
-    "ossDraftMatches": true,
-    "ossEnabled": false,
-    "ossSecretConfigured": false,
+    "ossEnabled": true,
+    "ossSecretConfigured": true,
     "notificationStatus": "not_configured",
-    "settingsSecretsNeverReturned": true,
-    "settingsHttpsAdminOnly": true,
-    "screenshotDirectUploadDocumented": true,
-    "callbackProtocol": "pending",
     "actualOssRequests": 0,
     "actualStoreRequests": 0,
     "storeWrites": 0,
     "screenshotJobsCreated": 0,
-    "externalNotificationsSent": 0,
-    "nodes": [
-      {
-        "connectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
-        "name": "\u6307\u5c16\u4e92\u52a8",
-        "kind": "screenshot",
-        "connected": true,
-        "logsAvailable": false
-      },
-      {
-        "connectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
-        "name": "\u6307\u95f4\u4e92\u52a8",
-        "kind": "store",
-        "connected": true,
-        "logsAvailable": true
-      },
-      {
-        "connectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
-        "name": "\u6c5f\u897f\u805a\u6587",
-        "kind": "store",
-        "connected": true,
-        "logsAvailable": true
-      }
-    ]
+    "externalNotificationsSent": 0
   },
   "screenshotConnectorPublication": {
-    "sourceCommit": "a046b528278324503b83c3bca3ccb3248054c783",
-    "sha256": "5e11696cfba68ce7043e74b97b44cdc391cac434cd5835d6836bd16e5616c629",
+    "sourceCommit": "936e3cc4cce27093be7a46eaa245960dbaa3a6d0",
+    "sha256": "f9d2f261be8273a32f36f906ce3efb78db6c6bc864cf6cdf4feb03324c3d5cc0",
     "downloadVerified": true,
     "architecture": "arm64",
     "ossCredentialsInPackage": false,
-    "directOssProtocol": 1,
+    "directOssProtocol": 2,
+    "taskProtocol": 2,
     "requiresNodeUpgrade": true
   }
 }
