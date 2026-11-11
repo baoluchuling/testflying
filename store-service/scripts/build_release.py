@@ -17,11 +17,11 @@ from verify_store_refactor import PROJECT, managed_root, source_hashes
 
 def main() -> None:
     root = managed_root()
-    if sys.argv[1:] not in ([], ["windows"], ["api"], ["api-screenshots"]) or platform.system() != "Darwin" or platform.machine() != "arm64":
+    if sys.argv[1:] not in ([], ["windows"], ["api"], ["api-screenshots"], ["all"]) or platform.system() != "Darwin" or platform.machine() != "arm64":
         raise RuntimeError("This release workflow requires an Apple Silicon macOS host")
     windows = sys.argv[1:] == ["windows"]
-    screenshots = sys.argv[1:] == ["api-screenshots"]
-    api_only = sys.argv[1:] == ["api"] or screenshots
+    screenshots = sys.argv[1:] in (["api-screenshots"], ["all"])
+    api_only = sys.argv[1:] in (["api"], ["api-screenshots"])
     target_triple = "x86_64-pc-windows-gnu" if windows else "x86_64-unknown-linux-musl"
     tmp = root / "tmp"
     tmp.mkdir(exist_ok=True)
@@ -101,6 +101,8 @@ def main() -> None:
             outputs["releases/darwin-arm64/screenshot-connector"] = (
                 tmp / "target/aarch64-apple-darwin/release/examples/screenshot-connector"
             )
+    if screenshots:
+        outputs["releases/darwin-arm64/screenshot-connector"] = tmp / "target/aarch64-apple-darwin/release/examples/screenshot-connector"
     hashes = {}
     for relative, binary in outputs.items():
         description = subprocess.check_output(["file", str(binary)], text=True).strip()

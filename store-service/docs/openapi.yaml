@@ -5,7 +5,7 @@ info:
   description: >-
     Store calls are real-time without drafts or automatic mutation retries.
     Screenshot jobs are asynchronous, routed by exact platform/package bindings and retained for seven days.
-    Screenshot images are forwarded without center file persistence. Screenshot routes require HTTPS.
+    Screenshot images upload directly from nodes to OSS; center stores no image bytes. Screenshot routes require HTTPS.
 servers:
   - url: http://localhost:8200
 components:
@@ -67,7 +67,7 @@ components:
         bundleIdentifier: {type: [string, 'null']}
         profile: {type: [string, 'null']}
         status: {type: string, enum: [queued, running, uploading, succeeded, failed]}
-        result: {type: [object, 'null'], properties: {imageUrl: {type: string, format: uri}}}
+        result: {type: [object, 'null'], properties: {imageUrl: {type: string, format: uri}, imageUrlExpiresAt: {type: string, format: date-time}, objectKey: {type: string}, sizeBytes: {type: integer}, sha256: {type: string}, notificationStatus: {type: string, enum: [not_configured, protocol_pending]}}}
         error: {type: [string, 'null']}
     CreateStoreRelease:
       type: object
@@ -176,7 +176,7 @@ components:
             storeImages: {$ref: '#/components/schemas/StoreImages'}
     StoreImages:
       type: object
-      description: Only present slots are replaced; explicit empty source arrays clear that slot. iOS uploads into Apple Asset Library, waits for processing/spec validation, then replaces and orders placements. No library asset deletion or automatic mutation replay. Multi-step placement writes are not transactional. Query device is not a sync selector.
+      description: Only present slots are replaced; explicit empty source arrays clear that slot. iOS uploads into Apple Asset Library, commits the image and then replaces and orders placements without polling processing state. Runtime image specs are validated before upload. No library asset deletion or automatic mutation replay. Multi-step placement writes are not transactional. Query device is not a sync selector.
       additionalProperties: false
       properties:
         phone_screenshots: {$ref: '#/components/schemas/ImageSlot'}
@@ -252,6 +252,44 @@ components:
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
 security: [{integrationToken: []}, {clientToken: []}]
 paths:
+  /v1/screenshot-settings:
+    get:
+      summary: Read masked OSS and pending external notification settings
+      description: HTTPS administrator only. Secret values are never returned. Fixed callback protocol is pending; this endpoint does not send notifications.
+      security: [{adminToken: []}]
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    put:
+      summary: Save encrypted screenshot delivery settings
+      description: HTTPS administrator only. Partial groups may be updated; omitted or blank passwords preserve existing values. Enabling OSS requires region, bucket, complete bucket Endpoint and credentials. Changing AccessKey ID requires a new Secret. Configuration takes effect on subsequent upload tickets.
+      security: [{adminToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                oss:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    enabled: {type: boolean}
+                    region: {type: string}
+                    bucket: {type: string}
+                    endpoint: {type: string, format: uri, description: Complete bucket hostname or CNAME; no automatic bucket prefix.}
+                    prefix: {type: string, default: screenshots}
+                    publicBaseUrl: {type: string}
+                    accessKeyId: {type: string}
+                    accessKeySecret: {type: string, writeOnly: true}
+                    securityToken: {type: string, writeOnly: true}
+                notification:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    url: {type: string}
+                    token: {type: string, writeOnly: true}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
   /v1/screenshot-connectors:
     get:
       summary: List all enabled Screenshot Connectors, including offline Macs
@@ -285,7 +323,7 @@ paths:
   /v1/screenshot-jobs:
     post:
       summary: Trigger a screenshot with platform, package and prompt; no connectorId
-      description: HTTPS only; exact screenshot binding required. No random fallback. Offline enabled nodes may queue. At most 20 queued and one running per node. 202 means queued, not completed; no submit deduplication or automatic replay. Missing external upload destination does not block execution. Existing workers need no upgrade.
+      description: HTTPS only; exact screenshot binding required. No random fallback. Offline enabled nodes may queue. At most 20 queued and one running per node. 202 means queued, not completed; no submit deduplication or automatic replay. Missing external upload destination does not block execution. Direct OSS upload requires the updated Screenshot Connector.
       security: [{integrationToken: []}]
       requestBody:
         required: true
@@ -296,7 +334,7 @@ paths:
   /v1/screenshot-jobs/{jobId}:
     get:
       summary: Read screenshot status using the same integration token that created it
-      description: HTTPS only. Other integrations receive 404 even for the same Mac. Results may contain an external HTTPS imageUrl; center stores no PNG. Legacy jobs may have null app identity. History retained for approximately seven days.
+      description: HTTPS only. Other integrations receive 404 even for the same Mac. Results contain an OSS imageUrl and objectKey after confirmed upload; notificationStatus is not_configured or protocol_pending because the callback protocol has not been connected. Center stores no PNG. Legacy jobs may have null app identity. History retained for approximately seven days.
       security: [{integrationToken: []}]
       parameters: [{name: jobId, in: path, required: true, schema: {type: string, format: uuid}}]
       responses:

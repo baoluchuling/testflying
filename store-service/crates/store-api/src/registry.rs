@@ -11,6 +11,7 @@ use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
 mod integrations;
+mod screenshot_settings;
 pub(crate) mod screenshots;
 pub(crate) use integrations::{Integration, IntegrationInput, TOKEN_PREFIX};
 
@@ -97,6 +98,7 @@ impl Registry {
         )
         .map_err(database_error)?;
         screenshots::create_schema(&db)?;
+        screenshot_settings::create_schema(&db)?;
         let db = Arc::new(Mutex::new(db));
         let logs = crate::logs::LogStore::new(db.clone())?;
         Ok(Self {

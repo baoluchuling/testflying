@@ -155,7 +155,7 @@ fn catalog() -> Value {
         "applicationIdentity":{"platform":["ios","android"],"identifier":"iOS Bundle ID / Android 包名，大小写精确匹配"},
         "endpoints":endpoints,
         "endpointCounts":{"store":10,"node":2,"screenshot":6,"uploads":2},
-        "screenshots":{"requiresConnectorUpgrade":false,"routing":"exact platform + bundleIdentifier screenshot binding; no random node selection; existing jobs keep their assigned node",
+        "screenshots":{"requiresConnectorUpgrade":true,"uploadProtocol":"direct-oss-v1","settingsAdminPath":"/v1/screenshot-settings","notificationProtocol":"pending","centerReceivesImage":false,"routing":"exact platform + bundleIdentifier screenshot binding; no random node selection; existing jobs keep their assigned node",
             "required":["platform","bundleIdentifier","prompt"],"connectorIdInSubmit":false,"requiresStoreBinding":false,"requiresStoreCredentials":false,
             "states":["queued","running","uploading","succeeded","failed"],"taskVisibility":"same issuing integration token only",
             "prompt":{"maxUtf8Bytes":16384,"preservedVerbatim":true,"appIdentityProvidedToWorker":true},

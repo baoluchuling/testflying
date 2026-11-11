@@ -132,7 +132,7 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
         json!(["platform", "bundleIdentifier", "prompt"])
     );
     assert_eq!(catalog["screenshots"]["connectorIdInSubmit"], false);
-    assert_eq!(catalog["screenshots"]["requiresConnectorUpgrade"], false);
+    assert_eq!(catalog["screenshots"]["requiresConnectorUpgrade"], true);
     for (method, resource) in [
         ("GET", "supported-locales"),
         ("GET", "store-listings"),

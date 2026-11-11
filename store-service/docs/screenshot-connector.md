@@ -20,7 +20,7 @@ Content-Type: application/json
 
 ## 外部对接文档
 
-截图节点列表、按包名绑定、触发和查询任务的唯一对接说明已合并到 [中心统一接口文档](store-api.md#截图节点与截图任务https)。触发只需 platform、bundleIdentifier 和 prompt，不再传 connectorId；本页仅保留实体 Mac 部署运维说明。中心会附加目标应用身份，完整保留外部提示词；无需重新安装 Worker。
+截图节点列表、按包名绑定、触发和查询任务的唯一对接说明已合并到 [中心统一接口文档](store-api.md#截图节点与截图任务https)。触发只需 platform、bundleIdentifier 和 prompt，不再传 connectorId；本页仅保留实体 Mac 部署运维说明。中心会附加目标应用身份，完整保留外部提示词；包名路由本身无需升级；本轮 OSS 直传需安装最新截图节点程序。
 
 ## 在实体 Mac 上运行
 
@@ -54,10 +54,12 @@ sh ./install.sh
 
 在安装目录执行 `tail -F connector.log` 即可查看后台日志。按任务 ID 查找 `job_claimed`、`codex_goal_started`、`simulator_unavailable`、`image_ready` 或 `result_rejected`，可定位执行阶段。完整提示词用 JSON 字符串保存在领单记录中。日志只保存在 Mac 上，文件权限为 `0600`。服务启动时和运行期间每分钟清理超过 24 小时的记录。原生 Goal 会话历史由安装账号的 Codex 管理。
 
-节点收到通知后通过 `POST /v1/connectors/{id}/screenshot-jobs/claim` 领取任务，空队列返回 204。执行失败通过 `POST /v1/connectors/{id}/screenshot-jobs/{jobId}/failure` 报告。成功后通过 `PUT /v1/connectors/{id}/screenshot-jobs/{jobId}/image` 上传 PNG 原始字节，最大 16 MiB。两条任务结果接口都要求节点 Bearer Token 和领单返回的 `X-Screenshot-Lease`。任务超时后需要重新提交。
+节点收到通知后通过 `POST /v1/connectors/{id}/screenshot-jobs/claim` 领取任务，空队列返回 204。执行失败通过 `POST /v1/connectors/{id}/screenshot-jobs/{jobId}/failure` 报告。截图后通过 POST /v1/connectors/{id}/screenshot-jobs/{jobId}/upload-ticket 获取短时上传地址，直接 PUT PNG 到 OSS，再 POST 同一路径下的 complete 确认结果。图片最大 16 MiB。中心接口要求节点 Bearer Token 和 X-Screenshot-Lease；OSS 请求只携带短时签名及绑定的图片元数据。任务超时后需要重新提交。
 
-## 外部上传占位协议
+## OSS 与外部通知配置
 
-在中心设置 `STORE_API_SCREENSHOT_UPLOAD_URL`。真实服务可选设置 `STORE_API_SCREENSHOT_UPLOAD_TOKEN` 用于下游 Bearer 鉴权，节点或外部系统的 Token 不随转发发送。URL 必须是固定 HTTPS 地址，本地联调可用回环 HTTP。任务可以在地址为空或转发配置无效时提交、领取和执行。Mac 交回图片时，如果中心仍无有效的接收配置，回传接口返回 `503 screenshot_upload_unconfigured`，任务状态为 `failed`，并记录此回传错误、释放任务租约。
+在中心后台「截图上传与结果通知」保存 OSS 和外部通知配置。OSS 凭据加密保存在中心，节点部署包中不包含 AccessKey。截图节点通过中心获取绑定任务、租约与图片摘要的短时 PUT 地址，将原始 PNG 直接上传至 OSS，再通知中心读取对象元数据验证并记录结果。中心不接收该链路图片字节，也不落盘保存图片。OSS 配置缺失不拦截截图执行，在实际上传阶段返回 screenshot_oss_not_configured。
 
-中心在内存中接收并验证 PNG，随后向该地址 POST `multipart/form-data`。图片字段名为 `file`，文件名为 `screenshot.png`，并发送值为 jobId 的 `Idempotency-Key`。中心只持久化任务状态和可选的 HTTPS `imageUrl`。外部正式协议明确后可单独更换这一层。中心拒绝跳转和重复交图，上传超时记录为 `delivery_unknown`，避免重试导致重复上传。
+外部回调的固定格式尚未确定。本轮可保存 URL 和鉴权 Token，状态为 protocol_pending，尚不发送回调；未填 URL 显示 not_configured。上传结果含图片地址、对象路径、摘要和 notificationStatus，明确区分 OSS 上传成功与通知待接入。
+
+本轮需在截图 Mac 重新安装最新 arm64 部署包以升级程序，沿用原节点身份和 Codex 环境。旧程序的 PNG 回传入口在 OSS 启用后返回 screenshot_connector_upgrade_required。完整配置 API、访问地址有效期和外部接口见[中心统一文档](store-api.md#截图节点与截图任务https)。

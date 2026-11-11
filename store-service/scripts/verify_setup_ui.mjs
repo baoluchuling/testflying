@@ -51,6 +51,17 @@ let downloadAttempts = 0;
 let listAttempts = 0;
 let fixtureSession;
 const forwardingFixture={ios:true,android:true};
+const screenshotSettingsFixture = {
+  revision: 0,
+  oss: { enabled: false, region: "", bucket: "", endpoint: "", prefix: "", publicBaseUrl: "",
+    accessKeyId: "", accessKeySecretConfigured: false, securityTokenConfigured: false },
+  notification: { url: "", tokenConfigured: false, status: "not_configured" },
+};
+const screenshotSettingsWrites = [];
+let heldSettings;
+let settingsStarted;
+let releaseSettings;
+let failNextSettingsSave = false;
 let heldReveal;
 let revealStarted;
 let releaseReveal;
@@ -63,6 +74,7 @@ if (!production) {
     "integrations.mjs": [path.join(web, "integrations.mjs"), "text/javascript"],
     "logs.mjs": [path.join(web, "logs.mjs"), "text/javascript"],
     "forwarding.mjs": [path.join(web,"forwarding.mjs"),"text/javascript"],
+    "screenshot-settings.mjs": [path.join(web, "screenshot-settings.mjs"), "text/javascript"],
     "packager.mjs": [path.join(web, "packager.mjs"), "text/javascript"],
     "style.css": [path.join(web, "style.css"), "text/css"],
     "jszip.min.js": [path.join(web, "vendor/jszip.min.js"), "text/javascript"],
@@ -106,6 +118,32 @@ if (!production) {
         if (!fixtureSession || !req.headers.cookie?.split(/;\s*/).includes(`${sessionCookie}=${fixtureSession}`)) {
           res.writeHead(401).end("{}"); return;
         }
+      }
+      if (url.pathname === setupApi + "screenshot-settings") {
+        assert(["GET", "PUT"].includes(req.method));
+        if (req.method === "PUT") {
+          let body = ""; for await (const part of req) body += part;
+          const input = JSON.parse(body);
+          assert.deepEqual(Object.keys(input), ["oss", "notification"]);
+          screenshotSettingsWrites.push(input);
+          if (failNextSettingsSave) {
+            failNextSettingsSave = false;
+            res.writeHead(500).end(JSON.stringify({ error: { message: '<img src=x onerror=alert(1)> fixture-secret-should-not-display' } }));
+            return;
+          }
+          for (const key of ["enabled", "region", "bucket", "endpoint", "prefix", "publicBaseUrl", "accessKeyId"]) {
+            screenshotSettingsFixture.oss[key] = input.oss[key];
+          }
+          for (const [key, flag] of [["accessKeySecret", "accessKeySecretConfigured"], ["securityToken", "securityTokenConfigured"]]) {
+            if (input.oss[key]) screenshotSettingsFixture.oss[flag] = true;
+          }
+          screenshotSettingsFixture.notification.url = input.notification.url;
+          if (input.notification.token) screenshotSettingsFixture.notification.tokenConfigured = true;
+          screenshotSettingsFixture.notification.status = input.notification.url ? "protocol_pending" : "not_configured";
+          screenshotSettingsFixture.revision++;
+        }
+        if (heldSettings) { settingsStarted(); await heldSettings; }
+        res.end(JSON.stringify(screenshotSettingsFixture)); return;
       }
       if (url.pathname===setupApi+"forwarding"||url.pathname.startsWith(setupApi+"forwarding/")) {
         if(req.method==="PUT") {
@@ -274,6 +312,10 @@ try {
     const headers = request.headers();
     const adminRequest = url.origin === origin && url.protocol === "https:" && url.pathname.startsWith(setupApi);
     const loginRequest = adminRequest && url.pathname === setupApi + "session" && request.method() === "POST";
+    if (production && url.pathname === setupApi + "screenshot-settings" && request.method() !== "GET") {
+      violations.push("blocked production screenshot settings write");
+      return route.abort();
+    }
     if (!!headers.authorization !== loginRequest || (headers["x-testflying-setup"] === "1") !== adminRequest) {
       violations.push("incorrect authorization header boundary");
       return route.abort();
@@ -300,6 +342,7 @@ try {
   assert.equal(await page.locator("#setupForm").isVisible(), false);
   assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);
   assert.equal(await page.locator("#screenshotWorkspace").isVisible(), false);
+  assert.equal(await page.locator("#screenshotSettingsWorkspace").isVisible(), false);
   assert.equal(listAttempts, 0);
   async function unlock(admin = production ? token : fixtureAdminToken) {
     await page.locator("#adminCredential").fill(admin);
@@ -321,6 +364,73 @@ try {
     return [typeof form.nodeName, typeof form.target];
   }), ["string", "string"]);
   checks.push("node setup and integration management appear only after shared HTTPS administrator unlock");
+  await page.locator("#screenshotSettingsWorkspace summary").click();
+  await page.locator("#screenshotSettingsSave:enabled").waitFor();
+  const settingsSecrets = ["ossAccessKeySecret", "ossSecurityToken", "screenshotNotificationToken"];
+  async function assertSettingsSecretsEmpty() {
+    for (const id of settingsSecrets) assert.equal(await page.locator(`#${id}`).inputValue(), "");
+  }
+  await assertSettingsSecretsEmpty();
+  assert.equal(await page.locator("#screenshotNotificationState").getAttribute("readonly"), "");
+  assert.match(await page.locator("#screenshotNotificationState").inputValue(), /协议待接入，暂不发送通知/);
+  if (!production) {
+    assert.equal(await page.locator("#ossRegion").getAttribute("required"), null);
+    await page.locator("#ossEnabled").check();
+    await page.locator("#ossRegion").fill("cn-hangzhou");
+    await page.locator("#ossBucket").fill("fixture-screenshots");
+    await page.locator("#ossEndpoint").fill("https://fixture-screenshots.oss-cn-hangzhou.aliyuncs.com");
+    await page.locator("#ossPrefix").fill("screenshots");
+    await page.locator("#ossAccessKeyId").fill("fixture-access-key-id");
+    await page.locator("#ossAccessKeySecret").fill("fixture-oss-secret");
+    await page.locator("#ossSecurityToken").fill("fixture-sts-token");
+    await page.locator("#screenshotNotificationUrl").fill("https://notify.example.invalid/screenshots");
+    await page.locator("#screenshotNotificationToken").fill("fixture-notification-token");
+    heldSettings = new Promise((resolve) => { releaseSettings = resolve; });
+    const started = new Promise((resolve) => { settingsStarted = resolve; });
+    await page.locator("#screenshotSettingsSave").click();
+    await started;
+    await assertSettingsSecretsEmpty();
+    assert.equal(await page.locator("#screenshotSettingsSave").isDisabled(), true);
+    assert.equal(await page.locator("#screenshotSettingsRefresh").isDisabled(), true);
+    releaseSettings(); heldSettings = undefined;
+    await page.getByText("截图设置已保存，将用于后续上传凭证。通知协议待接入，暂不发送通知。", { exact: true }).waitFor();
+    assert.equal(screenshotSettingsFixture.oss.enabled, true);
+    assert.equal(screenshotSettingsFixture.oss.accessKeySecretConfigured, true);
+    assert.equal(screenshotSettingsFixture.oss.securityTokenConfigured, true);
+    assert.equal(screenshotSettingsFixture.notification.tokenConfigured, true);
+    assert.equal(screenshotSettingsFixture.notification.status, "protocol_pending");
+    assert.equal(screenshotSettingsWrites[0].oss.publicBaseUrl, "");
+    await assertSettingsSecretsEmpty();
+    for (const id of settingsSecrets) assert.equal(await page.locator(`#${id}`).getAttribute("placeholder"), "已配置，留空保留");
+    checks.push("mock OSS and pending notification settings save without notifying; secrets clear before the response and only configured flags return");
+    await page.locator("#screenshotSettingsSave").click();
+    await page.locator("#screenshotSettingsSave:enabled").waitFor();
+    assert.equal(screenshotSettingsWrites.length, 2);
+    for (const key of ["accessKeySecret", "securityToken"]) assert.equal(Object.hasOwn(screenshotSettingsWrites[1].oss, key), false);
+    assert.equal(Object.hasOwn(screenshotSettingsWrites[1].notification, "token"), false);
+    await page.locator("#screenshotSettingsRefresh").click();
+    await page.getByText("截图设置已刷新，密钥不回显。", { exact: true }).waitFor();
+    await assertSettingsSecretsEmpty();
+    assert.equal(await page.locator("#ossRegion").inputValue(), "cn-hangzhou");
+    checks.push("blank screenshot passwords are omitted to preserve configured secrets and masked refresh retains ordinary fields");
+    await page.locator("#ossAccessKeyId").fill("fixture-replaced-key-id");
+    await page.locator("#screenshotSettingsSave").click();
+    assert.equal(screenshotSettingsWrites.length, 2);
+    assert.equal(await page.locator("#ossAccessKeySecret").evaluate((input) => input.validity.valueMissing), true);
+    await page.locator("#ossAccessKeyId").fill("fixture-access-key-id");
+    failNextSettingsSave = true;
+    await page.locator("#ossAccessKeySecret").fill("fixture-retry-secret");
+    await page.locator("#screenshotSettingsSave").click();
+    await page.getByText("截图设置保存失败，请检查配置后重试；如更换密钥，请重新填写。", { exact: true }).waitFor();
+    await assertSettingsSecretsEmpty();
+    assert.equal(await page.locator("#screenshotSettingsWorkspace img").count(), 0);
+    assert.equal((await page.locator("#screenshotSettingsWorkspace").textContent()).includes("fixture-secret-should-not-display"), false);
+    assert.equal(await page.locator("#setupForm").isVisible(), true);
+    checks.push("AccessKey changes require a new Secret; failed settings saves keep the admin unlocked and display a fixed safe error");
+  } else {
+    checks.push("production screenshot settings are read only with empty password inputs and pending notification state");
+  }
+  await page.locator("#screenshotSettingsWorkspace summary").click();
   if(!production) {
     await page.locator("#androidForwardingToggle:enabled").waitFor();
     await page.locator("#androidForwardingToggle").click();
@@ -334,7 +444,16 @@ try {
     assert.equal(forwardingFixture.ios,false);assert.equal(forwardingFixture.android,false);
     checks.push("administrator can pause iOS and Android independently and refresh persisted forwarding state");
   }
-  if (!production) await page.screenshot({ path: path.join(tmp, "setup-preview.png"), fullPage: true });
+  if (!production) {
+    await page.locator("#screenshotSettingsWorkspace summary").click();
+    await assertSettingsSecretsEmpty();
+    await page.screenshot({ path: path.join(tmp, "setup-preview.png"), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth));
+    checks.push("mobile layout with expanded OSS and notification settings has no horizontal overflow");
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await page.locator("#screenshotSettingsWorkspace summary").click();
+  }
   await page.locator("#connectorName").fill("Browser verification · dual platform");
   await page.locator("#issuerId").fill("test-issuer");
   await page.locator("#appleFile").setInputFiles(appleFile);
@@ -429,6 +548,8 @@ try {
     await page.locator("#integrationCopy").click();
     await page.waitForFunction((expected) => window.fixtureCopiedToken === expected, fixtureIntegrationToken);
     await page.getByText("Token 已复制。", { exact: true }).waitFor();
+    await page.locator("#screenshotSettingsWorkspace summary").click();
+    for (const id of settingsSecrets) await page.locator(`#${id}`).fill("fixture-unsaved-secret");
     heldReveal = new Promise((resolve) => { releaseReveal = resolve; });
     const started = new Promise((resolve) => { revealStarted = resolve; });
     const aborted = page.waitForEvent("requestfailed", (request) => new URL(request.url()).pathname.endsWith("/token"));
@@ -441,10 +562,14 @@ try {
     assert.equal(await page.locator("#integrationToken").inputValue(), "");
     assert.equal(await page.locator("#nodeLogSelect").inputValue(), "");
     assert.equal(await page.locator("#forwardingWorkspace").isVisible(),false);
+    assert.equal(await page.locator("#screenshotSettingsWorkspace").isVisible(), false);
+    await assertSettingsSecretsEmpty();
+    assert.equal(await page.locator("#ossAccessKeyId").inputValue(), "");
     assert.equal(await page.locator("#appleFile").inputValue(), "");
     assert.equal(await page.locator("#googleFile").inputValue(), "");
     assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);
     checks.push("locking cancels a pending credential reveal and clears local files and secrets");
+    checks.push("locking hides screenshot settings and clears all unsaved OSS and notification passwords");
     const screenshotNode = { connectorId: randomUUID(), kind: "screenshot", name: "Fixture Screenshot Mac", enabled: true, connected: false };
     nodes.push(screenshotNode);
     await unlock();
@@ -487,13 +612,26 @@ try {
     assert.equal(nodeConfig.kind, "screenshot");
     assert.deepEqual(Object.keys(deployment.files).sort(),
       ["README.md", "connector.json", "install.sh", "run.sh", "screenshot-connector", "testflying-prod-ca.crt"]);
+    await page.locator("#screenshotSettingsWorkspace summary").click();
+    await page.locator("#screenshotSettingsSave:enabled").waitFor();
+    heldSettings = new Promise((resolve) => { releaseSettings = resolve; });
+    const refreshStarted = new Promise((resolve) => { settingsStarted = resolve; });
+    const settingsAborted = page.waitForEvent("requestfailed", (request) => new URL(request.url()).pathname === setupApi + "screenshot-settings");
+    await page.locator("#screenshotSettingsRefresh").click();
+    await refreshStarted;
     await Promise.all([
       page.waitForResponse((response) => response.request().method() === "DELETE" && new URL(response.url()).pathname === setupApi + "session"),
       page.locator("#adminLock").click(),
     ]);
+    await settingsAborted;
+    releaseSettings(); heldSettings = undefined;
+    assert.equal(await page.locator("#screenshotSettingsWorkspace").isVisible(), false);
+    assert.equal(await page.locator("#ossRegion").inputValue(), "");
+    await assertSettingsSecretsEmpty();
     assert.equal(await page.locator("#screenshotWorkspace").isVisible(), false);
     assert.equal(await page.locator("#screenshotNode").inputValue(), "");
     checks.push("unlocked admin can provision a screenshot node and download its macOS deployment ZIP");
+    checks.push("locking aborts an in-flight screenshot settings refresh and prevents a late response from restoring the form");
     await unlock();
     await page.locator("#setupForm").waitFor({ state: "visible" });
   }
@@ -508,6 +646,7 @@ try {
   assert.equal(await page.locator("#adminUnlock").isVisible(), false);
   assert.equal(await page.locator("#appleFile").inputValue(), "");
   assert.equal(await page.locator("#googleFile").inputValue(), "");
+  await assertSettingsSecretsEmpty();
   assert.deepEqual(await page.evaluate(() => [localStorage.length, sessionStorage.length]), [0, 0]);
   checks.push("refresh restores the HTTPS session and clears local files without writing to web storage");
   const [logout] = await Promise.all([
@@ -519,6 +658,7 @@ try {
   await page.locator("#loginButton:enabled").waitFor();
   assert.equal(await page.locator("#setupForm").isVisible(), false);
   assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);
+  assert.equal(await page.locator("#screenshotSettingsWorkspace").isVisible(), false);
   assert.equal((await context.cookies()).some((entry) => entry.name === sessionCookie), false);
   checks.push("locking clears the cookie and a subsequent refresh stays locked");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -543,6 +683,7 @@ try {
   await context.close();
 } finally {
   releaseReveal?.();
+  releaseSettings?.();
   let cleanupFailed = false;
   try {
     if (production) for (const id of created) {

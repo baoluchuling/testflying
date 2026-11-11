@@ -874,3 +874,313 @@ async fn jobs_run_without_a_destination_and_only_image_delivery_fails() {
     let claimed = value(send(&app, "POST", &claim, &mac_token, Value::Null).await).await;
     assert_eq!(claimed["jobId"], next["jobId"]);
 }
+
+async fn screenshot_json(
+    app: &Router,
+    path: &str,
+    token: &str,
+    lease: &str,
+    body: Value,
+) -> Response {
+    app.clone()
+        .oneshot(
+            Request::post(path)
+                .header("x-forwarded-proto", "https")
+                .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                .header("x-screenshot-lease", lease)
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn direct_oss_ticket_is_bound_to_worker_file_lease_and_verified_before_idempotent_completion()
+{
+    use axum::{response::IntoResponse, routing::put};
+    use sha2::{Digest, Sha256};
+    use std::sync::Mutex;
+    let object = Arc::new(Mutex::new(None::<(HeaderMap, Vec<u8>)>));
+    let puts = Arc::new(AtomicUsize::new(0));
+    let heads = Arc::new(AtomicUsize::new(0));
+    let stored = object.clone();
+    let uploads = puts.clone();
+    let handler = put(move |headers: HeaderMap, body: Bytes| {
+        let stored = stored.clone();
+        let uploads = uploads.clone();
+        async move {
+            assert!(headers.get(header::AUTHORIZATION).is_none());
+            assert_eq!(headers["x-oss-forbid-overwrite"], "true");
+            uploads.fetch_add(1, Ordering::SeqCst);
+            *stored.lock().unwrap() = Some((headers, body.to_vec()));
+            StatusCode::OK
+        }
+    });
+    let stored = object.clone();
+    let checks = heads.clone();
+    let mock = Router::new().route(
+        "/{*key}",
+        handler.head(move |headers: HeaderMap| {
+            let stored = stored.clone();
+            let checks = checks.clone();
+            async move {
+                assert!(headers.get(header::AUTHORIZATION).is_none());
+                checks.fetch_add(1, Ordering::SeqCst);
+                let stored = stored.lock().unwrap();
+                let Some((headers, body)) = stored.as_ref() else {
+                    return StatusCode::NOT_FOUND.into_response();
+                };
+                let mut reply = StatusCode::OK.into_response();
+                for name in [
+                    "content-type",
+                    "content-md5",
+                    "x-oss-meta-sha256",
+                    "x-oss-meta-md5",
+                ] {
+                    reply.headers_mut().insert(
+                        header::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                        headers[name].clone(),
+                    );
+                }
+                reply.headers_mut().insert(
+                    header::CONTENT_LENGTH,
+                    body.len().to_string().parse().unwrap(),
+                );
+                reply
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let endpoint = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move { axum::serve(listener, mock).await.unwrap() });
+    let state = state();
+    let app = store_api::router(state.clone());
+    let configured=send(&app,"PUT","/v1/screenshot-settings",ADMIN,json!({"oss":{"enabled":true,"region":"cn-hangzhou","bucket":"fixture-bucket","endpoint":endpoint,"prefix":"screenshots","accessKeyId":"fixture-access-id","accessKeySecret":"fixture-access-secret","publicBaseUrl":"https://cdn.fixture.example"}})).await;
+    assert_eq!(configured.status(), 200);
+    let view = value(configured).await;
+    assert_eq!(view["oss"]["accessKeySecretConfigured"], true);
+    assert!(!view.to_string().contains("fixture-access-secret"));
+    let (mac, mac_token) = node(&app, "Direct OSS Mac", "screenshot").await;
+    let (other, other_token) = node(&app, "Other Mac", "screenshot").await;
+    let client = integration(&app, "direct screenshots", &[&mac]).await;
+    bind_app(&app, &client, &mac).await;
+    let job=value(send(&app,"POST","/v1/screenshot-jobs",&client,json!({"platform":"ios","bundleIdentifier":"com.example.app","prompt":"Capture fixture"})).await).await;
+    let claimed = value(
+        send(
+            &app,
+            "POST",
+            &format!("/v1/connectors/{mac}/screenshot-jobs/claim"),
+            &mac_token,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    let job = job["jobId"].as_str().unwrap();
+    let lease = claimed["lease"].as_str().unwrap();
+    let prefix = format!("/v1/connectors/{mac}/screenshot-jobs/{job}");
+    let prepare = format!("{prefix}/upload-ticket");
+    let complete = format!("{prefix}/complete");
+    let mut png = Cursor::new(Vec::new());
+    image::DynamicImage::new_rgba8(2, 2)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .unwrap();
+    let png = png.into_inner();
+    let sha256 = hex::encode(Sha256::digest(&png));
+    let md5 = "00000000000000000000000000000000";
+    let metadata = json!({"sizeBytes":png.len(),"sha256":sha256,"md5":md5});
+    assert_eq!(
+        screenshot_json(&app, &prepare, "wrong", lease, metadata.clone())
+            .await
+            .status(),
+        401
+    );
+    assert_eq!(
+        screenshot_json(
+            &app,
+            &prepare,
+            &mac_token,
+            "99999999-9999-4999-8999-999999999999",
+            metadata.clone()
+        )
+        .await
+        .status(),
+        409
+    );
+    assert_eq!(
+        screenshot_json(
+            &app,
+            &format!("/v1/connectors/{other}/screenshot-jobs/{job}/upload-ticket"),
+            &other_token,
+            lease,
+            metadata.clone()
+        )
+        .await
+        .status(),
+        409
+    );
+    let prepared = screenshot_json(&app, &prepare, &mac_token, lease, metadata.clone()).await;
+    assert_eq!(prepared.status(), 200);
+    let ticket = value(prepared).await;
+    let repeated =
+        value(screenshot_json(&app, &prepare, &mac_token, lease, metadata.clone()).await).await;
+    assert_eq!(ticket["objectKey"], repeated["objectKey"]);
+    let mut changed = metadata.clone();
+    changed["md5"] = json!("11111111111111111111111111111111");
+    assert_eq!(
+        screenshot_json(&app, &prepare, &mac_token, lease, changed)
+            .await
+            .status(),
+        409
+    );
+    assert_eq!(
+        screenshot_json(
+            &app,
+            &complete,
+            &mac_token,
+            lease,
+            json!({"imageUrl":"https://attacker.example"})
+        )
+        .await
+        .status(),
+        422
+    );
+    let absent = screenshot_json(&app, &complete, &mac_token, lease, json!({})).await;
+    assert_eq!(absent.status(), 409);
+    assert_eq!(
+        value(absent).await["error"]["code"],
+        "screenshot_object_missing"
+    );
+    // This client is independent of the center's authentication and sends only raw PNG.
+    let direct = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .retry(reqwest::retry::never())
+        .build()
+        .unwrap();
+    let mut upload = direct.put(ticket["uploadUrl"].as_str().unwrap());
+    for (name, value) in ticket["headers"].as_object().unwrap() {
+        upload = upload.header(name.as_str(), value.as_str().unwrap());
+    }
+    assert_eq!(upload.body(png.clone()).send().await.unwrap().status(), 200);
+    assert_eq!(object.lock().unwrap().as_ref().unwrap().1, png);
+    // Notification-only saves do not invalidate the existing OSS ticket.
+    assert_eq!(send(&app,"PUT","/v1/screenshot-settings",ADMIN,json!({"notification":{"url":"https://notify.fixture.example","token":"fixture-notification-secret"}})).await.status(),200);
+    {
+        let mut stored = object.lock().unwrap();
+        stored
+            .as_mut()
+            .unwrap()
+            .0
+            .insert("x-oss-meta-sha256", "mismatch".parse().unwrap());
+    }
+    assert_eq!(
+        screenshot_json(&app, &complete, &mac_token, lease, json!({}))
+            .await
+            .status(),
+        422
+    );
+    object
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .0
+        .insert("x-oss-meta-sha256", sha256.parse().unwrap());
+    let delivered = screenshot_json(&app, &complete, &mac_token, lease, json!({})).await;
+    assert_eq!(delivered.status(), 200);
+    let delivered = value(delivered).await;
+    assert_eq!(delivered["delivered"], true);
+    assert_eq!(
+        delivered["result"]["notificationStatus"],
+        "protocol_pending"
+    );
+    assert_eq!(delivered["result"]["sha256"], sha256);
+    let checks = heads.load(Ordering::SeqCst);
+    let repeated =
+        value(screenshot_json(&app, &complete, &mac_token, lease, json!({})).await).await;
+    assert_eq!(repeated, delivered);
+    assert_eq!(heads.load(Ordering::SeqCst), checks);
+    assert_eq!(puts.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        screenshot_json(
+            &app,
+            &complete,
+            &mac_token,
+            "99999999-9999-4999-8999-999999999999",
+            json!({})
+        )
+        .await
+        .status(),
+        409
+    );
+    let status = value(
+        send(
+            &app,
+            "GET",
+            &format!("/v1/screenshot-jobs/{job}"),
+            &client,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status["status"], "succeeded");
+    assert_eq!(status["result"], delivered["result"]);
+    assert!(!status.to_string().contains("fixture-access-secret"));
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn unconfigured_oss_fails_at_upload_ticket_after_job_claim() {
+    let app = store_api::router(state());
+    let (mac, token) = node(&app, "Unconfigured OSS Mac", "screenshot").await;
+    let client = integration(&app, "unconfigured direct screenshots", &[&mac]).await;
+    bind_app(&app, &client, &mac).await;
+    let queued=send(&app,"POST","/v1/screenshot-jobs",&client,json!({"platform":"ios","bundleIdentifier":"com.example.app","prompt":"Capture before checking storage"})).await;
+    assert_eq!(queued.status(), 202);
+    let job = value(queued).await;
+    let claimed = value(
+        send(
+            &app,
+            "POST",
+            &format!("/v1/connectors/{mac}/screenshot-jobs/claim"),
+            &token,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    let reply = screenshot_json(
+        &app,
+        &format!(
+            "/v1/connectors/{mac}/screenshot-jobs/{}/upload-ticket",
+            job["jobId"].as_str().unwrap()
+        ),
+        &token,
+        claimed["lease"].as_str().unwrap(),
+        json!({"sizeBytes":64,"sha256":"a".repeat(64),"md5":"b".repeat(32)}),
+    )
+    .await;
+    assert_eq!(reply.status(), 503);
+    assert_eq!(
+        value(reply).await["error"]["code"],
+        "screenshot_oss_not_configured"
+    );
+    let status = value(
+        send(
+            &app,
+            "GET",
+            &format!("/v1/screenshot-jobs/{}", job["jobId"].as_str().unwrap()),
+            &client,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(status["status"], "failed");
+    assert_eq!(status["error"], "screenshot_oss_not_configured");
+}

@@ -7,6 +7,9 @@ use std::io::{Cursor, Write};
 use tokio::sync::Semaphore;
 use zip::{write::SimpleFileOptions, ZipWriter};
 
+mod delivery;
+pub(crate) mod oss;
+
 const MAX_IMAGE: usize = 16 * 1024 * 1024;
 const MAX_REPLY: usize = 64 * 1024;
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
@@ -160,6 +163,10 @@ pub(super) fn routes(
         ));
     let admin = Router::new()
         .route(
+            "/v1/screenshot-settings",
+            get(crate::screenshot_settings::read).put(crate::screenshot_settings::update),
+        )
+        .route(
             "/v1/connectors/{id}/screenshot-installer",
             get(screenshot_installer),
         )
@@ -180,6 +187,14 @@ pub(super) fn routes(
         .merge(admin)
         .merge(binding)
         .route("/v1/connectors/{id}/screenshot-jobs/claim", post(claim))
+        .route(
+            "/v1/connectors/{id}/screenshot-jobs/{job}/upload-ticket",
+            post(delivery::prepare),
+        )
+        .route(
+            "/v1/connectors/{id}/screenshot-jobs/{job}/complete",
+            post(delivery::complete),
+        )
         .route(
             "/v1/connectors/{id}/screenshot-jobs/{job}/failure",
             post(fail),
@@ -449,7 +464,16 @@ async fn fail(
     authorize_worker(&state, &id, &headers)?;
     if !matches!(
         failure.code.as_str(),
-        "profile_unavailable" | "codex_failed" | "selection_invalid" | "capture_failed"
+        "profile_unavailable"
+            | "codex_failed"
+            | "selection_invalid"
+            | "capture_failed"
+            | "screenshot_oss_not_configured"
+            | "screenshot_upload_rejected"
+            | "screenshot_object_mismatch"
+            | "screenshot_oss_config_changed"
+            | "delivery_unknown"
+            | "invalid_upload_ticket"
     ) {
         return Err(
             StoreError::new(422, "invalid_failure", "Unknown screenshot failure code").into(),
@@ -475,6 +499,18 @@ async fn image(
         .is_none_or(|v| v != "image/png")
     {
         return Err(StoreError::new(415, "invalid_image_type", "Send a PNG image").into());
+    }
+    if state.registry.screenshot_settings()?.oss.enabled {
+        let error = StoreError::new(
+            409,
+            "screenshot_connector_upgrade_required",
+            "Upgrade the Screenshot Connector to upload directly to OSS",
+        );
+        state.registry.begin_screenshot_upload(&id, &job, &lease)?;
+        state
+            .registry
+            .finish_screenshot(&id, &job, &lease, Err(&error.code), "uploading")?;
+        return Err(error.into());
     }
     let Some(uploader) = uploader else {
         let error = StoreError::new(

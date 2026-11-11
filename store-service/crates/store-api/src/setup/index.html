@@ -16,7 +16,7 @@
       <h1>填好账号，<br>下载就能启动。</h1>
       <p>一个节点，同时连接 iOS 和 Android。中心地址、节点身份、文件路径和启动脚本自动准备好。</p>
       <ol class="steps"><li>验证管理员 Token</li><li>选择节点并配置商店账号</li><li>下载、解压、启动</li></ol>
-      <div class="privacy"><strong>凭据留在你手中</strong><p>账号文件在当前浏览器内合并，不上传或保存在中心。应用映射由中心维护，不写入安装包。</p></div>
+      <div class="privacy"><strong>商店凭据留在你手中</strong><p>商店账号文件在当前浏览器内合并，不上传或保存在中心。应用映射由中心维护，不写入安装包。截图 OSS 与通知密钥单独加密保存在中心。</p></div>
     </aside>
     <section class="workspace">
       <header><div><span class="eyebrow">安装配置</span><h2>生成专属安装包</h2></div><button id="adminLock" class="quiet" type="button" hidden>锁定管理</button></header>
@@ -66,6 +66,37 @@
         <button id="forwardingRefresh" type="button" class="quiet">刷新转发状态</button>
         <p id="forwardingStatus" role="status" aria-live="polite"></p>
       </section>
+      <details id="screenshotSettingsWorkspace" class="card" hidden>
+        <summary>截图上传与结果通知</summary>
+        <p class="muted">全局配置影响后续签发的上传凭证。中心加密保存 OSS 与通知密钥，只向截图节点发放短时签名 URL；PNG 由节点直传 OSS，不经过中心。</p>
+        <form id="screenshotSettingsForm" autocomplete="off">
+          <h3>阿里云 OSS</h3>
+          <label class="toggle"><input id="ossEnabled" type="checkbox"><span><strong>启用 OSS 上传</strong><small>未启用或未配置时，任务仍可提交和截图，上传阶段会提示配置问题。</small></span></label>
+          <div class="grid">
+            <div><label for="ossRegion">Region</label><input id="ossRegion" autocomplete="off" spellcheck="false" placeholder="cn-hangzhou"></div>
+            <div><label for="ossBucket">Bucket</label><input id="ossBucket" autocomplete="off" spellcheck="false" placeholder="截图存储 Bucket"></div>
+          </div>
+          <label for="ossEndpoint">Bucket Endpoint / CNAME</label>
+          <input id="ossEndpoint" type="url" autocomplete="off" spellcheck="false" placeholder="https://your-bucket.oss-cn-hangzhou.aliyuncs.com" aria-describedby="ossEndpointHint">
+          <p id="ossEndpointHint" class="hint">填写完整 HTTPS Bucket 域名或 CNAME，不填写路径、查询参数或账号信息。</p>
+          <label for="ossPrefix">对象路径前缀</label><input id="ossPrefix" autocomplete="off" spellcheck="false" placeholder="screenshots" aria-describedby="ossPrefixHint">
+          <p id="ossPrefixHint" class="hint">例如 screenshots；不以斜杠开头或结尾。</p>
+          <label for="ossPublicBaseUrl">图片访问域名（可选）</label><input id="ossPublicBaseUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://images.example.com" aria-describedby="ossPublicBaseUrlHint">
+          <p id="ossPublicBaseUrlHint" class="hint">留空时按私有 Bucket 生成一小时有效的签名读取 URL；填写时使用该访问域名，不修改对象 ACL。</p>
+          <label for="ossAccessKeyId">AccessKey ID</label><input id="ossAccessKeyId" autocomplete="off" spellcheck="false">
+          <label for="ossAccessKeySecret">AccessKey Secret</label><input id="ossAccessKeySecret" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="screenshotSecretsHint">
+          <label for="ossSecurityToken">STS Security Token（可选）</label><input id="ossSecurityToken" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="screenshotSecretsHint">
+          <p id="screenshotSecretsHint" class="hint">密钥不会回显或写入浏览器存储。密码框留空保留已保存的值；更换 AccessKey ID 时请同时填写新的 Secret。</p>
+          <h3>外部结果通知</h3>
+          <label for="screenshotNotificationUrl">通知 URL（可选）</label><input id="screenshotNotificationUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://notify.example.com/screenshot">
+          <label for="screenshotNotificationToken">通知鉴权 Token（可选）</label><input id="screenshotNotificationToken" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="screenshotSecretsHint">
+          <label for="screenshotNotificationState">通知协议状态</label><input id="screenshotNotificationState" readonly value="协议待接入，暂不发送通知">
+          <p class="hint">本次仅保存通知地址与 Token。协议待接入，暂不发送通知；截图上传成功不代表通知成功。</p>
+          <button id="screenshotSettingsSave" type="submit" disabled>保存截图设置</button>
+          <button id="screenshotSettingsRefresh" type="button" class="quiet">刷新截图设置</button>
+        </form>
+        <p id="screenshotSettingsStatus" role="status" aria-live="polite"></p>
+      </details>
       <details id="integrationWorkspace" class="card" hidden>
         <summary>接入凭据</summary>
         <p class="muted">接入 Token 授权全部节点，包括以后新增的节点。</p>

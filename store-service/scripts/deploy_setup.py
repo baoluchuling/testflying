@@ -370,14 +370,14 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                   "persistent service and HTTP HTTPS proxy configuration preserved")
             expected_connectors = {target: entry["sha256"] for target, entry in replacements.items()} if replacements else snapshot["binaries"]
             check(after["binaries"] == expected_connectors
-                  and after["screenshotConnectorSha256"] == snapshot["screenshotConnectorSha256"],
-                  "store Connector release hashes and preserved screenshot Connector verified")
+                  and after["screenshotConnectorSha256"] == (worker["sha256"] if worker else snapshot["screenshotConnectorSha256"]),
+                  "store and screenshot Connector publication hashes verified")
             previous_report = json.loads(report_path.read_text())
             report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
                       "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                       "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],
                       "apiSha256": expected_api, "connectorBinarySha256": expected_connectors,
-                      "screenshotConnectorSha256": snapshot["screenshotConnectorSha256"],
+                      "screenshotConnectorSha256": worker["sha256"] if worker else snapshot["screenshotConnectorSha256"],
                       "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
                       "actualStoreAccountsUsed": False,
@@ -389,7 +389,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
             if replacements:
                 report["storeConnectorPublication"] = {"runId": root.name, "sourceCommit": commit,
                     "downloadVerified": expected_connectors, "serviceConfigPreserved": True,
-                    "screenshotBinaryPreserved": True, "configurationMergeSupported": True,
+                    "screenshotBinaryPreserved": worker is None, "configurationMergeSupported": True,
                     "actualStoreAccountsUsed": False}
             report_path.write_text(json.dumps(report, indent=2) + "\n")
             success = True

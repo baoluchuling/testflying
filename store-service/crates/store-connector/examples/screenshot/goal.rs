@@ -61,7 +61,7 @@ fn tool_specs() -> Value {
     json!([
         {"name":"validate_simulator","description":"Check that the requested local simulator is booted and available.","inputSchema":device},
         {"name":"capture_screenshot","description":"Capture the visible screen of this local simulator and return a screenshotId.","inputSchema":device},
-        {"name":"upload_screenshot","description":"Deliver the captured PNG through the center for this task.","inputSchema":{
+        {"name":"upload_screenshot","description":"Upload the captured PNG to the configured storage and obtain center confirmation. Retry the same screenshotId when instructed.","inputSchema":{
             "type":"object","properties":{"screenshotId":{"type":"string"}},
             "required":["screenshotId"],"additionalProperties":false
         }}

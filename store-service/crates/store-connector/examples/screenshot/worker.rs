@@ -3,11 +3,12 @@ use super::{
     goal::{self, GoalChange, ToolReply},
     Failure,
 };
-use reqwest::{header, Client, Method, RequestBuilder, StatusCode, Url};
+use reqwest::{Client, Method, RequestBuilder, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     env,
     fs::{self, OpenOptions},
     io::{self, Read},
@@ -106,6 +107,7 @@ struct Job {
 pub(super) struct Worker<'a> {
     config: &'a Config,
     client: Client,
+    oss_client: Client,
     jobs: String,
     log: Log,
 }
@@ -141,6 +143,13 @@ impl<'a> Worker<'a> {
         Ok(Self {
             config,
             client: client.build()?,
+            oss_client: Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .retry(reqwest::retry::never())
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(100))
+                .build()?,
             jobs,
             log: Log::for_config(path),
         })
@@ -189,6 +198,11 @@ impl<'a> Worker<'a> {
         let Err(code) = outcome else {
             return Ok(!stopping);
         };
+
+        // No unknown PUT is repeated or turned into a guessed terminal failure.
+        if code == "delivery_unknown" {
+            return Ok(!stopping);
+        }
 
         self.log.event(id, format_args!("job_failed code={code}"));
         let request = self
@@ -288,6 +302,8 @@ impl<'a> Worker<'a> {
             root,
             adb: adb.as_deref(),
             screenshot: None,
+            upload_attempted: None,
+            retry_upload: false,
             center_finished: false,
             failure: "codex_failed",
         };
@@ -316,6 +332,9 @@ struct JobTools<'a, 'config> {
     root: &'a Path,
     adb: Option<&'a Path>,
     screenshot: Option<(Uuid, Vec<u8>)>,
+    /// A PUT is replayed only after HEAD definitively confirms absence, on a later tool call.
+    upload_attempted: Option<Uuid>,
+    retry_upload: bool,
     center_finished: bool,
     failure: &'static str,
 }
@@ -341,6 +360,14 @@ impl JobTools<'_, '_> {
                 "unknown_tool",
                 "Use a tool from the screenshot tool catalog.",
                 false,
+                GoalChange::Continue,
+            );
+        }
+        if name == "capture_screenshot" && self.upload_attempted.is_some() {
+            return ToolReply::error(
+                "upload_pending",
+                "Retry upload_screenshot with the same screenshotId to confirm its pending upload.",
+                true,
                 GoalChange::Continue,
             );
         }
@@ -428,88 +455,234 @@ impl JobTools<'_, '_> {
             );
         };
         let id = Some(self.job.job_id);
-        let request = self
-            .worker
-            .request(Method::PUT, &format!("{}/image", self.job.job_id))
-            .header(header::CONTENT_TYPE, "image/png")
-            .header("X-Screenshot-Lease", self.job.lease.to_string())
-            .body(bytes.clone())
-            .send();
-        let result = tokio::select! {
-            biased;
-            _ = stop.wait_for(|stopped| *stopped) => {
-                // The request may already have reached the center.
-                self.center_finished = true;
-                return ToolReply::error("delivery_unknown", "Delivery was interrupted.", false, GoalChange::Blocked);
+        if self.upload_attempted.is_none() || self.retry_upload {
+            if !bytes.starts_with(PNG) || !(33..=MAX_IMAGE).contains(&bytes.len()) {
+                self.failure = "capture_failed";
+                return ToolReply::error(
+                    "invalid_image",
+                    "Capture a valid PNG screenshot within 16 MiB.",
+                    true,
+                    GoalChange::Continue,
+                );
             }
-            result = request => result,
+            let sha256 = hex::encode(Sha256::digest(bytes));
+            let md5 = format!("{:x}", md5::compute(bytes));
+            self.worker.log.event(id, "upload_ticket_request");
+            let prepare = self
+                .worker
+                .request(Method::POST, &format!("{}/upload-ticket", self.job.job_id))
+                .header("X-Screenshot-Lease", self.job.lease.to_string())
+                .json(&json!({"sizeBytes":bytes.len(),"sha256":sha256,"md5":md5}))
+                .send();
+            let prepared = tokio::select! {
+                result = prepare => match result { Ok(value) => value, Err(_) => return self.unknown_upload(false) },
+                _ = stop.wait_for(|value| *value) => return self.unknown_upload(true),
+            };
+            let status = prepared.status();
+            let body = match bounded_json(prepared).await {
+                Ok(body) => body,
+                Err(_) => return self.unknown_upload(false),
+            };
+            if status != StatusCode::OK {
+                return self.upload_rejected(status, safe_error_code(&body));
+            }
+            let ticket: UploadTicket = match serde_json::from_value(body) {
+                Ok(ticket) => ticket,
+                Err(_) => return self.invalid_ticket(),
+            };
+            let expected_headers = BTreeMap::from([
+                ("content-type".to_owned(), "image/png".to_owned()),
+                ("content-length".to_owned(), bytes.len().to_string()),
+                (
+                    "content-md5".to_owned(),
+                    store_protocol::upload::encode_chunk(&md5::compute(bytes).0),
+                ),
+                ("x-oss-meta-sha256".to_owned(), sha256),
+                ("x-oss-meta-md5".to_owned(), md5),
+                ("x-oss-forbid-overwrite".to_owned(), "true".to_owned()),
+            ]);
+            let Ok(upload_url) = signed_upload_url(&ticket.upload_url) else {
+                return self.invalid_ticket();
+            };
+            if ticket.headers != expected_headers
+                || ticket.object_key.is_empty()
+                || ticket.object_key.len() > 1024
+                || ticket.expires_at <= store_protocol::upload::now().unwrap_or(u64::MAX)
+            {
+                return self.invalid_ticket();
+            }
+            let mut request = self.worker.oss_client.put(upload_url);
+            for (name, value) in &ticket.headers {
+                request = request.header(name.as_str(), value.as_str());
+            }
+            let request = request.body(bytes.clone()).send();
+            self.upload_attempted = Some(input.screenshot_id);
+            self.retry_upload = false;
+            self.failure = "delivery_unknown";
+            self.worker.log.event(id, "oss_upload_started");
+            let uploaded = tokio::select! {
+                result = request => result,
+                _ = stop.wait_for(|value| *value) => return self.unknown_upload(true),
+            };
+            if let Ok(response) = uploaded {
+                if !response.status().is_success() && response.status() != StatusCode::CONFLICT {
+                    self.failure = "screenshot_upload_rejected";
+                    return ToolReply::error(
+                        "screenshot_upload_rejected",
+                        "OSS rejected the screenshot upload.",
+                        false,
+                        GoalChange::Blocked,
+                    );
+                }
+            }
+            // A lost PUT acknowledgement is resolved by HEAD; it never causes another PUT.
+        }
+        self.worker.log.event(id, "upload_completion_request");
+        let completion = self
+            .worker
+            .request(Method::POST, &format!("{}/complete", self.job.job_id))
+            .header("X-Screenshot-Lease", self.job.lease.to_string())
+            .json(&json!({}))
+            .send();
+        let response = tokio::select! {
+            result = completion => match result { Ok(response)=>response, Err(_)=>return self.unknown_upload(false) },
+            _ = stop.wait_for(|value| *value) => return self.unknown_upload(true),
         };
-        let Ok(response) = result else {
-            self.center_finished = true;
-            self.worker.log.event(id, "delivery_unknown");
-            return ToolReply::error(
-                "delivery_unknown",
-                "The center did not confirm delivery. Repeating could duplicate the upload.",
-                false,
-                GoalChange::Blocked,
-            );
+        let status = response.status();
+        let body = match bounded_json(response).await {
+            Ok(body) => body,
+            Err(_) => return self.unknown_upload(false),
         };
-        if response.status() == StatusCode::NO_CONTENT {
+        if status == StatusCode::OK && body["delivered"] == true && body["result"].is_object() {
             self.center_finished = true;
             self.screenshot = None;
             self.worker.log.event(id, "image_delivered");
-            return ToolReply::ok(json!({"delivered":true}), GoalChange::Delivered);
+            return ToolReply::ok(body, GoalChange::Delivered);
         }
-        let status = response.status();
-        let code = timeout(Duration::from_secs(2), result_error_code(response))
-            .await
-            .unwrap_or("unknown");
+        self.upload_rejected(status, safe_error_code(&body))
+    }
+
+    fn unknown_upload(&mut self, stopping: bool) -> ToolReply {
+        self.failure = "delivery_unknown";
+        self.worker
+            .log
+            .event(Some(self.job.job_id), "delivery_unknown");
+        ToolReply::error(
+            "delivery_unknown",
+            "Delivery is not confirmed. Retry this same screenshotId to check completion.",
+            !stopping,
+            if stopping {
+                GoalChange::Blocked
+            } else {
+                GoalChange::Continue
+            },
+        )
+    }
+
+    fn invalid_ticket(&mut self) -> ToolReply {
+        self.failure = "invalid_upload_ticket";
+        ToolReply::error(
+            "invalid_upload_ticket",
+            "The center returned an invalid upload ticket.",
+            false,
+            GoalChange::Blocked,
+        )
+    }
+
+    fn upload_rejected(&mut self, status: StatusCode, code: &'static str) -> ToolReply {
         self.worker.log.event(
-            id,
-            format_args!("result_rejected http={} code={code}", status.as_u16()),
+            Some(self.job.job_id),
+            format_args!("upload_rejected http={} code={code}", status.as_u16()),
         );
-        match (status, code) {
-            (StatusCode::SERVICE_UNAVAILABLE, "screenshot_upload_busy") => ToolReply::error(
+        // A definitive HEAD 404 permits a later explicit retry of this exact ticket/image.
+        // Unavailable HEAD responses keep the PUT outcome uncertain and never enable replay.
+        if code == "screenshot_object_missing" {
+            self.retry_upload = true;
+        }
+        if matches!(
+            code,
+            "screenshot_object_missing"
+                | "screenshot_verification_unavailable"
+                | "screenshot_upload_busy"
+                | "delivery_unknown"
+        ) || status.is_server_error() && code == "unknown"
+        {
+            self.failure = "delivery_unknown";
+            return ToolReply::error(
                 code,
-                "The center is busy. Wait before retrying the same screenshotId.",
+                "Storage has not confirmed the screenshot. Wait and retry this same screenshotId.",
                 true,
                 GoalChange::Continue,
-            ),
-            (StatusCode::UNPROCESSABLE_ENTITY, "invalid_image")
-            | (StatusCode::PAYLOAD_TOO_LARGE, "image_too_large") => {
-                self.screenshot = None;
-                ToolReply::error(
-                    code,
-                    "The center rejected this image. Capture a fresh screenshot and retry.",
-                    true,
-                    GoalChange::Continue,
-                )
-            }
-            _ => {
-                self.center_finished = true;
-                let message = if code == "screenshot_upload_unconfigured" {
-                    "The center has no configured external upload destination."
-                } else {
-                    "The center rejected delivery or could not confirm it. Further upload attempts are disabled for this task."
-                };
-                ToolReply::error(code, message, false, GoalChange::Blocked)
-            }
+            );
         }
+        if matches!(
+            code,
+            "invalid_job_lease"
+                | "screenshot_oss_not_configured"
+                | "screenshot_upload_unconfigured"
+        ) {
+            self.center_finished = true;
+        }
+        self.failure = match code {
+            "screenshot_object_mismatch" => "screenshot_object_mismatch",
+            "screenshot_oss_config_changed" => "screenshot_oss_config_changed",
+            _ => "invalid_upload_ticket",
+        };
+        ToolReply::error(code,"Screenshot delivery was rejected. Check the center storage settings or start a new task.",false,GoalChange::Blocked)
     }
 }
 
-async fn result_error_code(mut response: reqwest::Response) -> &'static str {
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UploadTicket {
+    upload_url: String,
+    headers: BTreeMap<String, String>,
+    object_key: String,
+    expires_at: u64,
+}
+
+fn signed_upload_url(value: &str) -> Result<Url, ()> {
+    if value.len() > 32 * 1024 {
+        return Err(());
+    }
+    let url = Url::parse(value).map_err(|_| ())?;
+    let local = cfg!(test)
+        && url.host_str().is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .trim_matches(['[', ']'])
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+        });
+    if !(url.scheme() == "https" || (local && url.scheme() == "http"))
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(());
+    }
+    Ok(url)
+}
+
+async fn bounded_json(mut response: reqwest::Response) -> Result<Value, ()> {
     let mut body = Vec::new();
-    while let Ok(Some(chunk)) = response.chunk().await {
-        if chunk.len() > 4096 - body.len() {
-            return "unknown";
+    while let Some(chunk) = response.chunk().await.map_err(|_| ())? {
+        if chunk.len() > 64 * 1024 - body.len() {
+            return Err(());
         }
         body.extend_from_slice(&chunk);
     }
-    let Ok(body) = serde_json::from_slice::<serde_json::Value>(&body) else {
-        return "unknown";
-    };
+    serde_json::from_slice(&body).map_err(|_| ())
+}
+
+fn safe_error_code(body: &Value) -> &'static str {
     match body["error"]["code"].as_str() {
+        Some("screenshot_oss_not_configured") => "screenshot_oss_not_configured",
+        Some("screenshot_verification_unavailable") => "screenshot_verification_unavailable",
+        Some("screenshot_object_missing") => "screenshot_object_missing",
+        Some("screenshot_object_mismatch") => "screenshot_object_mismatch",
+        Some("screenshot_oss_config_changed") => "screenshot_oss_config_changed",
         Some("screenshot_upload_unconfigured") => "screenshot_upload_unconfigured",
         Some("screenshot_upload_busy") => "screenshot_upload_busy",
         Some("delivery_unknown") => "delivery_unknown",
@@ -980,16 +1153,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upload_retries_busy_and_requires_the_center_to_confirm_delivery() {
+    async fn direct_oss_upload_omits_node_token_and_only_definitive_missing_allows_explicit_put_retry(
+    ) {
         use axum::{
-            body::Bytes, http::HeaderMap, response::IntoResponse, routing::put, Json, Router,
+            body::Bytes,
+            http::HeaderMap,
+            response::IntoResponse,
+            routing::{post, put},
+            Json, Router,
         };
         use std::sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,
         };
 
-        let count = Arc::new(AtomicUsize::new(0));
+        let prepares = Arc::new(AtomicUsize::new(0));
+        let puts = Arc::new(AtomicUsize::new(0));
+        let completions = Arc::new(AtomicUsize::new(0));
         let job = Job {
             job_id: Uuid::new_v4(),
             lease: Uuid::new_v4(),
@@ -997,15 +1177,22 @@ mod tests {
             prompt: "Amberia 首页".into(),
         };
         let lease = job.lease.to_string();
-        let calls = Arc::clone(&count);
+        let png = store_protocol::upload::decode_chunk("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==").unwrap();
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let upload_url = format!("http://{address}/oss?x-oss-signature=fixture");
+        let calls = Arc::clone(&prepares);
         let app = Router::new().route(
-            "/{*path}",
-            put(move |headers: HeaderMap, body: Bytes| {
+            "/v1/connectors/{connector}/screenshot-jobs/{job}/upload-ticket",
+            post(move |headers: HeaderMap, Json(metadata): Json<Value>| {
                 let attempt = calls.fetch_add(1, Ordering::SeqCst);
                 let lease = lease.clone();
+                let upload_url=upload_url.clone();
                 async move {
                     assert_eq!(headers["x-screenshot-lease"], lease);
-                    assert!(body.starts_with(PNG));
+                    assert_eq!(headers["authorization"],format!("Bearer {}","a".repeat(64)));
                     if attempt == 0 {
                         (
                             StatusCode::SERVICE_UNAVAILABLE,
@@ -1013,15 +1200,42 @@ mod tests {
                         )
                             .into_response()
                     } else {
-                        StatusCode::NO_CONTENT.into_response()
+                        let md5=hex::decode(metadata["md5"].as_str().unwrap()).unwrap();
+                        Json(json!({"uploadUrl":upload_url,"objectKey":"screenshots/fixture.png","expiresAt":store_protocol::upload::now().unwrap()+300,
+                            "headers":{"content-type":"image/png","content-length":metadata["sizeBytes"].as_u64().unwrap().to_string(),"content-md5":store_protocol::upload::encode_chunk(&md5),"x-oss-meta-sha256":metadata["sha256"],"x-oss-meta-md5":metadata["md5"],"x-oss-forbid-overwrite":"true"}})).into_response()
                     }
                 }
             }),
         );
-        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
-            .await
-            .unwrap();
-        let address = listener.local_addr().unwrap();
+        let calls = puts.clone();
+        let expected = png.clone();
+        let app = app.route(
+            "/oss",
+            put(move |headers: HeaderMap, body: Bytes| {
+                let calls = calls.clone();
+                let expected = expected.clone();
+                async move {
+                    assert!(headers.get("authorization").is_none());
+                    assert_eq!(headers["content-type"], "image/png");
+                    assert_eq!(body.as_ref(), expected.as_slice());
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    StatusCode::OK
+                }
+            }),
+        );
+        let calls = completions.clone();
+        let lease = job.lease.to_string();
+        let app=app.route("/v1/connectors/{connector}/screenshot-jobs/{job}/complete",post(move |headers:HeaderMap,Json(body):Json<Value>|{
+            let attempt=calls.fetch_add(1,Ordering::SeqCst);let lease=lease.clone();
+            async move {
+                assert_eq!(headers["x-screenshot-lease"],lease);
+                assert_eq!(headers["authorization"],format!("Bearer {}","a".repeat(64)));
+                assert_eq!(body,json!({}));
+                if attempt==0 { (StatusCode::SERVICE_UNAVAILABLE,Json(json!({"error":{"code":"screenshot_verification_unavailable"}}))).into_response() }
+                else if attempt==1 { (StatusCode::CONFLICT,Json(json!({"error":{"code":"screenshot_object_missing"}}))).into_response() }
+                else { Json(json!({"delivered":true,"result":{"imageUrl":"https://cdn.fixture.example/fixture.png"}})).into_response() }
+            }
+        }));
         let (shutdown, stopped) = tokio::sync::oneshot::channel();
         let server = tokio::spawn(async move {
             axum::serve(listener, app)
@@ -1050,7 +1264,9 @@ mod tests {
             job: &job,
             root: workspace.path(),
             adb: None,
-            screenshot: Some((screenshot_id, PNG.to_vec())),
+            screenshot: Some((screenshot_id, png)),
+            upload_attempted: None,
+            retry_upload: false,
             center_finished: false,
             failure: "codex_failed",
         };
@@ -1063,13 +1279,24 @@ mod tests {
             )
             .await;
         assert_eq!(wrong.value["code"], "screenshot_not_found");
-        assert_eq!(count.load(Ordering::SeqCst), 0);
+        assert_eq!(prepares.load(Ordering::SeqCst), 0);
         let args = json!({"screenshotId":screenshot_id});
         let busy = tools
             .call("upload_screenshot", args.clone(), &mut stop)
             .await;
         assert_eq!(busy.value["retryable"], true);
         assert!(!tools.center_finished);
+        let pending = tools
+            .call("upload_screenshot", args.clone(), &mut stop)
+            .await;
+        assert_eq!(pending.value["code"], "screenshot_verification_unavailable");
+        assert_eq!(pending.value["retryable"], true);
+        assert_eq!(puts.load(Ordering::SeqCst), 1);
+        let missing = tools
+            .call("upload_screenshot", args.clone(), &mut stop)
+            .await;
+        assert_eq!(missing.value["code"], "screenshot_object_missing");
+        assert_eq!(puts.load(Ordering::SeqCst), 1);
         let delivered = tools
             .call("upload_screenshot", args.clone(), &mut stop)
             .await;
@@ -1078,7 +1305,13 @@ mod tests {
         );
         let repeated = tools.call("upload_screenshot", args, &mut stop).await;
         assert!(!repeated.success);
-        assert_eq!(count.load(Ordering::SeqCst), 2);
+        assert_eq!(prepares.load(Ordering::SeqCst), 3);
+        assert_eq!(puts.load(Ordering::SeqCst), 2);
+        assert_eq!(completions.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            delivered.value["result"]["imageUrl"],
+            "https://cdn.fixture.example/fixture.png"
+        );
         shutdown.send(()).unwrap();
         server.await.unwrap();
     }

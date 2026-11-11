@@ -2,6 +2,7 @@ import { CREDENTIAL_LIMIT, validateAccount, buildInstaller, installationFiles } 
 import { bindIntegrations } from "./integrations.mjs";
 import { bindLogs } from "./logs.mjs";
 import { bindForwarding } from "./forwarding.mjs";
+import { bindScreenshotSettings } from "./screenshot-settings.mjs";
 
 const $ = (id) => document.getElementById(id);
 const api = new URL("api/", window.location.href);
@@ -12,6 +13,7 @@ let automaticKeyId = "";
 const integrations = bindIntegrations(request, () => $("setupForm").hidden ? undefined : session);
 const logs = bindLogs(request, () => $("setupForm").hidden ? undefined : session);
 const forwarding=bindForwarding(request,()=>$("setupForm").hidden?undefined:session);
+const screenshotSettings = bindScreenshotSettings(request, () => $("setupForm").hidden ? undefined : session);
 
 function status(message, kind = "info") {
   $("status").hidden = false;
@@ -194,6 +196,7 @@ function resetSession() {
   integrations.reset();
   logs.reset();
   forwarding.reset();
+  screenshotSettings.reset();
   $("screenshotWorkspace").open = false;
   $("screenshotWorkspace").hidden = true;
   $("screenshotStatus").textContent = "";
@@ -227,6 +230,7 @@ async function restoreSession(token = "") {
     $("adminLock").hidden = false;
     $("setupForm").hidden = false;
     forwarding.show();
+    screenshotSettings.show();
     $("status").hidden = true;
   } catch (error) {
     if (!active.signal.aborted) {

@@ -16,6 +16,8 @@ hex.workspace = true
 store-protocol.workspace = true
 rusqlite = { version = "0.38", features = ["bundled"] }
 hmac = "0.12"
+aes-gcm = "0.10"
+chrono = "0.4"
 subtle = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 

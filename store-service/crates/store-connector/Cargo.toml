@@ -17,6 +17,8 @@ subtle = "2"
 hex.workspace = true
 
 [dev-dependencies]
+sha2.workspace = true
+md5 = "0.7"
 libc = "0.2"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }

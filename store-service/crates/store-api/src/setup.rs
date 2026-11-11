@@ -120,6 +120,10 @@ async fn authorize_setup(
 pub(super) fn routes(state: Arc<super::ApiState>) -> Router<Arc<super::ApiState>> {
     let setup_api = Router::new()
         .route(
+            "/connector-setup/api/screenshot-settings",
+            get(super::screenshot_settings::read).put(super::screenshot_settings::update),
+        )
+        .route(
             "/connector-setup/api/forwarding",
             get(super::forwarding::read),
         )
@@ -217,6 +221,10 @@ async fn asset(Path(name): Path<String>) -> Response {
         "forwarding.mjs" => (
             "text/javascript; charset=utf-8",
             include_bytes!("setup/forwarding.mjs"),
+        ),
+        "screenshot-settings.mjs" => (
+            "text/javascript; charset=utf-8",
+            include_bytes!("setup/screenshot-settings.mjs"),
         ),
         "packager.mjs" => (
             "text/javascript; charset=utf-8",

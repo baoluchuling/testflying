@@ -4,6 +4,7 @@ mod integrations;
 pub mod logs;
 mod node_logs;
 pub mod registry;
+mod screenshot_settings;
 mod screenshots;
 mod setup;
 pub mod transport;

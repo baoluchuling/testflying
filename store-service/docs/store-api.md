@@ -544,7 +544,7 @@ Android 的文案、图片及版本说明同步使用普通 Google edit commit�
 
 下载 URL 必须为 HTTP(S)；图片须为 PNG/JPEG，单图最多 64 MiB。本地文件先通过接口 10、11 上传，再在 assets 中引用 `{"assetId":"上传返回的资产ID"}`，无需先上传对象存储。该上传使用原始文件正文，不使用 multipart。中心不保存图片，也不提供中心图片库或草稿。
 
-iOS 普通版本和 CPP 的图片同步均采用 Apple Asset Library。Connector 读取目标应用的素材库和最新规格，校验图片尺寸、格式、透明通道、文件大小及设备组，再将所有新图片上传到素材库。分块上传不携带节点 Apple JWT，提交时仅设置 `uploaded=true`。每张图片最多等待处理 30 秒，确认成功并验证 Apple 返回的 specId 后，才替换所选设备类别的 placements，并按传入顺序设置每组展示顺序。一个素材可以关联到多个匹配的设备组。
+iOS 普通版本和 CPP 的图片同步均采用 Apple Asset Library。Connector 读取目标应用的素材库和最新规格，校验图片尺寸、格式、透明通道、文件大小及设备组，再将所有新图片上传到素材库。分块上传不携带节点 Apple JWT，提交时仅设置 `uploaded=true`。Apple 接受 uploaded=true 提交后，不轮询或等待图片处理状态，直接按预先校验的本地图片规格匹配设备组，创建当前版本／CPP 对应语言的 placements 并按传入顺序排序；Apple 若已返回 specId 则仍校验匹配。提交、关联与排序成功后即返回，不做后置处理状态查询。处理中素材的关联可处于 ASSET_PROCESSING，页面展示取决于 Apple 后续异步处理。一个素材可以关联到多个匹配的设备组。
 
 图片处理失败、规格不匹配或等待超时会返回错误并保留原有图片关联。明确空数组只删除目标语言和选中设备类别的关联，不删除素材库图片；其他语言、页面和未选设备保留。Apple 多步写入不是事务，关联替换阶段失败时可能已有部分关联被修改，失败上传也可能留下未关联的库素材。接口不会自动重放商店写入或自动删除库素材。设备规格及每组数量上限以实时参考数据为准。
 
@@ -876,15 +876,47 @@ Authorization: Bearer INTEGRATION_TOKEN
 必须使用创建任务的同一枚接入 Token。其他 Token 即使有权使用同一节点，也返回 404 screenshot_job_not_found。成功示例：
 
 ```json
-{"jobId":"22222222-2222-4222-8222-222222222222","connectorId":"11111111-1111-4111-8111-111111111111","platform":"ios","bundleIdentifier":"com.cfs.amberia","profile":null,"status":"succeeded","result":{"imageUrl":"https://cdn.example.com/screenshot.png"},"error":null}
+{"jobId":"22222222-2222-4222-8222-222222222222","connectorId":"11111111-1111-4111-8111-111111111111","platform":"ios","bundleIdentifier":"com.cfs.amberia","profile":null,"status":"succeeded","result":{"imageUrl":"https://cdn.example.com/screenshots/result.png","objectKey":"screenshots/task/result.png","sizeBytes":123456,"sha256":"图片SHA256","notificationStatus":"protocol_pending"},"error":null}
 ```
 
-状态依次可能为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。失败时 error 为错误码，result 通常为 null；成功时 result 也可能为 null（下游未返回 URL）。任务记录约保留七天。升级前的历史任务保留原节点和提示词，缺失的 platform/bundleIdentifier 返回 null。
+状态依次可能为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。失败时 error 为错误码，result 通常为 null；OSS 直传成功时 result 包含对象路径和图片地址；旧链路历史结果可能为 null。任务记录约保留七天。升级前的历史任务保留原节点和提示词，缺失的 platform/bundleIdentifier 返回 null。
 
 ### 5. 图片交付与限制
 
-节点上传 PNG 到中心，单图最多 16 MiB，中心只在内存中校验并转发到配置的固定外部地址，不保存图片，不提供中心图片下载接口。任务成功时 result.imageUrl 来自外部服务，不是中心存储地址。这与商店图片 `{APP}/uploads` 的 64 MiB 链路不同。
+截图节点将 PNG 直接上传到阿里云 OSS，单图最多 16 MiB。中心只签发短时上传地址并读取 OSS 元数据确认结果，不接收新链路的 PNG，不在磁盘保存图片。上传成功结果包含 objectKey、imageUrl、sizeBytes、sha256 和 notificationStatus。这与商店图片 {APP}/uploads 的 64 MiB 中转链路不同。
 
-中心的 `STORE_API_SCREENSHOT_UPLOAD_URL` 和可选 `STORE_API_SCREENSHOT_UPLOAD_TOKEN` 配置外部接收服务。未配置或无有效地址不阻止任务提交、领取和执行；交图时返回 503 screenshot_upload_unconfigured，任务标记失败。占位交付协议为 POST multipart/form-data，字段 file、文件名 screenshot.png，Idempotency-Key 为 jobId。中心不跟随跳转，不在结果未知时自动重传；超时可记录 delivery_unknown。图片不进入中心磁盘或日志。
+管理员在后台「截图上传与结果通知」配置两组信息：
 
-管理员可在后台「截图 Connector 部署」创建截图节点；管理 API 为 POST /v1/connectors，正文 `{"name":"截图 Mac","kind":"screenshot"}`，使用管理员 Token。HTTPS GET /v1/connectors/{connectorId}/screenshot-installer 下载该节点的部署 ZIP，属于程序部署包，不是图片产物。安装、后台运行和日志说明见 [截图 Connector 部署说明](screenshot-connector.md)。本轮包名路由不改变 Worker 协议，现有截图节点无需重新安装。
+- OSS：启用开关、region、bucket、完整 Bucket Endpoint 或 CNAME、对象前缀、可选图片访问域名、AccessKey ID／Secret、可选 STS Token。密钥加密保存，密码框留空保留原值，不回显，也不进入节点包。
+- 外部结果通知：接收 URL 和鉴权 Token。固定请求／响应协议尚未确定，本轮只保存配置，状态显示 protocol_pending，不发真实回调；未填地址时为 not_configured。OSS 上传成功不表示外部通知已送达。
+
+配置保存后即时生效。OSS 未启用或未配置不会拦截任务提交、领取和截图，只在实际上传阶段返回 screenshot_oss_not_configured。通知尚未接入也不影响 OSS 上传确认成功。
+
+节点上传时先请求绑定本任务租约、图片大小和摘要的最长五分钟 OSS V4 PUT 地址（不超过当前任务租约），再直接上传原始 PNG。中心使用已保存的对象路径签名 HEAD，验证 Content-Type、大小和摘要元数据后记录成功。节点不向 OSS 发送中心或节点 Token；预签名上传地址也不进入日志。未设置图片访问域名时，imageUrl 是一小时有效的下载签名地址，imageUrlExpiresAt 指明过期时间；设置访问域名时返回该域名下的对象路径，不更改 Bucket 或对象权限。
+
+新链路需要升级截图 Connector。旧 PNG 回传入口在 OSS 启用时返回 screenshot_connector_upgrade_required，不会代替新节点向 OSS 上传。原有 STORE_API_SCREENSHOT_UPLOAD_URL 仅供旧链路过渡使用。
+
+管理员 API：HTTPS GET／PUT /v1/screenshot-settings；后台会话同源路径为 /connector-setup/api/screenshot-settings。普通业务／接入 Token 无权读取或修改。GET 只返回普通配置和 accessKeySecretConfigured、securityTokenConfigured、tokenConfigured，不返回密码。PUT 可仅更新一个分组，例如：
+
+~~~json
+{
+  "oss": {
+    "enabled": true,
+    "region": "cn-hangzhou",
+    "bucket": "your-bucket",
+    "endpoint": "https://your-bucket.oss-cn-hangzhou.aliyuncs.com",
+    "prefix": "screenshots",
+    "publicBaseUrl": "https://images.example.com",
+    "accessKeyId": "YOUR_ACCESS_KEY_ID",
+    "accessKeySecret": "填写新密钥；更新其他字段时可省略或留空"
+  },
+  "notification": {
+    "url": "https://external.example.com/screenshot-result",
+    "token": "填写新鉴权 Token；留空保留"
+  }
+}
+~~~
+
+Endpoint 是已包含 Bucket 的完整主机名或已绑定的 CNAME，中心不会再次拼接 Bucket。开启 OSS 时所有必需字段须完整；更换 AccessKey ID 须同时提供对应 Secret；如未提供新的 STS Token，会清除旧 STS Token，以便切换到长期凭据。图片访问域名只负责生成外部访问 URL，访问权限仍由 OSS／CDN 自身配置决定。
+
+管理员可在后台「截图 Connector 部署」创建截图节点；管理 API 为 POST /v1/connectors，正文 `{"name":"截图 Mac","kind":"screenshot"}`，使用管理员 Token。HTTPS GET /v1/connectors/{connectorId}/screenshot-installer 下载该节点的部署 ZIP，属于程序部署包，不是图片产物。安装、后台运行和日志说明见 [截图 Connector 部署说明](screenshot-connector.md)。包名路由本身不要求 Worker 升级；本轮 OSS 直传需要安装最新截图节点程序。
