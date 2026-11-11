@@ -1,17 +1,17 @@
 {
-  "runId": "3e3725e105d24dcc9038e8d9708eae48",
+  "runId": "cc72d8a7a6d64c8ea1e72cdb9f8c8bb1",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-11T12:24:37.589647+00:00",
-  "deploymentCommit": "936e3cc4cce27093be7a46eaa245960dbaa3a6d0",
-  "binarySourceCommit": "2ebf164e05f709bea53e6cba14e8f582fcca3796",
-  "apiSha256": "fdd8d864cee30b39c260e9b147f5441bf6c51d9b8c9a2de0bfe34e48177db00f",
+  "finishedAt": "2026-11-11T13:04:38.092454+00:00",
+  "deploymentCommit": "f570035b3abe123c3148ede6fba725e81561ca48",
+  "binarySourceCommit": "259dfba69714517142e9c228c015ab4681dbfbc4",
+  "apiSha256": "bde75cad4d5fb81e1e7fcd2fcfc7cd72a082e8f7a3c064b51980a6f3453fc776",
   "connectorBinarySha256": {
-    "linux-amd64": "4e13711a2ebfe5069160d80e748275ab6df14d387c925b6caf94f50ec68a3581",
-    "darwin-arm64": "c050c85d8d232143ade6a252b5995e4679f5bd7b14a79f6540d353db31d0b4df",
-    "windows-amd64": "16c4d3e156932b07b40fd7b1adee74cacf55818078c851c1740e75ca9123584c"
+    "linux-amd64": "76abaa9a62caa9540c285d0287207cc090fe7a64b5e51f7c35f56b6cff81e55d",
+    "darwin-arm64": "edcf6180870610e43ecc588fc888548b15477aa13b86191e210bf9f7702943a0",
+    "windows-amd64": "1cdce53054471b15fa33ca005f45e93f78e805c013836aa81e8084d9a68e7fc7"
   },
-  "screenshotConnectorSha256": "f9d2f261be8273a32f36f906ce3efb78db6c6bc864cf6cdf4feb03324c3d5cc0",
+  "screenshotConnectorSha256": "5cae32e80b394bd9c2834fd1e793ca8c8544f7e25a06530807a28d1ba3332d7a",
   "screenshotUploadConfigured": false,
   "checks": [
     "node connection inventory readable before rollout",
@@ -70,12 +70,12 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "3e3725e105d24dcc9038e8d9708eae48",
-    "sourceCommit": "936e3cc4cce27093be7a46eaa245960dbaa3a6d0",
+    "runId": "cc72d8a7a6d64c8ea1e72cdb9f8c8bb1",
+    "sourceCommit": "f570035b3abe123c3148ede6fba725e81561ca48",
     "downloadVerified": {
-      "linux-amd64": "4e13711a2ebfe5069160d80e748275ab6df14d387c925b6caf94f50ec68a3581",
-      "darwin-arm64": "c050c85d8d232143ade6a252b5995e4679f5bd7b14a79f6540d353db31d0b4df",
-      "windows-amd64": "16c4d3e156932b07b40fd7b1adee74cacf55818078c851c1740e75ca9123584c"
+      "linux-amd64": "76abaa9a62caa9540c285d0287207cc090fe7a64b5e51f7c35f56b6cff81e55d",
+      "darwin-arm64": "edcf6180870610e43ecc588fc888548b15477aa13b86191e210bf9f7702943a0",
+      "windows-amd64": "1cdce53054471b15fa33ca005f45e93f78e805c013836aa81e8084d9a68e7fc7"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
@@ -83,17 +83,16 @@
     "actualStoreAccountsUsed": false
   },
   "screenshotTargetForwarding": {
-    "taskProtocol": 2,
-    "externalJobId": true,
+    "taskProtocol": 3,
+    "centerGeneratedJobId": true,
     "required": [
-      "jobId",
       "platform",
       "bundleIdentifier",
       "prompt",
       "target"
     ],
     "multiTarget": true,
-    "queryLookupThroughHttpsProxyVerified": true,
+    "originalLookupPathThroughHttpsProxyVerified": true,
     "originalPromptPreserved": true,
     "allTargetsConfirmedForSuccess": true,
     "partialResultsOnFailure": true,
@@ -116,13 +115,13 @@
     "externalNotificationsSent": 0
   },
   "screenshotConnectorPublication": {
-    "sourceCommit": "936e3cc4cce27093be7a46eaa245960dbaa3a6d0",
-    "sha256": "f9d2f261be8273a32f36f906ce3efb78db6c6bc864cf6cdf4feb03324c3d5cc0",
+    "sourceCommit": "f570035b3abe123c3148ede6fba725e81561ca48",
+    "sha256": "5cae32e80b394bd9c2834fd1e793ca8c8544f7e25a06530807a28d1ba3332d7a",
     "downloadVerified": true,
     "architecture": "arm64",
     "ossCredentialsInPackage": false,
     "directOssProtocol": 2,
-    "taskProtocol": 2,
+    "taskProtocol": 3,
     "requiresNodeUpgrade": true
   }
 }
