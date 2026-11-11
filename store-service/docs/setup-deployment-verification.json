@@ -1,15 +1,15 @@
 {
-  "runId": "836d363e1c7941d0928a16a81c128c5e",
+  "runId": "a7bfe8e3d61b4e1bae3487a58893ca9f",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-11T02:44:04.393386+00:00",
-  "deploymentCommit": "a0af811932fdfce607ed0dee376ed47a7a0f4d03",
-  "binarySourceCommit": "7d12007fc1f07e99bbbe4f735e4f519975f474c4",
-  "apiSha256": "da73d7a4cac5a8ab9c46ae916ca2bfd5069bdb3b467c4b6ec35c8b8341ec91e0",
+  "finishedAt": "2026-11-11T03:33:24.274715+00:00",
+  "deploymentCommit": "abf18becb5c0fab2de3d07a563ae852fe1c66575",
+  "binarySourceCommit": "05c8f3631180eadb2b3e3eb7b6e86803726427a6",
+  "apiSha256": "41959338321f93c7d9c5ddbdf83cb8a3b384e9913a7a3d8ea0c615e6d3061a38",
   "connectorBinarySha256": {
-    "linux-amd64": "f20cfef32c052d40ec4579804a0c97969fa6008d5cd28939d04db50766cf632f",
-    "darwin-arm64": "4ba1d6aa395216b03ae227bb457829397a3bb357ff61e1a973664fd964b0b61e",
-    "windows-amd64": "62d2148ab8607f3be81e8e84983c59aa0ab7b9459f864ded5b0f3fb82ab811ef"
+    "linux-amd64": "00e9961027e25bdbe82c7b5b00108bf4870bdc6d031a5465158beb79cbff039c",
+    "darwin-arm64": "676a65819b6bd2d1e127b25537b6f2d2257397768e2da09c9ed33b5524de4495",
+    "windows-amd64": "699eee05114b10c1d422223b0fbf85fc72c172feed0cb8e105eafceab63b8e6d"
   },
   "screenshotConnectorSha256": "a41f8006b9502f3f540a5d735f8eb92bc903910078c7ce42bb980e44f221f776",
   "screenshotUploadConfigured": false,
@@ -69,18 +69,20 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "836d363e1c7941d0928a16a81c128c5e",
-    "sourceCommit": "a0af811932fdfce607ed0dee376ed47a7a0f4d03",
+    "runId": "a7bfe8e3d61b4e1bae3487a58893ca9f",
+    "sourceCommit": "abf18becb5c0fab2de3d07a563ae852fe1c66575",
     "downloadVerified": {
-      "linux-amd64": "f20cfef32c052d40ec4579804a0c97969fa6008d5cd28939d04db50766cf632f",
-      "darwin-arm64": "4ba1d6aa395216b03ae227bb457829397a3bb357ff61e1a973664fd964b0b61e",
-      "windows-amd64": "62d2148ab8607f3be81e8e84983c59aa0ab7b9459f864ded5b0f3fb82ab811ef"
+      "linux-amd64": "00e9961027e25bdbe82c7b5b00108bf4870bdc6d031a5465158beb79cbff039c",
+      "darwin-arm64": "676a65819b6bd2d1e127b25537b6f2d2257397768e2da09c9ed33b5524de4495",
+      "windows-amd64": "699eee05114b10c1d422223b0fbf85fc72c172feed0cb8e105eafceab63b8e6d"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": true,
     "configurationMergeSupported": true,
     "actualStoreAccountsUsed": false,
     "nodeLogsRetentionDays": 7,
+    "nodeLogDownloadProtocol": 1,
+    "safeVendorErrorDiagnostics": true,
     "emptyPostContentLengthZero": true,
     "iosLatestVersionOnly": true
   },
@@ -91,6 +93,40 @@
     "shutdownRecorded": true,
     "privateValuesExcluded": true,
     "realStoreRequests": 0,
-    "processStopped": true
+    "processStopped": true,
+    "logControlAuthenticationVerified": true,
+    "logSnapshotReadVerified": true
+  },
+  "nodeLogControlVerification": {
+    "oldNodeChecks": [
+      "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+      "5d4a07c0-2a1b-47e7-a450-8484e225e168"
+    ],
+    "adminOnly": true,
+    "oldNodesRemainConnected": true,
+    "nodes": [
+      {
+        "connectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "name": "\u6307\u5c16\u4e92\u52a8",
+        "kind": "screenshot",
+        "connected": true,
+        "logsAvailable": false
+      },
+      {
+        "connectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "name": "\u6307\u95f4\u4e92\u52a8",
+        "kind": "store",
+        "connected": true,
+        "logsAvailable": false
+      },
+      {
+        "connectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "name": "\u6c5f\u897f\u805a\u6587",
+        "kind": "store",
+        "connected": true,
+        "logsAvailable": false
+      }
+    ],
+    "realStoreRequests": 0
   }
 }
