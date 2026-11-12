@@ -14,6 +14,7 @@ uuid.workspace = true
 sha2.workspace = true
 hex.workspace = true
 store-protocol.workspace = true
+store-provider.workspace = true
 rusqlite = { version = "0.38", features = ["bundled"] }
 hmac = "0.12"
 aes-gcm = "0.10"
@@ -28,5 +29,4 @@ http-body-util.workspace = true
 tempfile.workspace = true
 tokio-tungstenite.workspace = true
 store-connector = { path = "../store-connector" }
-store-provider.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }

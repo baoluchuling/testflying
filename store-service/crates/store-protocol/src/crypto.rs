@@ -17,6 +17,8 @@ pub struct Registration {
     pub logs_version: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub store_versions_version: Option<u8>,
+    #[serde(default)]
+    pub async_store_images_supported: bool,
 }
 
 pub fn error() -> StoreError {
@@ -118,5 +120,21 @@ impl Channel {
         } else {
             None
         })
+    }
+}
+
+#[cfg(test)]
+mod capability_tests {
+    use super::*;
+    #[test]
+    fn older_nodes_default_async_capability_to_false() {
+        let old: Registration =
+            serde_json::from_str(r#"{"connectorId":"old","baseUrl":null}"#).unwrap();
+        assert!(!old.async_store_images_supported);
+        let new: Registration = serde_json::from_str(
+            r#"{"connectorId":"new","baseUrl":null,"asyncStoreImagesSupported":true}"#,
+        )
+        .unwrap();
+        assert!(new.async_store_images_supported);
     }
 }

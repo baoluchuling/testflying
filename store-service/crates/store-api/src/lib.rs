@@ -7,8 +7,10 @@ pub mod registry;
 mod screenshot_settings;
 mod screenshots;
 mod setup;
+mod store_jobs;
 pub mod transport;
 mod uploads;
+pub use store_jobs::run as run_store_image_jobs;
 
 use axum::{
     extract::{DefaultBodyLimit, Path, Query, State, WebSocketUpgrade},
@@ -51,6 +53,7 @@ impl IntoResponse for ApiError {
 type Result<T> = std::result::Result<T, ApiError>;
 
 pub struct ApiState {
+    store_job_dispatches: std::sync::Mutex<std::collections::HashSet<String>>,
     pub registry: Registry,
     pub transport: Arc<Transport>,
     admin_token: String,
@@ -101,6 +104,7 @@ impl ApiState {
         }
         let transport = Arc::new(Transport::with_logs(timeout, registry.logs.clone())?);
         Ok(Arc::new(Self {
+            store_job_dispatches: Default::default(),
             registry,
             transport,
             admin_token,
@@ -207,6 +211,10 @@ pub fn router_with_screenshots(
             )),
         );
     let public = Router::new()
+        .route(
+            "/v1/store-management/apps/{platform}/{identifier}/sync-jobs/{jobId}",
+            get(store_jobs::read),
+        )
         .route("/v1/store-management/api-docs", get(api_docs::read))
         .route(
             "/v1/store-management/connectors",
@@ -537,6 +545,7 @@ async fn read_store(
 async fn write_store(
     State(state): State<Arc<ApiState>>,
     Extension(context): Extension<logs::RequestContext>,
+    owner: Option<Extension<registry::Integration>>,
     Path((platform, identifier, resource)): Path<(Platform, String, String)>,
     Json(mut payload): Json<Value>,
 ) -> Result<Response> {
@@ -549,6 +558,26 @@ async fn write_store(
     };
     if let Some(object) = payload.as_object_mut() {
         object.remove("version");
+    }
+    let request = StoreRequest {
+        request_id: context.0.clone(),
+        platform,
+        bundle_identifier: identifier.clone(),
+        operation,
+        payload: payload.clone(),
+    };
+    if request.is_image_only_sync() {
+        state.registry.require_forwarding(platform)?;
+        request.validate()?;
+        store_provider::validate_request(&request)?;
+        let node = state.registry.resolve(platform, &identifier)?;
+        if state
+            .transport
+            .supports_async_store_images(&node, &state.registry.token(&node))
+            .await?
+        {
+            return store_jobs::start(&state, &node, owner.map(|v| v.0.id), request).await;
+        }
     }
     execute(state, context, platform, identifier, operation, payload).await
 }

@@ -152,7 +152,14 @@ components:
         provider: {type: object, additionalProperties: true}
     Sync:
       type: object
-      description: Android sync commits the Google edit normally and may send changes for review. Omits changesNotSentForReview; retains changesInReviewBehavior=ERROR_IF_IN_REVIEW to reject when changes are already in review. Not a draft-only save, no automatic mutation retries.
+      description: >-
+        Upgraded store nodes accept image-only requests (update_app_metadata or update_marketing_page with syncScopes=[store_images]) asynchronously.
+        HTTP 200/status=succeeded means validation and admission; save jobId and query sync-jobs for actual completion.
+        Text-only and mixed requests remain synchronous; legacy nodes remain synchronous without jobId.
+        Both URL sources and preuploaded assetId remain supported. Nodes pin uploaded assets before admission, retain them while queued/running,
+        download URL images into anonymous temporary files, and release files after actual background work ends, never at early HTTP return.
+        Android sync commits the Google edit normally and may send changes for review. Omits changesNotSentForReview;
+        retains changesInReviewBehavior=ERROR_IF_IN_REVIEW to reject when changes are already in review. No automatic mutation retries.
       required: [operation]
       allOf:
         - if:
@@ -272,9 +279,19 @@ components:
       properties:
         operation: {type: string, enum: [update_app_metadata, update_release_notes, update_marketing_page]}
         locale: {type: string, description: Optional in current preflight implementation.}
+    StoreImageSyncJob:
+      type: object
+      required: [jobId, status, outcomeUnknown]
+      properties:
+        jobId: {type: string, format: uuid}
+        status: {type: string, enum: [queued, running, succeeded, failed, unknown]}
+        result: {type: [object, 'null'], additionalProperties: true, description: Original store business result or error; populated after actual execution.}
+        httpStatus: {type: [integer, 'null']}
+        errorCode: {type: [string, 'null']}
+        outcomeUnknown: {type: boolean}
   responses:
     Data:
-      description: Store or registry JSON response. Sync callers must also inspect succeeded/failed status.
+      description: Store or registry JSON response. Image-only async sync returns succeeded for admission with jobId/executionStatus=queued; query job status for actual completion. Other sync callers inspect the original succeeded/failed business status.
       content: {application/json: {schema: {type: object, additionalProperties: true}}}
     Error:
       description: >-
@@ -595,6 +612,22 @@ paths:
     delete:
       security: [{adminToken: []}]
       responses: {'204': {description: Mapping removed}, default: {$ref: '#/components/responses/Error'}}
+  /v1/store-management/apps/{platform}/{bundleIdentifier}/sync-jobs/{jobId}:
+    get:
+      summary: Read the actual result of an admitted image sync job
+      description: >-
+        Only the creating integration or business credential and exact app/platform can read this record; other callers receive 404.
+        History is retained seven days. Center reconciles node outcomes about every five seconds, including after restart;
+        this endpoint never calls Apple or repeats store writes. Lost node results become unknown and require manual reconciliation.
+      parameters:
+        - {$ref: '#/components/parameters/platform'}
+        - {$ref: '#/components/parameters/bundleIdentifier'}
+        - {name: jobId, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Current task snapshot; initial sync success is not upload completion.
+          content: {application/json: {schema: {$ref: '#/components/schemas/StoreImageSyncJob'}}}
+        default: {$ref: '#/components/responses/Error'}
   /v1/store-management/apps/{platform}/{bundleIdentifier}/{resource}:
     parameters:
       - {$ref: '#/components/parameters/platform'}

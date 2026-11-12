@@ -26,6 +26,7 @@ struct Fixture {
     id: String,
     stop: watch::Sender<bool>,
     api: JoinHandle<()>,
+    jobs: JoinHandle<()>,
     node: JoinHandle<()>,
     node_http: String,
 }
@@ -43,6 +44,7 @@ impl Fixture {
         )
         .unwrap();
         let app = store_api::router(state.clone());
+        let jobs = tokio::spawn(store_api::run_store_image_jobs(state.clone()));
         let api = tokio::spawn(async move {
             axum::serve(listener, app).await.unwrap();
         });
@@ -126,6 +128,7 @@ impl Fixture {
             id,
             stop,
             api,
+            jobs,
             node,
             node_http,
         }
@@ -168,6 +171,8 @@ impl Fixture {
             .json(&json!({"operation":"update_app_metadata","version":"1.0","locale":"en-US","syncScopes":["store_images"],"metadata":{"storeImages":{"phone_screenshots":{"assets":[{"assetId":id}]}}}})).send().await.unwrap()
     }
     async fn stop(self) {
+        self.jobs.abort();
+        let _ = self.jobs.await;
         self.stop.send(true).unwrap();
         tokio::time::timeout(Duration::from_secs(3), self.node)
             .await
@@ -177,6 +182,40 @@ impl Fixture {
         self.state.transport.close_all();
         self.api.abort();
         let _ = self.api.await;
+    }
+    async fn finish_sync(&self, response: reqwest::Response) {
+        assert_eq!(response.status(), 200);
+        let accepted: Value = response.json().await.unwrap();
+        assert_eq!(accepted["status"], "succeeded");
+        assert_eq!(accepted["executionStatus"], "queued");
+        let id = accepted["jobId"].as_str().unwrap();
+        tokio::time::timeout(Duration::from_secs(12), async {
+            loop {
+                let response = self
+                    .client
+                    .get(format!(
+                        "{}/v1/store-management/apps/ios/{APP}/sync-jobs/{id}",
+                        self.base
+                    ))
+                    .bearer_auth(CLIENT)
+                    .send()
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 200);
+                let value: Value = response.json().await.unwrap();
+                if value["status"] == "succeeded" {
+                    assert_eq!(value["result"]["status"], "succeeded");
+                    break;
+                }
+                assert!(
+                    !matches!(value["status"].as_str(), Some("failed" | "unknown")),
+                    "{value}"
+                );
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .unwrap();
     }
 }
 
@@ -222,11 +261,7 @@ async fn central_http_upload_larger_than_json_limit_is_scoped_consumed_and_not_r
     assert_eq!(preflight.status(), 200);
     assert_eq!(fixture.executor.assets.usage().0, 1);
     let response = fixture.sync(APP, asset).await;
-    assert_eq!(response.status(), 200);
-    assert_eq!(
-        response.json::<Value>().await.unwrap()["status"],
-        "succeeded"
-    );
+    fixture.finish_sync(response).await;
     assert_eq!(fixture.executor.assets.usage(), (0, 0));
     assert_eq!(fixture.sync(APP, asset).await.status(), 404);
     let wrong = fixture
@@ -268,13 +303,13 @@ async fn central_encrypted_wss_relay_works_with_unreachable_node_http_and_cleans
     let prepared = fixture.prepare(&bytes).await;
     assert_eq!(fixture.upload(&prepared, bytes.clone()).await.status(), 201);
     assert_eq!(fixture.executor.assets.usage().0, 1);
-    assert_eq!(
-        fixture
-            .sync(APP, prepared["assetId"].as_str().unwrap())
-            .await
-            .status(),
-        200
-    );
+    fixture
+        .finish_sync(
+            fixture
+                .sync(APP, prepared["assetId"].as_str().unwrap())
+                .await,
+        )
+        .await;
     assert_eq!(fixture.executor.assets.usage(), (0, 0));
     let prepared = fixture.prepare(&bytes).await;
     let mut altered = bytes;

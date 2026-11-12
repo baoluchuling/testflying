@@ -15,9 +15,10 @@ store-protocol.workspace = true
 store-provider.workspace = true
 subtle = "2"
 hex.workspace = true
+sha2.workspace = true
 
 [dev-dependencies]
-sha2.workspace = true
+image = { version = "0.25", default-features = false, features = ["png"] }
 md5 = "0.7"
 libc = "0.2"
 tempfile.workspace = true

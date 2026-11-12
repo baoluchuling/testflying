@@ -20,6 +20,7 @@ struct Connection {
     sender: mpsc::Sender<NodeRequest>,
     logs_supported: bool,
     store_versions_supported: bool,
+    async_store_images_supported: bool,
     close: watch::Sender<bool>,
     screenshot_wake: watch::Sender<()>,
     pending: Pending,
@@ -88,6 +89,54 @@ impl Transport {
             .unwrap()
             .get(id)
             .is_some_and(|c| c.logs_supported)
+    }
+
+    pub async fn supports_async_store_images(&self, node: &Connector, token: &str) -> Result<bool> {
+        if let Some(supported) = self
+            .connections
+            .lock()
+            .unwrap()
+            .get(&node.connector_id)
+            .map(|c| c.async_store_images_supported)
+        {
+            return Ok(supported);
+        }
+        let base = node.base_url.as_deref().ok_or_else(disconnected)?;
+        let mut response = self
+            .client
+            .get(format!("{base}/health"))
+            .bearer_auth(token)
+            .send()
+            .await
+            .map_err(|_| disconnected())?;
+        if !response.status().is_success() {
+            return Err(StoreError::new(
+                502,
+                "connector_rejected",
+                "Cannot read Connector capabilities",
+            ));
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(|_| disconnected())? {
+            if bytes.len() + chunk.len() > 16 * 1024 {
+                return Err(StoreError::new(
+                    502,
+                    "invalid_connector_reply",
+                    "Connector health response exceeded limit",
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        let health: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| {
+            StoreError::new(
+                502,
+                "invalid_connector_reply",
+                "Invalid Connector health response",
+            )
+        })?;
+        Ok(health["asyncStoreImagesSupported"]
+            .as_bool()
+            .unwrap_or(false))
     }
 
     pub async fn dispatch_logs(
@@ -284,7 +333,12 @@ impl Transport {
             .entry(node.connector_id.clone())
             .or_default()
             .clone();
-        let _guard = if request.operation.is_upload() {
+        let _guard = if request.operation.is_upload()
+            || matches!(
+                request.operation,
+                store_protocol::Operation::StartStoreImageSync
+                    | store_protocol::Operation::StoreImageSyncStatus
+            ) {
             None
         } else {
             Some(lock.try_lock().map_err(|_| {
@@ -427,11 +481,17 @@ impl Transport {
                 endpoint,
                 registration.logs_version == Some(1),
                 registration.store_versions_version == Some(1),
+                registration.async_store_images_supported,
             ))
         })
         .await;
-        let Ok(Ok((mut channel, endpoint, logs_supported, store_versions_supported))) =
-            authenticated
+        let Ok(Ok((
+            mut channel,
+            endpoint,
+            logs_supported,
+            store_versions_supported,
+            async_store_images_supported,
+        ))) = authenticated
         else {
             self.connection_event(
                 &id,
@@ -465,6 +525,7 @@ impl Transport {
                     pending: pending.clone(),
                     logs_supported,
                     store_versions_supported,
+                    async_store_images_supported,
                 },
             );
         }
@@ -639,5 +700,103 @@ mod stalled_writer_tests {
         .await
         .expect("Socket write did not respect its deadline");
         assert!(!result);
+    }
+}
+
+#[cfg(test)]
+mod image_status_tests {
+    use super::*;
+    use axum::{
+        routing::{get, post},
+        Json, Router,
+    };
+    use serde_json::json;
+    #[tokio::test]
+    async fn image_admission_and_status_bypass_business_lock_and_health_negotiates_http_capability()
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let router = Router::new()
+            .route(
+                "/health",
+                get(|| async { Json(json!({"asyncStoreImagesSupported":true})) }),
+            )
+            .route(
+                "/v1/execute",
+                post(|Json(request): Json<StoreRequest>| async move {
+                    let body =
+                        if request.operation == store_protocol::Operation::StartStoreImageSync {
+                            json!({"jobId":"job","status":"succeeded","executionStatus":"queued"})
+                        } else {
+                            json!({"jobId":"job","status":"running"})
+                        };
+                    Json(StoreReply::from_result(request.request_id, Ok(body)))
+                }),
+            );
+        let (stop, stopped) = oneshot::channel();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .with_graceful_shutdown(async {
+                    let _ = stopped.await;
+                })
+                .await
+                .unwrap();
+        });
+        let registry = Registry::open(":memory:", &"11".repeat(32)).unwrap();
+        let mut node = registry
+            .create(crate::registry::ConnectorInput {
+                name: "fixture".into(),
+            })
+            .unwrap();
+        node.base_url = Some(url);
+        let transport = Transport::new(Duration::from_secs(2)).unwrap();
+        assert!(transport
+            .supports_async_store_images(&node, "fixture")
+            .await
+            .unwrap());
+        let lock = Arc::new(tokio::sync::Mutex::new(()));
+        transport
+            .locks
+            .lock()
+            .unwrap()
+            .insert(node.connector_id.clone(), lock.clone());
+        let _busy = lock.lock().await;
+        let mut request = StoreRequest {
+            request_id: "status-fixture".into(),
+            platform: store_protocol::Platform::Ios,
+            bundle_identifier: "com.example.app".into(),
+            operation: store_protocol::Operation::StoreImageSyncStatus,
+            payload: json!({"jobId":"job"}),
+        };
+        assert_eq!(
+            transport
+                .dispatch(&node, "fixture", request.clone())
+                .await
+                .unwrap()
+                .body["status"],
+            "running"
+        );
+        request.operation = store_protocol::Operation::StartStoreImageSync;
+        for _ in 0..2 {
+            assert_eq!(
+                transport
+                    .dispatch(&node, "fixture", request.clone())
+                    .await
+                    .unwrap()
+                    .body["executionStatus"],
+                "queued"
+            );
+        }
+        request.operation = store_protocol::Operation::Sync;
+        assert_eq!(
+            transport
+                .dispatch(&node, "fixture", request)
+                .await
+                .unwrap_err()
+                .code,
+            "connector_busy"
+        );
+        let _ = stop.send(());
+        server.await.unwrap();
     }
 }

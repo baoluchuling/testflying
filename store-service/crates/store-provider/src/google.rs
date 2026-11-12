@@ -51,13 +51,18 @@ impl Gateway {
         let outcome = self.google_edit(r, &path).await;
         let committed = matches!(&outcome, Ok(v) if r.operation == Operation::Sync && v["status"] == "succeeded");
         if !committed {
-            self.google_discard_edit(&path).await.map_err(|_| {
+            let cleanup = self.google_discard_edit(&path).await.map_err(|_| {
                 StoreError::new(
                     502,
                     "store_edit_cleanup_failed",
                     "Google edit could not be discarded after the store operation",
                 )
-            })?;
+            });
+            // The original image error describes the write boundary, including uncertainty.
+            // A failed best-effort discard must not replace that evidence.
+            if !(IMAGE_EXECUTION.try_with(|_| ()).is_ok() && outcome.is_err()) {
+                cleanup?;
+            }
         }
         outcome
     }
@@ -327,7 +332,7 @@ impl Gateway {
                 let response = self
                     .send_logged(request, Some(Platform::Android), "google_image_upload")
                     .await?;
-                bounded_json(response).await?;
+                mutation_json(response, true).await?;
             }
             changed = true;
         }

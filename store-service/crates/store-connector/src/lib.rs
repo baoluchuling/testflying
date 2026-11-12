@@ -1,3 +1,4 @@
+mod image_jobs;
 use axum::{
     extract::{DefaultBodyLimit, State},
     http::{header, HeaderMap, StatusCode},
@@ -74,6 +75,7 @@ pub struct Executor {
     config: ConnectorConfig,
     gateway: Gateway,
     capacity: Arc<Semaphore>,
+    image_jobs: image_jobs::ImageJobs,
     pub assets: Arc<AssetStore>,
 }
 
@@ -153,6 +155,7 @@ impl Executor {
             config,
             gateway,
             capacity: Arc::new(Semaphore::new(1)),
+            image_jobs: image_jobs::ImageJobs::default(),
             assets,
         }))
     }
@@ -190,6 +193,9 @@ impl Executor {
         if let Err(error) = request.validate() {
             return StoreReply::from_result(request.request_id, Err(error));
         }
+        if request.operation == Operation::StoreImageSyncStatus {
+            return self.image_job(request).await;
+        }
         if !self.config.platform_mode.supports(request.platform) {
             return StoreReply::from_result(
                 request.request_id,
@@ -199,6 +205,9 @@ impl Executor {
                     format!("This Connector does not support {}", request.platform),
                 )),
             );
+        }
+        if request.operation == Operation::StartStoreImageSync {
+            return self.image_job(request).await;
         }
         if request.operation.is_upload() {
             return self.upload_command(request).await;
@@ -265,6 +274,7 @@ impl Executor {
     }
 
     pub async fn drain(&self) {
+        self.image_jobs.drain().await;
         if let Ok(permit) = self.capacity.acquire().await {
             drop(permit);
         }
@@ -280,7 +290,10 @@ fn bearer(headers: &HeaderMap) -> &str {
 }
 pub fn http_router(executor: Arc<Executor>) -> Router {
     Router::new()
-        .route("/health", get(|| async { Json(json!({"status":"ok"})) }))
+        .route(
+            "/health",
+            get(|| async { Json(json!({"status":"ok","asyncStoreImagesSupported":true})) }),
+        )
         .route("/v1/execute", post(http_execute))
         .route("/v1/diagnostics/logs", post(http_logs))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
@@ -533,7 +546,7 @@ async fn connection(
             true,
         )?;
         let registration = serde_json::to_vec(
-            &json!({"connectorId":executor.config.connector_id,"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1}),
+            &json!({"connectorId":executor.config.connector_id,"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1,"asyncStoreImagesSupported":true}),
         )
         .map_err(|_| crypto::error())?;
         let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];

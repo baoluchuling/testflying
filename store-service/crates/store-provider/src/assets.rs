@@ -350,6 +350,38 @@ mod tests {
     use image::ImageEncoder;
     use store_protocol::upload::UploadInput;
     const SESSION: &str = "00000000-0000-4000-8000-000000000099";
+    #[test]
+    fn claimed_files_survive_expiration_until_actual_lease_drop() {
+        let store = AssetStore::new("test-node".into(), "22".repeat(32));
+        let claims = store.start(&ticket(0, 3), SESSION).unwrap();
+        {
+            let mut entries = store.entries.lock().unwrap();
+            let entry = entries.get_mut(&claims.asset_id).unwrap();
+            entry.file.write_all(b"abc").unwrap();
+            entry.complete = true;
+            entry.received = 3;
+        }
+        let request = StoreRequest {
+            request_id: "pinned".into(),
+            platform: Platform::Ios,
+            bundle_identifier: "com.example.app".into(),
+            operation: store_protocol::Operation::Sync,
+            payload: serde_json::json!({"operation":"update_app_metadata","metadata":{"storeImages":{"phone_screenshots":{"assets":[{"assetId":claims.asset_id}]}}}}),
+        };
+        let lease = store.claim(&request).unwrap();
+        store
+            .entries
+            .lock()
+            .unwrap()
+            .get_mut(&claims.asset_id)
+            .unwrap()
+            .expires = Instant::now() - Duration::from_secs(16 * 60);
+        store.purge();
+        assert_eq!(store.read(&claims.asset_id).unwrap().0, b"abc");
+        assert_eq!(store.usage(), (1, 3));
+        drop(lease);
+        assert_eq!(store.usage(), (0, 0));
+    }
     fn ticket(index: usize, size: u64) -> String {
         let now = upload::now().unwrap();
         let claims = UploadClaims {

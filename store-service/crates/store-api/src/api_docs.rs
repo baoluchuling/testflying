@@ -130,6 +130,7 @@ fn catalog() -> Value {
         json!([]),
         Some("CreateStoreRelease"),
     ));
+    endpoints.push(json!({"id":"read-store-image-sync-job","group":"store","method":"GET","path":format!("{APP}/sync-jobs/{{jobId}}"),"summary":"查询本人图片异步任务的实际执行状态和结果","authentication":["integrationToken","businessToken"],"requiresBinding":false,"parameters":[{"name":"jobId","in":"path","required":true,"type":"string"}]}));
     endpoints.push(json!({"id":"list-connectors","group":"node","method":"GET",
         "path":"/v1/store-management/connectors","summary":"查询全部启用的商店节点",
         "authentication":["integrationToken","businessToken"],"requiresBinding":false,"parameters":[]}));
@@ -156,6 +157,7 @@ fn catalog() -> Value {
             "limits":{"queuedPerNode":20,"parallelJobsPerNode":1,"retentionDays":7,"maxPngBytes":16777216},
             "notification":capture_notification,
             "centerSavesImage":false,"missingUploadDestinationDoesNotBlockExecution":true,"storeForwardingSwitchesApply":false});
+    let store_image_jobs = json!({"submitPath":format!("{APP}/sync"),"queryPath":format!("{APP}/sync-jobs/{{jobId}}"),"httpStatus":200,"acceptanceStatus":"succeeded","acceptanceExecutionStatus":"queued","jobId":"center requestId; caller does not supply","selector":{"operations":["update_app_metadata","update_marketing_page"],"syncScopes":["store_images"],"imageOnly":true},"textAndMixedRequests":"remain synchronous","requiresStoreConnectorUpgrade":true,"oldNodes":"remain synchronous without jobId","sources":["urls","assets.assetId","assets.downloadUrl"],"states":["queued","running","succeeded","failed","unknown"],"visibility":"same creating integration or business credential and exact app/platform","retentionDays":7,"nodePollingSeconds":5,"initialSuccessMeaning":"validated and accepted; not actual upload completion","nodeOwnsFiles":"preuploaded assets pinned before acceptance; URL download uses temporary files; cleanup follows actual background completion","replay":"never automatically retry store writes; unknown requires manual reconciliation"});
     json!({
         "schemaVersion":1,"contractVersion":"2026-11-12","title":"中心统一接口文档：商店、节点与截图任务",
         "scope":"center-api-contract","requiresConnectorUpgrade":true,
@@ -165,7 +167,7 @@ fn catalog() -> Value {
             "adminToken":{"transport":["http","https"],"canReadApiDocs":false,"canBind":true}},
         "applicationIdentity":{"platform":["ios","android"],"identifier":"iOS Bundle ID / Android 包名，大小写精确匹配"},
         "endpoints":endpoints,
-        "endpointCounts":{"store":10,"node":2,"screenshot":6,"uploads":2},
+        "endpointCounts":{"store":11,"node":2,"screenshot":6,"uploads":2},
         "screenshots":screenshot_contract,
         "adminDiagnostics":{"authentication":["adminToken"],"method":"GET","path":"/v1/connectors/{id}/logs/latest",
             "summary":"读取指定商店节点最新 JSONL 日志文件；中心流式转发，不保存文件副本",
@@ -182,13 +184,14 @@ fn catalog() -> Value {
             "android":{"versionRequired":false,"devices":{"phone":["phone_screenshots"],"tablet":["seven_inch_screenshots","ten_inch_screenshots"]},"unsupportedDevice":{"foldable":{"status":422,"code":"unsupported_image_device"}}},
             "examples":[format!("{APP}/store-images?locale=en-US&device=phone"),format!("{APP}/store-images?locale=zh-Hans&device=tablet"),format!("{APP}/store-images?locale=ja&device=foldable")]
         },
+        "storeImageJobs":store_image_jobs,
         "sync":{"versionSelection":"iOS 节点自动定位最新版本；顶层 version 不接收或转发，最新版本不可编辑直接失败，不回退到旧版本","operations":["update_app_metadata","update_release_notes","update_marketing_page"],
             "androidCommit":{"changesNotSentForReview":"omitted","changesInReviewBehavior":"ERROR_IF_IN_REVIEW","maySendForReview":true,"draftOnly":false},
             "syncScopes":["metadata","description","keywords","promotional_text","short_description","title","subtitle","video","store_images","marketing_text"],
             "imageSlots":{"ios":["phone_screenshots","tablet_screenshots","foldable_screenshots"],"android":["phone_screenshots","tablet_screenshots","feature_graphic_url"]},
             "selection":"读取用 query device，写入用 metadata.storeImages 或 marketingPage.storeImages 中的槽位；未传槽位保留、显式空数组清空所选槽位",
             "textSelection":"未传字段保留；选中文字字段的显式空字符串按清空处理；版本说明通过 update_release_notes 更新",
-            "appleImages":"先上传 Asset Library 并确认处理和规格，再替换 placements 并排序；多步写入非事务，不自动重放"
+            "appleImages":"上传 Asset Library 并提交uploaded=true后替换placements和排序，不等待processing；多步写入非事务，不自动重放"
         },
         "limitations":["Android 不支持创建新版本、独立折叠屏图片、CPP 或创建 PPO","无独立通用送审、发布、评论回复、CPP 列表或删除、PPO 启停接口"],
         "documentation":{"formats":["json","markdown","openapi"],"markdownUrl":format!("{PATH}?format=markdown"),"openapiUrl":format!("{PATH}?format=openapi"),"markdown":MARKDOWN}

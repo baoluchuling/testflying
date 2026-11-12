@@ -36,6 +36,8 @@ pub enum Operation {
     ProductPageOptimizations,
     CreateProductPageOptimization,
     Sync,
+    StartStoreImageSync,
+    StoreImageSyncStatus,
     UploadStart,
     UploadChunk,
     UploadFinish,
@@ -63,6 +65,23 @@ pub struct StoreRequest {
 }
 
 impl StoreRequest {
+    pub fn is_image_only_sync(&self) -> bool {
+        let owner = match self.payload["operation"].as_str() {
+            Some("update_app_metadata") => "metadata",
+            Some("update_marketing_page") => "marketingPage",
+            _ => return false,
+        };
+        matches!(
+            self.operation,
+            Operation::Sync | Operation::StartStoreImageSync
+        ) && self.payload["syncScopes"].as_array().is_some_and(|scopes| {
+            !scopes.is_empty()
+                && scopes
+                    .iter()
+                    .all(|scope| scope.as_str() == Some("store_images"))
+        }) && self.payload[owner]["storeImages"].is_object()
+    }
+
     pub fn validate(&self) -> Result<(), StoreError> {
         validate_identifier(&self.bundle_identifier)?;
         if self.request_id.is_empty() || self.request_id.len() > 128 {
@@ -116,6 +135,12 @@ pub struct StoreError {
     pub status: u16,
     pub code: String,
     pub message: String,
+    #[serde(
+        default,
+        rename = "outcomeUnknown",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub outcome_unknown: bool,
 }
 
 impl StoreError {
@@ -124,11 +149,16 @@ impl StoreError {
             status,
             code: code.into(),
             message: message.into(),
+            outcome_unknown: false,
         }
     }
 
     pub fn body(&self) -> Value {
-        serde_json::json!({"error": {"code": self.code, "message": self.message}})
+        let mut body = serde_json::json!({"error": {"code": self.code, "message": self.message}});
+        if self.outcome_unknown {
+            body["outcomeUnknown"] = Value::Bool(true);
+        }
+        body
     }
 }
 
@@ -152,6 +182,44 @@ impl StoreReply {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn store_error_uncertainty_is_opt_in_and_backward_compatible() {
+        let mut error: StoreError = serde_json::from_value(serde_json::json!({
+            "status":502,"code":"store_upstream_error","message":"Store request failed"
+        }))
+        .unwrap();
+        assert!(!error.outcome_unknown);
+        assert!(error.body().get("outcomeUnknown").is_none());
+        assert!(serde_json::to_value(&error)
+            .unwrap()
+            .get("outcomeUnknown")
+            .is_none());
+        error.outcome_unknown = true;
+        let reply = StoreReply::from_result("original-id".into(), Err(error));
+        assert_eq!(reply.request_id, "original-id");
+        assert_eq!(reply.body["error"]["message"], "Store request failed");
+        assert_eq!(reply.body["outcomeUnknown"], true);
+    }
+
+    #[test]
+    fn only_explicit_image_scopes_select_async_sync() {
+        let mut request = StoreRequest {
+            request_id: "id".into(),
+            platform: Platform::Ios,
+            bundle_identifier: "com.example.app".into(),
+            operation: Operation::Sync,
+            payload: serde_json::json!({"operation":"update_app_metadata","syncScopes":["store_images"],"metadata":{"storeImages":{}}}),
+        };
+        assert!(request.is_image_only_sync());
+        request.payload["syncScopes"] = serde_json::json!(["store_images", "title"]);
+        assert!(!request.is_image_only_sync());
+        request.payload["syncScopes"] = serde_json::json!([]);
+        assert!(!request.is_image_only_sync());
+        request.payload["syncScopes"] = serde_json::json!(["store_images"]);
+        request.operation = Operation::Preflight;
+        assert!(!request.is_image_only_sync());
+    }
 
     #[test]
     fn app_identity_is_exact_and_platform_is_required() {

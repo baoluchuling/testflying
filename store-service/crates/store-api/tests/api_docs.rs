@@ -76,13 +76,13 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert_eq!(catalog["schemaVersion"], 1);
     assert_eq!(catalog["contractVersion"], "2026-11-12");
     let endpoints = catalog["endpoints"].as_array().unwrap();
-    assert_eq!(endpoints.len(), 18);
+    assert_eq!(endpoints.len(), 19);
     assert_eq!(
         endpoints
             .iter()
             .filter(|endpoint| endpoint["group"] == "store")
             .count(),
-        10
+        11
     );
     assert_eq!(
         endpoints
@@ -100,7 +100,7 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
             )
         })
         .collect();
-    assert_eq!(unique.len(), 18);
+    assert_eq!(unique.len(), 19);
     assert_eq!(
         endpoints
             .iter()
@@ -134,6 +134,19 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert_eq!(catalog["screenshots"]["connectorIdInSubmit"], false);
     assert_eq!(catalog["screenshots"]["requiresConnectorUpgrade"], true);
     assert_eq!(catalog["screenshots"]["taskProtocol"], 3);
+    assert!(unique.contains(&(
+        "GET",
+        "/v1/store-management/apps/{platform}/{bundleIdentifier}/sync-jobs/{jobId}"
+    )));
+    assert_eq!(catalog["storeImageJobs"]["acceptanceStatus"], "succeeded");
+    assert_eq!(
+        catalog["storeImageJobs"]["acceptanceExecutionStatus"],
+        "queued"
+    );
+    assert_eq!(
+        catalog["storeImageJobs"]["textAndMixedRequests"],
+        "remain synchronous"
+    );
     assert_eq!(catalog["screenshots"]["uploadProtocol"], "direct-oss-v2");
     assert_eq!(catalog["screenshots"]["notificationProtocol"], "capture-v1");
     assert_eq!(catalog["screenshots"]["notification"]["method"], "POST");

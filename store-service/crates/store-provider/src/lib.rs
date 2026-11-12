@@ -25,6 +25,22 @@ use store_protocol::{Operation, Platform, StoreError, StoreRequest};
 use tokio::sync::Mutex;
 
 type Result<T> = std::result::Result<T, StoreError>;
+tokio::task_local! { static IMAGE_EXECUTION: (); }
+
+fn mutation_error(mut error: StoreError, mutation: bool) -> StoreError {
+    if mutation && IMAGE_EXECUTION.try_with(|_| ()).is_ok() {
+        error.outcome_unknown = true;
+    }
+    error
+}
+
+async fn mutation_json(response: Response, mutation: bool) -> Result<Value> {
+    // An explicit HTTP rejection is known; a lost/malformed successful response is not.
+    let successful = response.status().is_success();
+    bounded_json(response)
+        .await
+        .map_err(|error| mutation_error(error, mutation && successful))
+}
 
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -193,9 +209,22 @@ impl Gateway {
     pub async fn execute(&self, request: &StoreRequest) -> Result<Value> {
         diagnostics::scope(request, self.execute_inner(request)).await
     }
+    pub async fn execute_with_assets(
+        &self,
+        request: &StoreRequest,
+        lease: assets::AssetLease,
+    ) -> Result<Value> {
+        // This scope owns the pinned files through actual vendor execution, even after caller loss.
+        let _lease = lease;
+        IMAGE_EXECUTION
+            .scope(
+                (),
+                diagnostics::scope(request, self.execute_claimed(request)),
+            )
+            .await
+    }
     async fn execute_inner(&self, request: &StoreRequest) -> Result<Value> {
-        request.validate()?;
-        validation::validate(request)?;
+        validate_request(request)?;
         let uses_assets =
             request.operation == Operation::Sync && scopes(&request.payload, "store_images", false);
         let _assets = if uses_assets {
@@ -212,6 +241,10 @@ impl Gateway {
         } else {
             None
         };
+        self.execute_claimed(request).await
+    }
+    async fn execute_claimed(&self, request: &StoreRequest) -> Result<Value> {
+        validate_request(request)?;
         if self.inner.config.mode == "mock" {
             return self.mock(request);
         }
@@ -245,7 +278,9 @@ impl Gateway {
                 json!({"experiment":{"id":"mock-experiment","name":r.payload["name"],"treatments":[]}})
             }
             Operation::Sync => succeeded(json!({"mock":true})),
-            Operation::UploadStart
+            Operation::StartStoreImageSync
+            | Operation::StoreImageSyncStatus
+            | Operation::UploadStart
             | Operation::UploadChunk
             | Operation::UploadFinish
             | Operation::UploadAbort => {
@@ -377,6 +412,7 @@ impl Gateway {
             Platform::Android => &self.inner.config.google_base_url,
         };
         let empty_post = method == Method::POST && body.is_none();
+        let mutation = method != Method::GET && method != Method::HEAD;
         let mut request = self
             .inner
             .client
@@ -418,7 +454,7 @@ impl Gateway {
                 }
             }
         }
-        bounded_json(response).await
+        mutation_json(response, mutation).await
     }
 
     async fn send_logged(
@@ -430,11 +466,19 @@ impl Gateway {
         let request = builder
             .build()
             .map_err(|_| upstream("Cannot build store request"))?;
+        let mutation = request.method() != Method::GET
+            && request.method() != Method::HEAD
+            && step != "oauth_token";
         let mut guard =
             diagnostics::HttpGuard::start(self.inner.log.clone(), platform, step, &request);
         let result = self.inner.client.execute(request).await;
         guard.finish(&result);
-        let mut response = result.map_err(|_| upstream("Store request failed"))?;
+        let mut response = result.map_err(|error| {
+            mutation_error(
+                upstream("Store request failed"),
+                mutation && !error.is_connect(),
+            )
+        })?;
         if !response.status().is_success() && self.inner.log.is_some() {
             let mut bytes = Vec::new();
             let mut state = "complete";
@@ -556,4 +600,88 @@ fn copy_field(
         }
     }
     Ok(())
+}
+
+/// Validate caller data without network calls, consuming uploads or reading credentials.
+pub fn validate_request(request: &StoreRequest) -> Result<()> {
+    request.validate()?;
+    if request.operation == Operation::StartStoreImageSync {
+        if !request.is_image_only_sync() {
+            return Err(invalid(
+                "Async sync requires only store_images scopes and image content",
+            ));
+        }
+        if request.platform == Platform::Android
+            && request.payload["operation"] == "update_marketing_page"
+        {
+            return Err(StoreError::new(
+                422,
+                "google_marketing_page_unsupported",
+                "Marketing pages require iOS",
+            ));
+        }
+        let mut normalized = request.clone();
+        normalized.operation = Operation::Sync;
+        return validation::validate(&normalized);
+    }
+    if request.operation == Operation::StoreImageSyncStatus {
+        return Err(invalid("Image job status must be handled by the Connector"));
+    }
+    validation::validate(request)
+}
+
+#[cfg(test)]
+mod image_exchange_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn lost_mutation_headers_or_body_are_uncertain_only_in_image_execution() {
+        for (method, image_execution, partial_body, expected_unknown) in [
+            (Method::POST, true, false, true),
+            (Method::POST, true, true, true),
+            (Method::GET, true, false, false),
+            (Method::POST, false, false, false),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).await.unwrap();
+                    request.push(byte[0]);
+                }
+                if partial_body {
+                    stream
+                        .write_all(
+                            b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{",
+                        )
+                        .await
+                        .unwrap();
+                }
+                // Closing after receiving the request models a lost vendor acknowledgement.
+            });
+            let gateway = Gateway::new(ProviderConfig::default()).unwrap();
+            let exchange = async {
+                let response = gateway
+                    .send_logged(
+                        gateway.inner.client.request(method.clone(), url),
+                        Some(Platform::Ios),
+                        "store_api",
+                    )
+                    .await?;
+                mutation_json(response, method != Method::GET).await
+            };
+            let error = if image_execution {
+                IMAGE_EXECUTION.scope((), exchange).await.unwrap_err()
+            } else {
+                exchange.await.unwrap_err()
+            };
+            assert_eq!(error.code, "store_upstream_error");
+            assert_eq!(error.outcome_unknown, expected_unknown);
+            server.await.unwrap();
+        }
+    }
 }

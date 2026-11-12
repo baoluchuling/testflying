@@ -1,6 +1,8 @@
 use super::*;
+use std::io::{Read, Seek, SeekFrom, Write};
 pub(super) struct Downloaded {
     pub bytes: Vec<u8>,
+    _file: Option<std::fs::File>,
     pub name: String,
     pub mime: String,
 }
@@ -135,7 +137,12 @@ impl Gateway {
             let (bytes, name, mime) = tokio::task::spawn_blocking(move || store.read(&id))
                 .await
                 .map_err(|_| invalid("Cannot read uploaded image"))??;
-            return Ok(Downloaded { bytes, name, mime });
+            return Ok(Downloaded {
+                bytes,
+                name,
+                mime,
+                _file: None,
+            });
         }
         let url = if s(source, "downloadUrl").is_empty() {
             s(source, "storageKey")
@@ -165,17 +172,26 @@ impl Gateway {
         {
             return Err(invalid("Image exceeds 64 MiB"));
         }
-        let mut bytes = Vec::new();
+        let mut file =
+            tempfile::tempfile().map_err(|_| invalid("Cannot create temporary image file"))?;
+        let mut size = 0usize;
         while let Some(chunk) = response
             .chunk()
             .await
             .map_err(|_| upstream("Image download interrupted"))?
         {
-            if bytes.len() + chunk.len() > MAX {
+            if size + chunk.len() > MAX {
                 return Err(invalid("Image exceeds 64 MiB"));
             }
-            bytes.extend_from_slice(&chunk);
+            file.write_all(&chunk)
+                .map_err(|_| invalid("Cannot write temporary image file"))?;
+            size += chunk.len();
         }
+        file.seek(SeekFrom::Start(0))
+            .map_err(|_| invalid("Cannot seek temporary image file"))?;
+        let mut bytes = Vec::with_capacity(size);
+        file.read_to_end(&mut bytes)
+            .map_err(|_| invalid("Cannot read temporary image file"))?;
         let (mime, extension) = validate_bytes(&bytes)?;
         let mut name = if s(source, "fileName").is_empty() {
             url.path_segments()
@@ -199,6 +215,7 @@ impl Gateway {
             bytes,
             name,
             mime: mime.into(),
+            _file: Some(file),
         })
     }
 }
@@ -230,4 +247,76 @@ pub(super) fn validate_bytes(bytes: &[u8]) -> Result<(&'static str, &'static str
         .decode()
         .map_err(|_| invalid("Image data is invalid or exceeds the decoding memory limit"))?;
     Ok((mime, extension))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{extract::State, routing::get, Router};
+    use image::ImageEncoder;
+    #[tokio::test]
+    async fn download_waits_for_body_then_holds_anonymous_file_through_use() {
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let mut png = Vec::new();
+        image::codecs::png::PngEncoder::new(&mut png)
+            .write_image(&[0; 12], 2, 2, image::ExtendedColorType::Rgb8)
+            .unwrap();
+        let expected = png.clone();
+        let router = Router::new()
+            .route(
+                "/image",
+                get(
+                    |State((release, entered, png)): State<(
+                        Arc<tokio::sync::Semaphore>,
+                        Arc<tokio::sync::Notify>,
+                        Vec<u8>,
+                    )>| async move {
+                        entered.notify_one();
+                        let _permit = release.acquire().await.unwrap();
+                        png
+                    },
+                ),
+            )
+            .route("/invalid", get(|| async { b"not an image".to_vec() }))
+            .with_state((release.clone(), entered.clone(), png));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let (stop, stopped) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router)
+                .with_graceful_shutdown(async {
+                    let _ = stopped.await;
+                })
+                .await
+                .unwrap();
+        });
+        let gateway = Gateway::new(ProviderConfig::default()).unwrap();
+        let source = json!({"downloadUrl":format!("{url}/image")});
+        let pending = tokio::spawn(async move { gateway.download_image(&source).await });
+        entered.notified().await;
+        assert!(!pending.is_finished());
+        release.add_permits(1);
+        let downloaded = pending.await.unwrap().unwrap();
+        assert_eq!(downloaded.bytes, expected);
+        let file = downloaded._file.as_ref().unwrap();
+        assert_eq!(file.metadata().unwrap().len(), expected.len() as u64);
+        #[cfg(unix)]
+        {
+            use std::os::fd::AsRawFd;
+            let fd = file.as_raw_fd();
+            assert!(unsafe { libc::fcntl(fd, libc::F_GETFD) } >= 0);
+            drop(downloaded);
+            assert_eq!(unsafe { libc::fcntl(fd, libc::F_GETFD) }, -1);
+        }
+        #[cfg(not(unix))]
+        drop(downloaded);
+        let gateway = Gateway::new(ProviderConfig::default()).unwrap();
+        assert!(gateway
+            .download_image(&json!({"downloadUrl":format!("{url}/invalid")}))
+            .await
+            .is_err());
+        let _ = stop.send(());
+        server.await.unwrap();
+    }
 }

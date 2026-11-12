@@ -330,12 +330,12 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                 check(status == 200 and catalog["contractVersion"] == "2026-11-12",
                       scheme + " business-token documentation available")
                 endpoints = catalog["endpoints"]
-                check(len(endpoints) == 18
-                      and sum(row["group"] == "store" for row in endpoints) == 10
+                check(len(endpoints) == 19
+                      and sum(row["group"] == "store" for row in endpoints) == 11
                       and sum(row["group"] == "node" for row in endpoints) == 2
                       and sum(row["group"] == "screenshot" for row in endpoints) == 6
                       and len(catalog["uploadEndpoints"]) == 2,
-                      scheme + " ten store, two node and six screenshot endpoints plus upload helpers")
+                      scheme + " eleven store, two node and six screenshot endpoints plus upload helpers")
                 check(catalog["imageQuery"]["parameters"][1]["enum"] == ["phone", "tablet", "foldable"]
                       and "foldable" not in catalog["imageQuery"]["android"]["devices"],
                       scheme + " language and device options with platform limits")

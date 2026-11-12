@@ -104,4 +104,6 @@ ssh testflying-prod 'journalctl -u testflying-store-api -n 50 --no-pager'
 
 ## 上传反向代理配置
 
+纯图片异步同步需要升级商店 Connector 程序；发布中心和下载包不会自动更新实体节点。新版通过 asyncStoreImagesSupported 能力启用后台队列，旧节点仍同步执行。中心只保存七天任务元数据／结果并恢复状态查询，不重放商店写入。节点在返回受理结果前固定预上传资产，排队和执行期间保留；URL 下载使用匿名临时文件，实际后台工作结束才释放。节点重启导致未完成结果丢失时标为 unknown，需人工核对。文案和混合请求仍同步，详见 [统一接口文档](store-api.md#113-图片异步受理与后续查询)。
+
 本地图片经中心转发时，Store API 前的 Nginx 必须设置 `client_max_body_size 64m`、`proxy_request_buffering off` 和 HTTP/1.1，防止旧的 2m 代理限制提前拒绝文件或默认缓冲把图片写入中心磁盘；`proxy_read_timeout 1860s` 覆盖最大 30 分钟上传窗口，并预留 60 秒响应余量。业务 JSON 仍由 Rust 的 2 MiB 限制校验。只修改 Store API 路径，保留其他应用的配置。上传 API 见 [图片上传文档](image-upload-api.md)。

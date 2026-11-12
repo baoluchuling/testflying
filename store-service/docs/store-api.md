@@ -1,6 +1,6 @@
 # 中心统一接口文档
 
-外部后台用同一枚接入 Token 查询节点、绑定应用、调用商店和截图任务。本文统一覆盖 **10 个商店业务接口、2 个商店节点查询／绑定接口、6 个截图节点／任务接口**，另附商店图片上传配套接口与管理员接口。契约版本：`2026-11-11`。
+外部后台用同一枚接入 Token 查询节点、绑定应用、调用商店和截图任务。本文统一覆盖 **11 个商店业务／任务查询接口、2 个商店节点查询／绑定接口、6 个截图节点／任务接口**，另附商店图片上传配套接口与管理员接口。契约版本：`2026-11-12`。
 
 ## 在线获取文档和功能目录
 
@@ -13,7 +13,7 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 | format 参数 | 响应类型 | 内容 |
 |---|---|---|
-| 省略或 json | application/json | schemaVersion、contractVersion、18 个核心接口的 endpoints、2 个配套 uploadEndpoints、screenshots、imageQuery、sync、iosVersions、forwarding、limitations 及完整 Markdown 文档 |
+| 省略或 json | application/json | schemaVersion、contractVersion、19 个核心接口的 endpoints、2 个配套 uploadEndpoints、screenshots、imageQuery、sync、iosVersions、forwarding、limitations 及完整 Markdown 文档 |
 | markdown | text/markdown | 本文完整内容 |
 | openapi | application/yaml | 可导入工具的完整 OpenAPI 定义 |
 
@@ -99,8 +99,9 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 | 8 | POST | {APP}/preflight | 检查当前写入条件 |
 | 9 | POST | {APP}/sync | 单项或多字段同步内容 |
 | 10 | POST | {APP}/store-releases | 创建 iOS App Store 新版本 |
+| 11 | GET | {APP}/sync-jobs/{jobId} | 查询纯图片异步同步的实际结果 |
 
-图片上传配套接口（不计入上述 10 个商店业务接口）：
+图片上传配套接口（不计入上述 11 个商店业务／任务查询接口）：
 
 | 序号 | 方法 | 路径 | 用途 |
 |---|---|---|---|
@@ -448,7 +449,7 @@ HTTP 200 不代表允许同步，必须判断 canSync。iOS 检查最新版本�
 POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
 ```
 
-**每次一个应用、一个语言、一种 operation，支持只同步一个字段。** 不从草稿读取，不保存草稿，也不创建可查询的持久任务。
+**每次一个应用、一个语言、一种 operation，支持只同步一个字段。** 不从草稿读取，不保存草稿。新版节点的纯图片同步会创建可查询的持久任务；文案、混合请求和旧节点仍沿用同步返回。
 
 ### 9.1 更新文案
 
@@ -505,6 +506,8 @@ Android 的文案、图片及版本说明同步使用普通 Google edit commit�
 
 ### 9.3 更新图片
 
+新版商店 Connector 对**纯图片**请求异步执行：operation 为 update_app_metadata 或 update_marketing_page，syncScopes 只包含 store_images。纯文案、版本说明、文案与图片混合请求仍同步；需要图片快速返回时单独提交。旧节点升级前保留原同步行为，不返回图片任务 jobId。
+
 ```json
 {
   "operation":"update_app_metadata",
@@ -546,7 +549,7 @@ Android 的文案、图片及版本说明同步使用普通 Google edit commit�
 
 iOS 普通版本和 CPP 的图片同步均采用 Apple Asset Library。Connector 读取目标应用的素材库和最新规格，校验图片尺寸、格式、透明通道、文件大小及设备组，再将所有新图片上传到素材库。分块上传不携带节点 Apple JWT，提交时仅设置 `uploaded=true`。Apple 接受 uploaded=true 提交后，不轮询或等待图片处理状态，直接按预先校验的本地图片规格匹配设备组，创建当前版本／CPP 对应语言的 placements 并按传入顺序排序；Apple 若已返回 specId 则仍校验匹配。提交、关联与排序成功后即返回，不做后置处理状态查询。处理中素材的关联可处于 ASSET_PROCESSING，页面展示取决于 Apple 后续异步处理。一个素材可以关联到多个匹配的设备组。
 
-图片处理失败、规格不匹配或等待超时会返回错误并保留原有图片关联。明确空数组只删除目标语言和选中设备类别的关联，不删除素材库图片；其他语言、页面和未选设备保留。Apple 多步写入不是事务，关联替换阶段失败时可能已有部分关联被修改，失败上传也可能留下未关联的库素材。接口不会自动重放商店写入或自动删除库素材。设备规格及每组数量上限以实时参考数据为准。
+下载、图片规格校验或上传提交失败发生在替换关联之前，原有图片关联保留；不通过轮询 Apple 处理状态决定成功。明确空数组只删除目标语言和选中设备类别的关联，不删除素材库图片；其他语言、页面和未选设备保留。Apple 多步写入不是事务，关联替换阶段失败时可能已有部分关联被修改，失败上传也可能留下未关联的库素材。接口不会自动重放商店写入或自动删除库素材。设备规格及每组数量上限以实时参考数据为准。
 
 ### 9.4 创建／更新 Apple CPP
 
@@ -660,17 +663,57 @@ curl --fail \
 
 每个已上传图片引用只提供 assetId，不再附带 downloadUrl 或 storageKey。仍支持原有 URL 图片来源，也可在一个槽位里混用多个 assetId/URL。**槽位按完整列表替换**，只传一张会把该槽替换为这一张，未指定槽保留；CPP 的 marketingPage.storeImages 也使用相同资产引用方式。未指定 store_images 的操作和 preflight 不消费资产。
 
-资产只限同一平台、应用和账号节点使用。全部引用在任何商店操作之前验证；缺失、过期、跨应用或未完成引用失败。实际 sync 执行结束（成功、失败或取消）释放独占资产，不可再次使用；需要重试时重新申请并上传。节点重启后临时资产失效。
+资产只限同一平台、应用和账号节点使用。全部引用在任何商店操作之前验证；缺失、过期、跨应用或未完成引用失败。异步 sync 在校验受理前由节点后台任务接管并锁定资产；HTTP 提前返回成功不会释放。排队和实际执行期间继续保留，实际后台任务结束（成功、失败或取消）才释放，不可再次使用；需要重试时重新申请并上传。节点重启后临时资产失效。
 
 ### 11.2 限额、清理和上传错误
 
-单图 64 MiB，节点总预留 512 MiB，最多 20 个资产。未完成上传最多保留 30 分钟，完成资产从完成时起最多保留 15 分钟，定期清理。匿名文件在 Unix 下不保留目录项，Windows 下最后句柄关闭时删除，进程退出或崩溃也由 OS 回收。中心没有图片草稿、上传表或凭据表。
+单图 64 MiB，节点总预留 512 MiB，最多 20 个资产。未完成上传最多保留 30 分钟，未被后台任务接管的完成资产从完成时起最多保留 15 分钟，定期清理；已接管的资产由实际任务结束释放。匿名文件在 Unix 下不保留目录项，Windows 下最后句柄关闭时删除，进程退出或崩溃也由 OS 回收。中心没有图片草稿、上传表或凭据表。
 
 签名凭据不是严格的一次性令牌：有效期内可以尝试，但节点以 assetId 检查当前会话，不覆盖完成资产。若要严格的凭据“一用即废”，需要另加服务端使用记录，本版不这样宣称。
 
+### 11.3 图片异步受理与后续查询
+
+新版节点的数据校验和临时资产接管完成后，原 sync 立即返回 HTTP 200，例如：
+
+```json
+{
+  "status":"succeeded",
+  "message":"Image sync was validated and accepted for background execution",
+  "jobId":"22222222-2222-4222-8222-222222222222",
+  "executionStatus":"queued",
+  "errorCode":null,
+  "errorSummary":null,
+  "storeState":null
+}
+```
+
+此处 succeeded 表示**数据已校验并受理**，不代表已下载或已更新商店。保存中心返回的 jobId，不在请求中传入。语言、操作、scope、槽位、数量、URL格式及预上传 assetId 的归属／可用性等先校验；URL能否下载、真实图片格式／尺寸、Apple最新版本是否可编辑等在后台检查。失败原因由任务查询返回。
+
+```http
+GET {APP}/sync-jobs/22222222-2222-4222-8222-222222222222
+Authorization: Bearer INTEGRATION_TOKEN
+```
+
+```json
+{
+  "jobId":"22222222-2222-4222-8222-222222222222",
+  "status":"succeeded",
+  "result":{"status":"succeeded","message":"Store content synchronized","errorCode":null,"errorSummary":null,"storeState":{}},
+  "httpStatus":200,
+  "errorCode":null,
+  "outcomeUnknown":false
+}
+```
+
+状态为 queued（排队）、running（实际执行）、succeeded、failed 或 unknown。最终成功以查询 status=succeeded 和 result 原业务结果为准；不能将提交时 HTTP 200 或 status=succeeded 当作上传完成。结果约保留七天，使用创建时的同一凭证，其他接入系统或不同平台／应用返回404。中心约每五秒读取节点结果，查询不调用 Apple，也不重放同步。
+
+原先“先上传文件拿 assetId 再 sync”和“sync直接传URL”均保留。URL由节点后台下载到系统临时目录的匿名文件，使用完成后清理；预上传资产在成功受理前交给后台任务持有，排队／执行时不按未消费资产的15分钟TTL删除。HTTP提前返回、调用方断开都不会释放后台任务正在使用的文件；实际任务成功、失败或取消后才释放。中心不保存PNG。
+
+同一节点仍串行业务执行。后台图片占用节点时，并发文案请求可能返回原有 connector_busy；文案规则和返回时机不变。中心重启只恢复任务状态对账，不重新执行写入；节点重启／断开后无法取得执行结果时标为 unknown，需要人工核对，不能自动重发 sync。失败重试需按原规则重新上传已消费的 assetId。节点升级后自动启用异步模式，客户端无需新增 async 参数。
+
 常见错误：401 凭据无效/过期或应用映射已变；403 跨应用资产；404 资产缺失/过期；409 上传重复、偏移不符或资产在用；413 超过签名大小；422 大小/哈希/图像无效；429 节点暂存配额满；503 节点离线；507 本地临时存储不可用。
 
-### 11.3 外部后台完整调用顺序
+### 11.4 外部后台完整调用顺序
 
 在 store-service 目录可直接使用仅依赖 Python 标准库的 [外部调用示例](../examples/upload-image.py)：
 
@@ -689,7 +732,8 @@ STORE_API_TOKEN="$INTEGRATION_TOKEN" python3 examples/upload-image.py \
 2. 用接入 Token POST 申请上传凭据。
 3. curl --upload-file 或 SDK 文件流 PUT 到中心返回的 uploadUrl。
 4. 等待 201 后，把 assetId 放进 sync。
-5. 清除调用端持有的 uploadToken；失败时重新触发，不自动重放商店写入。
+5. 保存返回的 jobId，轮询第 11.3 节接口取得实际结果；旧节点没有 jobId 时仍读取原同步响应。
+6. 清除调用端持有的 uploadToken；失败时重新触发，不自动重放商店写入。
 
 中心与 Connector 的 WSS 使用 TLS，正文另有 Noise 会话加密；业务 HTTP 入口不改变节点的 WSS 连接。外部后台到中心的 HTTP 请求（包括 Token、安装配置下载和图片）没有 TLS 保护。本版未在节点 HTTP JSON 执行入口上叠加 Noise，节点 HTTP 回退应配置 HTTPS。消息加密不能防止端点进程或安装配置失陷。
 
@@ -748,7 +792,7 @@ STORE_API_TOKEN="$INTEGRATION_TOKEN" python3 examples/upload-image.py \
 
 中心仅能记录 Connector 实际返回的内容。旧节点若只传 `Store upstream returned HTTP 400`，可记录上游状态 400，但无法推断 Apple 的具体字段；更新中心不会补回升级前缺失的日志。多步骤失败、超时或调用方取消都不能证明商店未修改。
 
-每个账号同时只执行一条商店请求，商店请求默认等待 60 秒；文件传输使用第 11 节的独立 30 分钟期限。失败、断线不自动重放或重试，没有持久任务或幂等键去重。超时不代表商店未修改，已开始的工作可能继续完成清理，期间保持账号忙碌；用户重新触发前应查询真实状态。Apple 多步骤写入可能部分成功。
+每个账号同时只执行一条商店请求，商店请求默认等待 60 秒；文件传输使用第 11 节的独立 30 分钟期限。新版节点的纯图片请求快速受理并创建持久任务，节点按原 jobId 去重；其他同步请求没有持久任务或幂等键去重。失败、断线不自动重放或重试。超时不代表商店未修改，已开始的工作可能继续完成清理，期间保持账号忙碌；用户重新触发前应查询真实状态。Apple 多步骤写入可能部分成功。
 
 
 ## 商店 Connector 本机日志

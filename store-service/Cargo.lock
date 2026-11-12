@@ -2138,6 +2138,7 @@ dependencies = [
  "axum",
  "futures-util",
  "hex",
+ "image",
  "libc",
  "md5",
  "reqwest",

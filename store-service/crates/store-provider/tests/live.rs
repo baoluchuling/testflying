@@ -685,6 +685,133 @@ fn google_base(r: &Record) -> Option<Reply> {
     None
 }
 
+#[tokio::test]
+async fn async_image_mutation_response_loss_preserves_original_error_and_explicit_rejections() {
+    for platform in [Platform::Ios, Platform::Android] {
+        for rejected in [false, true] {
+            let image = png();
+            let endpoint = Arc::new(Mutex::new(String::new()));
+            let upstream = endpoint.clone();
+            let fake = Fake::new(move |r| {
+                if r.uri == "/v1/appAssetLibraryPlacementOrderingRequests"
+                    || r.uri.contains(":commit?")
+                {
+                    // The vendor accepted a mutation but its success body is unusable,
+                    // or explicitly rejected it. These must produce different certainty.
+                    return (
+                        if rejected {
+                            StatusCode::BAD_REQUEST
+                        } else {
+                            StatusCode::OK
+                        },
+                        vec![],
+                        b"lost response".to_vec(),
+                    );
+                }
+                if r.method == "DELETE" && r.uri.ends_with("/edits/edit") {
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        vec![],
+                        b"discard also failed".to_vec(),
+                    );
+                }
+                apple_upload_base(r, &image, &upstream.lock().unwrap())
+                    .or_else(|| apple_base(r))
+                    .or_else(|| google_base(r))
+                    .unwrap_or_else(|| ok(json!({})))
+            })
+            .await;
+            *endpoint.lock().unwrap() = fake.url.clone();
+            let keys = Keys::new();
+            let assets =
+                store_provider::assets::AssetStore::new("image-node".into(), "22".repeat(32));
+            let gateway =
+                Gateway::with_assets(keys.config(&fake.url), Some(assets.clone())).unwrap();
+            let request = request(
+                platform,
+                Operation::Sync,
+                json!({"operation":"update_app_metadata",
+                "locale":"en-US","syncScopes":["store_images"],"metadata":{"storeImages":{
+                    "phone_screenshots":{"urls":[format!("{}/image.png", fake.url)]}}}}),
+            );
+            let lease = assets.claim(&request).unwrap();
+            let error = gateway
+                .execute_with_assets(&request, lease)
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "store_upstream_error");
+            assert_eq!(
+                error.message,
+                if rejected {
+                    "Store upstream returned HTTP 400"
+                } else {
+                    "Invalid store JSON response"
+                }
+            );
+            assert_eq!(error.outcome_unknown, !rejected);
+            assert_eq!(
+                error.body()["outcomeUnknown"],
+                if rejected { Value::Null } else { json!(true) }
+            );
+            let records = fake.records();
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|r| r.uri == "/v1/appAssetLibraryPlacementOrderingRequests"
+                        || r.uri.contains(":commit?"))
+                    .count(),
+                1
+            );
+            if platform == Platform::Android {
+                assert!(records
+                    .iter()
+                    .any(|r| r.method == "DELETE" && r.uri.ends_with("/edits/edit")));
+            } else {
+                // The original synchronous path keeps its error shape and certainty.
+                assert!(!gateway.execute(&request).await.unwrap_err().outcome_unknown);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn async_image_download_and_validation_errors_remain_known_despite_discard_failure() {
+    let fake = Fake::new(|r| {
+        if r.uri == "/image.png" {
+            return (StatusCode::BAD_GATEWAY, vec![], vec![]);
+        }
+        if r.method == "DELETE" && r.uri.ends_with("/edits/edit") {
+            return (StatusCode::BAD_GATEWAY, vec![], vec![]);
+        }
+        google_base(r).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let assets = store_provider::assets::AssetStore::new("image-node".into(), "22".repeat(32));
+    let gateway = Gateway::with_assets(keys.config(&fake.url), Some(assets.clone())).unwrap();
+    let mut request = request(
+        Platform::Android,
+        Operation::Sync,
+        json!({"operation":"update_app_metadata",
+        "locale":"en-US","syncScopes":["store_images"],"metadata":{"storeImages":{
+            "phone_screenshots":{"urls":[format!("{}/image.png", fake.url)]}}}}),
+    );
+    let error = gateway
+        .execute_with_assets(&request, assets.claim(&request).unwrap())
+        .await
+        .unwrap_err();
+    assert_eq!(error.message, "Image download returned an error");
+    assert!(!error.outcome_unknown);
+    let calls = fake.records().len();
+    request.payload["locale"] = json!(false);
+    let error = gateway
+        .execute_with_assets(&request, assets.claim(&request).unwrap())
+        .await
+        .unwrap_err();
+    assert!(!error.outcome_unknown);
+    assert_eq!(fake.records().len(), calls);
+}
+
 #[test]
 fn defaults_and_debug_do_not_expose_credentials() {
     let config:ProviderConfig=serde_json::from_value(json!({"appleIssuerId":"secret-issuer","appleKeyId":"secret-key","storeProxyUrl":"http://user:secret@example.test"})).unwrap();
