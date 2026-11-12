@@ -201,5 +201,159 @@
       "store-provider/src/diagnostics.rs:58 unused_mut under Windows",
       "store-connector/src/install.rs:230 unused_mut under Windows"
     ]
+  },
+  "captureEndToEndTest": {
+    "runId": "d188712d531245ffbaa65bcaf6d31603",
+    "appId": "amberia",
+    "requested": {
+      "platform": "app_store",
+      "device": "phone",
+      "languages": [
+        "en"
+      ],
+      "slots": [
+        "discover"
+      ],
+      "requirements": "截取 Amberia iOS 英语发现页截图。",
+      "dispatch": false
+    },
+    "createdAtMs": 1794457821087,
+    "submissionOutcome": "center job associated by Studio",
+    "centerTasksSubmitted": 1,
+    "externalCreateHttpStatus": 200,
+    "studioJobId": "cap_341177f23d07",
+    "externalJob": {
+      "id": "cap_341177f23d07",
+      "upstream_job_id": null,
+      "platform": "app_store",
+      "device": "phone",
+      "expected": [
+        {
+          "name": "发现推荐",
+          "slot": "discover",
+          "language": "en",
+          "description": "进入发现或推荐页面，展示加载完成的书籍推荐内容，保留封面、书名和页面导航；不要使用搜索空态或启动页代替。"
+        }
+      ],
+      "missing": [],
+      "prompt": "应用截图采集需求：Amberia\n目标平台：ios；设备：手机。\n应用包名：com.cfs.amberia。\n目标语种：en。请将应用切换到对应语种后采集。\n采集范围：1 个页面，共 1 张截图；每个页面按下列指定语种各采集 1 张。\n\n页面采集清单：\n1. 发现推荐（槽位标识：discover）\n   采集语种：en。\n   采集要求：进入发现或推荐页面，展示加载完成的书籍推荐内容，保留封面、书名和页面导航；不要使用搜索空态或启动页代替。\n\n通用要求：\n- 在指定设备上实际运行该应用，采集真实界面；如页面需要登录或内容准备，先完成必要操作。\n- 等待内容加载完成，避免空白页、骨架屏、加载提示、错误提示及遮挡主要内容的临时弹窗。\n- 保留完整原始画面和设备原始分辨率，不裁切、不拼接，不添加宣传文案、装饰或设备外框。\n- 严格按页面及语种采集；无法到达的页面不要用其他页面代替，也不要用其他语言截图凑数。\n\n补充需求：\n截取 Amberia iOS 英语发现页截图。",
+      "dispatch_status": "pending",
+      "coverage_status": "done",
+      "callback_revision": 0
+    },
+    "externalJobKeys": [
+      "id",
+      "app_id",
+      "platform",
+      "device",
+      "bundle_id",
+      "expected",
+      "prompt",
+      "root_id",
+      "refill_of",
+      "round",
+      "upstream_job_id",
+      "connector_id",
+      "dispatch_status",
+      "upstream_status",
+      "attempts",
+      "dispatched_at",
+      "cancelled_at",
+      "last_error",
+      "poll_error",
+      "polled_at",
+      "received",
+      "callback_results",
+      "callback_status",
+      "callback_error",
+      "callback_revision",
+      "submissions",
+      "received_at",
+      "created",
+      "updated",
+      "coverage_status",
+      "missing",
+      "covered"
+    ],
+    "observationRunId": "4d743b15bede4c03bb0706c97dc1540d",
+    "dispatchStartedAtMs": 1794457959499,
+    "dispatchHttpStatus": 200,
+    "externalDispatchStatus": "submitted",
+    "jobId": "7778a9b3-f1e1-4143-9362-7287eb23eae3",
+    "centerStatus": "succeeded",
+    "centerError": null,
+    "notificationStatus": "delivered",
+    "notificationError": null,
+    "callbackRevision": 1,
+    "callbackStatus": "done",
+    "coverageStatus": "done",
+    "receivedAt": "2026-11-12T04:34:48.263442+00:00",
+    "callbackResults": [
+      {
+        "index": 0,
+        "slot": "discover",
+        "language": "en",
+        "result": "created",
+        "material_id": "a283ec44083b46d69bde089b9bd79f9a"
+      }
+    ],
+    "outcome": "succeeded",
+    "image": {
+      "targetIndex": 0,
+      "target": {
+        "device": "phone",
+        "locale": "en",
+        "page": "discover"
+      },
+      "objectKey": "store-studio/materials/36/3624d09504544988beaafef7d013c763.png",
+      "imageUrl": "https://auto-creative.oss-us-east-1.aliyuncs.com/store-studio/materials/36/3624d09504544988beaafef7d013c763.png",
+      "sizeBytes": 3251276,
+      "sha256": "e697d2ec6574bf3e7091ff70adf95551bb5309597363f96478445585827a94fe"
+    },
+    "pngWidth": 1206,
+    "pngHeight": 2622,
+    "imageSha256Verified": true,
+    "publicUnsignedPngVerified": true,
+    "studioMaterial": {
+      "id": "a283ec44083b46d69bde089b9bd79f9a",
+      "kind": "screenshot",
+      "app_id": "amberia",
+      "platform": "app_store",
+      "language": "en",
+      "device": "phone",
+      "scene": "discover",
+      "origin": "capture",
+      "width": null,
+      "height": null,
+      "capture_job_id": null,
+      "capture_slot": null,
+      "source_job_id": null
+    },
+    "studioMaterialFound": true,
+    "completedAtMs": 1794458097119,
+    "actualStoreWrites": 0,
+    "taskNotResubmitted": true,
+    "localPreviewCleaned": true,
+    "visualVerification": "English Discover page with loaded book content; native PNG 1206x2622",
+    "remoteSimulatorCleanupDirectlyVerified": false,
+    "artifactLifecycle": {
+      "runIds": [
+        "52d28c9559404ac2a955c68a23306cfc",
+        "fbac5192c02a4790b1723ca2c6ec1239",
+        "13df539137bc4f6db706ba5b8786bf39",
+        "d188712d531245ffbaa65bcaf6d31603",
+        "4d743b15bede4c03bb0706c97dc1540d"
+      ],
+      "outcome": "succeeded",
+      "cleanup": "all run-owned local temporary roots and observation processes deleted",
+      "releasedBytes": null,
+      "retainedEvidence": null,
+      "evidenceExpiresAt": null,
+      "remainingLocalProcesses": 0,
+      "remainingRunOwnedLocalExternalResources": 0,
+      "quarantineAdded": false,
+      "finalAudit": "five pre-existing records only; no new running or quarantined run",
+      "formalOutputsRetained": "center job, external Studio capture and material, OSS screenshot retained as requested"
+    }
   }
 }
