@@ -1,17 +1,17 @@
 {
-  "runId": "0d23777aef504ae081abead2068f7322",
+  "runId": "2d7dae89d26044148f06bc4b9a7b9903",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-12T03:58:00.451551+00:00",
-  "deploymentCommit": "8ef243148b8fa7e4faff1469429ce80351f8a6eb",
-  "binarySourceCommit": "ea67ead7bb4fa5354b0697cdedd04a1a3cdbced4",
-  "apiSha256": "814ff08fc4900aeacb2303d1725f4201b68fe9c0a442eedf71ab28f3962e002a",
+  "finishedAt": "2026-11-12T10:41:57.641343+00:00",
+  "deploymentCommit": "37c349e3a257c9ddcc368a4210d260834bfe6584",
+  "binarySourceCommit": "ca8b64471663c4ba397f82f6339277f8db026c75",
+  "apiSha256": "1ccde6a5146f2efeac9b0c9f5b09eeb415a5bba0ef28e55d26cd12a10056cfce",
   "connectorBinarySha256": {
-    "linux-amd64": "7430b86d4f970d33819eae02351c4b41c140f5429c6259bc99ccff78abd5de17",
-    "darwin-arm64": "26805217d5cd8c0984da7b82de671073e98397ab8975a1d3afcc81b7f7b644e7",
-    "windows-amd64": "8f7e2789acbe8f2b8c533fd59fabd924c2c88cdc9481378b1a2f039ab22288d9"
+    "linux-amd64": "d9e663adaf4328e22448ae8c3022f7a6695afd1f31464833ab4ae3c730ffc368",
+    "darwin-arm64": "115d1f5ea6159e9bcfd56164918bc116b5fd14196d19039338d2debc9a520dbe",
+    "windows-amd64": "0fc35c83f03f50a03bc8863eea5740a1c7d7a83e47eb186c19cfc9b111cc19ef"
   },
-  "screenshotConnectorSha256": "de503d301d13786da0d194a3bf62465f61f36f53897fd0a7837578bfc839e307",
+  "screenshotConnectorSha256": "24f71555f8cdcad39e80f1d08590fe16b6605d39f1c41b453daf16022bf082e5",
   "screenshotUploadConfigured": false,
   "checks": [
     "node connection inventory readable before rollout",
@@ -30,14 +30,21 @@
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
+    "existing Connector inventory available for download verification",
+    "linux-amd64 updated installation package available",
+    "linux-amd64 downloaded native installer preparation program verified",
+    "darwin-arm64 updated installation package available",
+    "darwin-arm64 downloaded native installer preparation program verified",
+    "windows-amd64 updated installation package available",
+    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
-    "http ten store, two node and six screenshot endpoints plus upload helpers",
+    "http eleven store, two node and six screenshot endpoints plus upload helpers",
     "http language and device options with platform limits",
     "http exact deployed markdown document",
     "http exact deployed openapi document",
     "http anonymous documentation denied",
     "https business-token documentation available",
-    "https ten store, two node and six screenshot endpoints plus upload helpers",
+    "https eleven store, two node and six screenshot endpoints plus upload helpers",
     "https language and device options with platform limits",
     "https exact deployed markdown document",
     "https exact deployed openapi document",
@@ -63,81 +70,70 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "02a7ae16e2c74539a002b70d9d604f0f",
-    "sourceCommit": "d3f2119f414d9dd97efc06485ec5628020ad63e5",
+    "runId": "2d7dae89d26044148f06bc4b9a7b9903",
+    "sourceCommit": "37c349e3a257c9ddcc368a4210d260834bfe6584",
     "downloadVerified": {
-      "linux-amd64": "7430b86d4f970d33819eae02351c4b41c140f5429c6259bc99ccff78abd5de17",
-      "darwin-arm64": "26805217d5cd8c0984da7b82de671073e98397ab8975a1d3afcc81b7f7b644e7",
-      "windows-amd64": "8f7e2789acbe8f2b8c533fd59fabd924c2c88cdc9481378b1a2f039ab22288d9"
+      "linux-amd64": "d9e663adaf4328e22448ae8c3022f7a6695afd1f31464833ab4ae3c730ffc368",
+      "darwin-arm64": "115d1f5ea6159e9bcfd56164918bc116b5fd14196d19039338d2debc9a520dbe",
+      "windows-amd64": "0fc35c83f03f50a03bc8863eea5740a1c7d7a83e47eb186c19cfc9b111cc19ef"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
     "configurationMergeSupported": true,
     "actualStoreAccountsUsed": false
   },
-  "screenshotTargetForwarding": {
-    "taskProtocol": 3,
-    "centerGeneratedJobId": true,
-    "required": [
-      "platform",
-      "bundleIdentifier",
-      "prompt",
-      "target"
-    ],
-    "multiTarget": true,
-    "originalLookupPathThroughHttpsProxyVerified": true,
-    "originalPromptPreserved": true,
-    "allTargetsConfirmedForSuccess": true,
-    "partialResultsOnFailure": true,
-    "notificationProtocol": "capture-v1",
-    "singleDevicePerJob": true,
-    "noTheme": true,
-    "stableUnsignedImageUrls": true,
-    "imagePathContainsJobId": false,
-    "objectPathFormat": "store-studio/materials/xx/32lowerhexImageId.png",
-    "callbackHistoryBackfill": false,
-    "settingsCiphertextUnchangedDuringDeployment": true,
+  "asyncStoreImages": {
+    "initialSuccessMeaning": "validated and admitted; not store completion",
+    "queryPath": "/v1/store-management/apps/{platform}/{bundleIdentifier}/sync-jobs/{jobId}",
+    "jobIdSource": "original center requestId",
+    "queryThroughHttpsProxyVerified": true,
+    "noStoreRequestsForQuery": true,
+    "retentionDays": 7,
+    "pureTextAndMixedRemainSynchronous": true,
+    "bothUrlAndAssetIdSupported": true,
+    "urlAnonymousTempfile": true,
+    "assetLeaseOwnedByActualBackgroundWorker": true,
+    "earlyHttpResponseDoesNotCleanFiles": true,
+    "requiresStoreNodeUpgrade": true,
+    "legacyNodesRemainSynchronous": true,
+    "centerRestartOnlyReconcilesStatus": true,
+    "storeWriteReplay": false,
+    "settingsCiphertextUnchanged": true,
     "appBindingsUnchanged": true,
+    "forwardingUnchanged": true,
     "storeBindings": 6,
     "screenshotBindings": 3,
-    "forwarding": {
-      "ios": true,
-      "android": false
-    },
-    "ossEnabled": true,
-    "ossSecretConfigured": true,
-    "notificationStatus": "configured",
-    "actualOssRequests": 0,
     "actualStoreRequests": 0,
     "storeWrites": 0,
-    "screenshotJobsCreated": 0
+    "screenshotJobsCreated": 0,
+    "externalNotificationsSent": 0
   },
   "screenshotConnectorPublication": {
-    "sourceCommit": "d3f2119f414d9dd97efc06485ec5628020ad63e5",
-    "sha256": "de503d301d13786da0d194a3bf62465f61f36f53897fd0a7837578bfc839e307",
+    "sourceCommit": "ca8b64471663c4ba397f82f6339277f8db026c75",
+    "sha256": "24f71555f8cdcad39e80f1d08590fe16b6605d39f1c41b453daf16022bf082e5",
     "downloadVerified": true,
     "architecture": "arm64",
     "ossCredentialsInPackage": false,
-    "directOssProtocol": 2,
     "taskProtocol": 3,
     "requiresNodeUpgrade": false,
-    "existingProtocol3WorkerCompatible": true,
-    "binaryPreserved": true
-  },
-  "httpCallbackSettings": {
-    "url": "http://47.85.176.62:8420/api/hooks/captures",
-    "status": "configured",
-    "tokenConfigured": true,
-    "tokenOmittedFromUpdate": true,
-    "ossSettingsUnchanged": true,
-    "manualCallbackTestRequests": 0,
-    "automaticDeliveryEnabled": true
+    "sharedSourceProvenanceRebuild": true
   },
   "artifactLifecycle": {
     "runs": [
       {
-        "runId": "e1ef3d2d8cbf445eae1e042d120dfb90",
-        "kind": "notification config and unauthenticated HTTP route probe",
+        "runId": "3f3cd69f2c2d4e40b97181212a78e463",
+        "kind": "initial native validation",
+        "outcome": "compile failed; corrected",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/3f3cd69f2c2d4e40b97181212a78e463",
+        "evidenceExpiresAt": "2026-11-19T10:16:07.946290+00:00"
+      },
+      {
+        "runId": "d8b03bf5d5d541dab75de66a5d7dbc5f",
+        "kind": "inspection",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -147,8 +143,8 @@
         "evidenceExpiresAt": null
       },
       {
-        "runId": "d0181e8934ed42c18f537db0272da1c4",
-        "kind": "HTTP callback UI checks",
+        "runId": "49f3afe09c214680b9f0ad37ad04ac65",
+        "kind": "pre-final native verification",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -158,8 +154,8 @@
         "evidenceExpiresAt": null
       },
       {
-        "runId": "89479c04d97e4a19a1e2fce0edf03b78",
-        "kind": "HTTP callback full verification",
+        "runId": "5859877f2874484fb91100df0128ae05",
+        "kind": "final native validation",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -169,8 +165,19 @@
         "evidenceExpiresAt": null
       },
       {
-        "runId": "3b832a31cdf24bf69082b13b1bdea79e",
-        "kind": "API-only release build",
+        "runId": "71fd473b34cd4e88a1fd91c57175451e",
+        "kind": "all release build",
+        "outcome": "succeeded",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": null,
+        "evidenceExpiresAt": null
+      },
+      {
+        "runId": "f737da16d9ab447aadc5643ceca6f8c0",
+        "kind": "Windows release build",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -180,13 +187,14 @@
         "evidenceExpiresAt": null
       }
     ],
-    "deploymentRunId": "0d23777aef504ae081abead2068f7322",
-    "deploymentCleanup": "supervisor deleted owned roots; exit 0; no retained success evidence",
+    "deploymentRunId": "2d7dae89d26044148f06bc4b9a7b9903",
+    "deploymentOutcome": "succeeded",
+    "deploymentCleanup": "deleted owned roots; supervisor report verified after exit",
     "deploymentRemainingProcesses": 0,
     "deploymentRemainingExternalResources": 0,
     "deploymentEvidencePath": null,
     "deploymentEvidenceExpiresAt": null,
-    "finalAudit": "five pre-existing records only; no new running or quarantined run",
+    "installedIntegrationHeartbeatAndHashesVerified": true,
     "releasedBytes": "not measured",
     "quarantineAdded": false,
     "existingAuditFindings": [
@@ -196,164 +204,10 @@
       "8bb74c58fb7f431299fce19753d8f672",
       "9bff00c45b9440e9b18bde4cec846364"
     ],
-    "formalDeliverables": "release binaries and verification reports retained; production version remains deployed",
+    "formalDeliverables": "release binaries and verification reports retained; production remains deployed",
     "preexistingWindowsWarnings": [
       "store-provider/src/diagnostics.rs:58 unused_mut under Windows",
       "store-connector/src/install.rs:230 unused_mut under Windows"
     ]
-  },
-  "captureEndToEndTest": {
-    "runId": "d188712d531245ffbaa65bcaf6d31603",
-    "appId": "amberia",
-    "requested": {
-      "platform": "app_store",
-      "device": "phone",
-      "languages": [
-        "en"
-      ],
-      "slots": [
-        "discover"
-      ],
-      "requirements": "截取 Amberia iOS 英语发现页截图。",
-      "dispatch": false
-    },
-    "createdAtMs": 1794457821087,
-    "submissionOutcome": "center job associated by Studio",
-    "centerTasksSubmitted": 1,
-    "externalCreateHttpStatus": 200,
-    "studioJobId": "cap_341177f23d07",
-    "externalJob": {
-      "id": "cap_341177f23d07",
-      "upstream_job_id": null,
-      "platform": "app_store",
-      "device": "phone",
-      "expected": [
-        {
-          "name": "发现推荐",
-          "slot": "discover",
-          "language": "en",
-          "description": "进入发现或推荐页面，展示加载完成的书籍推荐内容，保留封面、书名和页面导航；不要使用搜索空态或启动页代替。"
-        }
-      ],
-      "missing": [],
-      "prompt": "应用截图采集需求：Amberia\n目标平台：ios；设备：手机。\n应用包名：com.cfs.amberia。\n目标语种：en。请将应用切换到对应语种后采集。\n采集范围：1 个页面，共 1 张截图；每个页面按下列指定语种各采集 1 张。\n\n页面采集清单：\n1. 发现推荐（槽位标识：discover）\n   采集语种：en。\n   采集要求：进入发现或推荐页面，展示加载完成的书籍推荐内容，保留封面、书名和页面导航；不要使用搜索空态或启动页代替。\n\n通用要求：\n- 在指定设备上实际运行该应用，采集真实界面；如页面需要登录或内容准备，先完成必要操作。\n- 等待内容加载完成，避免空白页、骨架屏、加载提示、错误提示及遮挡主要内容的临时弹窗。\n- 保留完整原始画面和设备原始分辨率，不裁切、不拼接，不添加宣传文案、装饰或设备外框。\n- 严格按页面及语种采集；无法到达的页面不要用其他页面代替，也不要用其他语言截图凑数。\n\n补充需求：\n截取 Amberia iOS 英语发现页截图。",
-      "dispatch_status": "pending",
-      "coverage_status": "done",
-      "callback_revision": 0
-    },
-    "externalJobKeys": [
-      "id",
-      "app_id",
-      "platform",
-      "device",
-      "bundle_id",
-      "expected",
-      "prompt",
-      "root_id",
-      "refill_of",
-      "round",
-      "upstream_job_id",
-      "connector_id",
-      "dispatch_status",
-      "upstream_status",
-      "attempts",
-      "dispatched_at",
-      "cancelled_at",
-      "last_error",
-      "poll_error",
-      "polled_at",
-      "received",
-      "callback_results",
-      "callback_status",
-      "callback_error",
-      "callback_revision",
-      "submissions",
-      "received_at",
-      "created",
-      "updated",
-      "coverage_status",
-      "missing",
-      "covered"
-    ],
-    "observationRunId": "4d743b15bede4c03bb0706c97dc1540d",
-    "dispatchStartedAtMs": 1794457959499,
-    "dispatchHttpStatus": 200,
-    "externalDispatchStatus": "submitted",
-    "jobId": "7778a9b3-f1e1-4143-9362-7287eb23eae3",
-    "centerStatus": "succeeded",
-    "centerError": null,
-    "notificationStatus": "delivered",
-    "notificationError": null,
-    "callbackRevision": 1,
-    "callbackStatus": "done",
-    "coverageStatus": "done",
-    "receivedAt": "2026-11-12T04:34:48.263442+00:00",
-    "callbackResults": [
-      {
-        "index": 0,
-        "slot": "discover",
-        "language": "en",
-        "result": "created",
-        "material_id": "a283ec44083b46d69bde089b9bd79f9a"
-      }
-    ],
-    "outcome": "succeeded",
-    "image": {
-      "targetIndex": 0,
-      "target": {
-        "device": "phone",
-        "locale": "en",
-        "page": "discover"
-      },
-      "objectKey": "store-studio/materials/36/3624d09504544988beaafef7d013c763.png",
-      "imageUrl": "https://auto-creative.oss-us-east-1.aliyuncs.com/store-studio/materials/36/3624d09504544988beaafef7d013c763.png",
-      "sizeBytes": 3251276,
-      "sha256": "e697d2ec6574bf3e7091ff70adf95551bb5309597363f96478445585827a94fe"
-    },
-    "pngWidth": 1206,
-    "pngHeight": 2622,
-    "imageSha256Verified": true,
-    "publicUnsignedPngVerified": true,
-    "studioMaterial": {
-      "id": "a283ec44083b46d69bde089b9bd79f9a",
-      "kind": "screenshot",
-      "app_id": "amberia",
-      "platform": "app_store",
-      "language": "en",
-      "device": "phone",
-      "scene": "discover",
-      "origin": "capture",
-      "width": null,
-      "height": null,
-      "capture_job_id": null,
-      "capture_slot": null,
-      "source_job_id": null
-    },
-    "studioMaterialFound": true,
-    "completedAtMs": 1794458097119,
-    "actualStoreWrites": 0,
-    "taskNotResubmitted": true,
-    "localPreviewCleaned": true,
-    "visualVerification": "English Discover page with loaded book content; native PNG 1206x2622",
-    "remoteSimulatorCleanupDirectlyVerified": false,
-    "artifactLifecycle": {
-      "runIds": [
-        "52d28c9559404ac2a955c68a23306cfc",
-        "fbac5192c02a4790b1723ca2c6ec1239",
-        "13df539137bc4f6db706ba5b8786bf39",
-        "d188712d531245ffbaa65bcaf6d31603",
-        "4d743b15bede4c03bb0706c97dc1540d"
-      ],
-      "outcome": "succeeded",
-      "cleanup": "all run-owned local temporary roots and observation processes deleted",
-      "releasedBytes": null,
-      "retainedEvidence": null,
-      "evidenceExpiresAt": null,
-      "remainingLocalProcesses": 0,
-      "remainingRunOwnedLocalExternalResources": 0,
-      "quarantineAdded": false,
-      "finalAudit": "five pre-existing records only; no new running or quarantined run",
-      "formalOutputsRetained": "center job, external Studio capture and material, OSS screenshot retained as requested"
-    }
   }
 }
