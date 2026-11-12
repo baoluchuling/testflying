@@ -327,7 +327,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             for scheme in ("http", "https"):
                 status, body = request(docs, snapshot["token"], scheme=scheme)
                 catalog = json.loads(body)
-                check(status == 200 and catalog["contractVersion"] == "2026-11-11",
+                check(status == 200 and catalog["contractVersion"] == "2026-11-12",
                       scheme + " business-token documentation available")
                 endpoints = catalog["endpoints"]
                 check(len(endpoints) == 18
@@ -381,7 +381,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                       "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
                       "actualStoreAccountsUsed": False,
-                      "apiDocumentation": {"contractVersion": "2026-11-11", "formats": ["json", "markdown", "openapi"],
+                      "apiDocumentation": {"contractVersion": "2026-11-12", "formats": ["json", "markdown", "openapi"],
                                            "existingIntegrationTokenVerified": bool(existing_token)},
                       "cleanup": "See the supervisor cleanup report for this runId"}
             if "storeConnectorPublication" in previous_report:
