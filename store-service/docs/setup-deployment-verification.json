@@ -1,17 +1,17 @@
 {
-  "runId": "cc72d8a7a6d64c8ea1e72cdb9f8c8bb1",
+  "runId": "02a7ae16e2c74539a002b70d9d604f0f",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-11T13:04:38.092454+00:00",
-  "deploymentCommit": "f570035b3abe123c3148ede6fba725e81561ca48",
-  "binarySourceCommit": "259dfba69714517142e9c228c015ab4681dbfbc4",
-  "apiSha256": "bde75cad4d5fb81e1e7fcd2fcfc7cd72a082e8f7a3c064b51980a6f3453fc776",
+  "finishedAt": "2026-11-12T03:42:40.189796+00:00",
+  "deploymentCommit": "d3f2119f414d9dd97efc06485ec5628020ad63e5",
+  "binarySourceCommit": "8994f7d88bd0bc7a4e1f27684d4dba181b7a21d7",
+  "apiSha256": "664172e62ccb0f3b63dc55ff5995eab1b2edf642c808c3568d7900eb0e5e0946",
   "connectorBinarySha256": {
-    "linux-amd64": "76abaa9a62caa9540c285d0287207cc090fe7a64b5e51f7c35f56b6cff81e55d",
-    "darwin-arm64": "edcf6180870610e43ecc588fc888548b15477aa13b86191e210bf9f7702943a0",
-    "windows-amd64": "1cdce53054471b15fa33ca005f45e93f78e805c013836aa81e8084d9a68e7fc7"
+    "linux-amd64": "7430b86d4f970d33819eae02351c4b41c140f5429c6259bc99ccff78abd5de17",
+    "darwin-arm64": "26805217d5cd8c0984da7b82de671073e98397ab8975a1d3afcc81b7f7b644e7",
+    "windows-amd64": "8f7e2789acbe8f2b8c533fd59fabd924c2c88cdc9481378b1a2f039ab22288d9"
   },
-  "screenshotConnectorSha256": "5cae32e80b394bd9c2834fd1e793ca8c8544f7e25a06530807a28d1ba3332d7a",
+  "screenshotConnectorSha256": "de503d301d13786da0d194a3bf62465f61f36f53897fd0a7837578bfc839e307",
   "screenshotUploadConfigured": false,
   "checks": [
     "node connection inventory readable before rollout",
@@ -60,7 +60,7 @@
   "appBindingsWritten": 0,
   "actualStoreAccountsUsed": false,
   "apiDocumentation": {
-    "contractVersion": "2026-11-11",
+    "contractVersion": "2026-11-12",
     "formats": [
       "json",
       "markdown",
@@ -70,12 +70,12 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "cc72d8a7a6d64c8ea1e72cdb9f8c8bb1",
-    "sourceCommit": "f570035b3abe123c3148ede6fba725e81561ca48",
+    "runId": "02a7ae16e2c74539a002b70d9d604f0f",
+    "sourceCommit": "d3f2119f414d9dd97efc06485ec5628020ad63e5",
     "downloadVerified": {
-      "linux-amd64": "76abaa9a62caa9540c285d0287207cc090fe7a64b5e51f7c35f56b6cff81e55d",
-      "darwin-arm64": "edcf6180870610e43ecc588fc888548b15477aa13b86191e210bf9f7702943a0",
-      "windows-amd64": "1cdce53054471b15fa33ca005f45e93f78e805c013836aa81e8084d9a68e7fc7"
+      "linux-amd64": "7430b86d4f970d33819eae02351c4b41c140f5429c6259bc99ccff78abd5de17",
+      "darwin-arm64": "26805217d5cd8c0984da7b82de671073e98397ab8975a1d3afcc81b7f7b644e7",
+      "windows-amd64": "8f7e2789acbe8f2b8c533fd59fabd924c2c88cdc9481378b1a2f039ab22288d9"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
@@ -96,7 +96,13 @@
     "originalPromptPreserved": true,
     "allTargetsConfirmedForSuccess": true,
     "partialResultsOnFailure": true,
-    "notificationProtocol": "pending",
+    "notificationProtocol": "capture-v1",
+    "singleDevicePerJob": true,
+    "noTheme": true,
+    "stableUnsignedImageUrls": true,
+    "imagePathContainsJobId": false,
+    "objectPathFormat": "store-studio/materials/xx/32lowerhexImageId.png",
+    "callbackHistoryBackfill": false,
     "settingsCiphertextUnchanged": true,
     "appBindingsUnchanged": true,
     "storeBindings": 6,
@@ -115,13 +121,138 @@
     "externalNotificationsSent": 0
   },
   "screenshotConnectorPublication": {
-    "sourceCommit": "f570035b3abe123c3148ede6fba725e81561ca48",
-    "sha256": "5cae32e80b394bd9c2834fd1e793ca8c8544f7e25a06530807a28d1ba3332d7a",
+    "sourceCommit": "d3f2119f414d9dd97efc06485ec5628020ad63e5",
+    "sha256": "de503d301d13786da0d194a3bf62465f61f36f53897fd0a7837578bfc839e307",
     "downloadVerified": true,
     "architecture": "arm64",
     "ossCredentialsInPackage": false,
     "directOssProtocol": 2,
     "taskProtocol": 3,
-    "requiresNodeUpgrade": true
+    "requiresNodeUpgrade": false,
+    "existingProtocol3WorkerCompatible": true
+  },
+  "artifactLifecycle": {
+    "runs": [
+      {
+        "runId": "1f22d61dadac4706a3982cc5510fc850",
+        "kind": "first rollout",
+        "outcome": "rolled back on old contract-version assertion",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/1f22d61dadac4706a3982cc5510fc850",
+        "evidenceExpiresAt": "2026-11-19T03:40:48.678041+00:00"
+      },
+      {
+        "runId": "88966eb1993142cd8c03d14d7314a6e1",
+        "kind": "mock UI",
+        "outcome": "succeeded",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": null,
+        "evidenceExpiresAt": null
+      },
+      {
+        "runId": "f408caaea01548c5b2e1350df3126ce9",
+        "kind": "initial compile",
+        "outcome": "failed; corrected",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/f408caaea01548c5b2e1350df3126ce9",
+        "evidenceExpiresAt": "2026-11-19T03:18:09.626893+00:00"
+      },
+      {
+        "runId": "59e1c11a4e36445d92e985057a0bcd8a",
+        "kind": "intermediate verification",
+        "outcome": "failed; corrected",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/59e1c11a4e36445d92e985057a0bcd8a",
+        "evidenceExpiresAt": "2026-11-19T03:23:14.264639+00:00"
+      },
+      {
+        "runId": "d0e367ec645e4784b8b7dd3d4e0de6bf",
+        "kind": "initial Windows build",
+        "outcome": "refused changed source",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/d0e367ec645e4784b8b7dd3d4e0de6bf",
+        "evidenceExpiresAt": "2026-11-19T03:27:34.112889+00:00"
+      },
+      {
+        "runId": "db271a6fa5ea429aa85da96692fafe8e",
+        "kind": "initial all-platform build",
+        "outcome": "refused changed source",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/db271a6fa5ea429aa85da96692fafe8e",
+        "evidenceExpiresAt": "2026-11-19T03:30:31.412900+00:00"
+      },
+      {
+        "runId": "4c85f14eb2c34145ba56a55422c189d8",
+        "kind": "final verification",
+        "outcome": "succeeded",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": null,
+        "evidenceExpiresAt": null
+      },
+      {
+        "runId": "0e852ef910f14aa7baba344b07e7397a",
+        "kind": "final Windows build",
+        "outcome": "succeeded",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": null,
+        "evidenceExpiresAt": null
+      },
+      {
+        "runId": "3c076b3eef1743d39bd55f1b0716b85d",
+        "kind": "final all-platform build",
+        "outcome": "succeeded",
+        "cleanup": "deleted owned roots",
+        "releasedBytes": null,
+        "remainingProcesses": 0,
+        "remainingExternalResources": 0,
+        "evidencePath": null,
+        "evidenceExpiresAt": null
+      }
+    ],
+    "deploymentRunId": "02a7ae16e2c74539a002b70d9d604f0f",
+    "deploymentCleanup": "supervisor deleted owned roots; exit 0; no retained success evidence",
+    "deploymentRemainingProcesses": 0,
+    "deploymentRemainingExternalResources": 0,
+    "deploymentEvidencePath": null,
+    "deploymentEvidenceExpiresAt": null,
+    "finalAudit": "five pre-existing records only; no new running or quarantined run",
+    "releasedBytes": "not measured",
+    "quarantineAdded": false,
+    "existingAuditFindings": [
+      "1db3215ed081473b86a856c423cd083f",
+      "40e1db9ff2e54677b5ee4bff65412593",
+      "54f2240fc93741beaf04b5844736f2f6",
+      "8bb74c58fb7f431299fce19753d8f672",
+      "9bff00c45b9440e9b18bde4cec846364"
+    ],
+    "formalDeliverables": "release binaries and verification reports retained; production version remains deployed",
+    "preexistingWindowsWarnings": [
+      "store-provider/src/diagnostics.rs:58 unused_mut under Windows",
+      "store-connector/src/install.rs:230 unused_mut under Windows"
+    ]
   }
 }
