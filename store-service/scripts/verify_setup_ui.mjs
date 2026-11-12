@@ -383,7 +383,7 @@ try {
     await page.locator("#ossAccessKeyId").fill("fixture-access-key-id");
     await page.locator("#ossAccessKeySecret").fill("fixture-oss-secret");
     await page.locator("#ossSecurityToken").fill("fixture-sts-token");
-    await page.locator("#screenshotNotificationUrl").fill("https://notify.example.invalid/screenshots");
+    await page.locator("#screenshotNotificationUrl").fill("http://studio.example.invalid:8420/api/hooks/captures");
     await page.locator("#screenshotNotificationToken").fill("fixture-notification-token");
     heldSettings = new Promise((resolve) => { releaseSettings = resolve; });
     const started = new Promise((resolve) => { settingsStarted = resolve; });
@@ -402,7 +402,8 @@ try {
     assert.equal(screenshotSettingsWrites[0].oss.publicBaseUrl, "");
     await assertSettingsSecretsEmpty();
     for (const id of settingsSecrets) assert.equal(await page.locator(`#${id}`).getAttribute("placeholder"), "已配置，留空保留");
-    checks.push("mock OSS and pending notification settings save without notifying; secrets clear before the response and only configured flags return");
+    assert.equal(screenshotSettingsFixture.notification.url, "http://studio.example.invalid:8420/api/hooks/captures");
+    checks.push("mock OSS and HTTP notification settings save without notifying; secrets clear before the response and only configured flags return");
     await page.locator("#screenshotSettingsSave").click();
     await page.locator("#screenshotSettingsSave:enabled").waitFor();
     assert.equal(screenshotSettingsWrites.length, 2);

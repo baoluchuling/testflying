@@ -135,6 +135,23 @@ async fn destinations_are_https_admin_only_and_setup_session_keeps_secrets_write
     assert_eq!(saved["oss"]["accessKeySecretConfigured"], true);
     assert_eq!(saved["notification"]["status"], "configured");
     assert_eq!(saved["notification"]["tokenConfigured"], true);
+    let updated = send(
+        &app,
+        "PUT",
+        "/connector-setup/api/screenshot-settings",
+        "",
+        json!({"notification":{"url":"http://198.51.100.10:8420/api/hooks/captures"}}),
+        (true, Some(&cookie), true),
+    )
+    .await;
+    assert_eq!(updated.status(), StatusCode::OK);
+    let updated = value(updated).await;
+    assert_eq!(
+        updated["notification"]["url"],
+        "http://198.51.100.10:8420/api/hooks/captures"
+    );
+    assert_eq!(updated["notification"]["tokenConfigured"], true);
+    assert_eq!(updated["oss"], saved["oss"]);
     for secret in [
         "fixture-private-oss-secret",
         "fixture-private-sts-token",

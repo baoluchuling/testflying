@@ -90,6 +90,14 @@ fn invalid() -> StoreError {
 
 /// HTTP is accepted only for explicit loopback fixtures. Nonlocal destinations require TLS.
 pub(crate) fn destination_url(value: &str, root_only: bool) -> Result<Url, StoreError> {
+    validate_destination_url(value, root_only, false)
+}
+
+fn validate_destination_url(
+    value: &str,
+    root_only: bool,
+    allow_http: bool,
+) -> Result<Url, StoreError> {
     let url = Url::parse(value).map_err(|_| invalid())?;
     let host = url.host_str().unwrap_or_default();
     let local = host == "localhost"
@@ -98,7 +106,7 @@ pub(crate) fn destination_url(value: &str, root_only: bool) -> Result<Url, Store
             .parse::<std::net::IpAddr>()
             .is_ok_and(|ip| ip.is_loopback());
     if value.len() > 2048
-        || !(url.scheme() == "https" || (url.scheme() == "http" && local))
+        || !(url.scheme() == "https" || (url.scheme() == "http" && (local || allow_http)))
         || url.host_str().is_none()
         || !url.username().is_empty()
         || url.password().is_some()
@@ -244,10 +252,7 @@ impl Settings {
         }
         next.oss.validate()?;
         if !next.notification.url.is_empty() {
-            let url = destination_url(&next.notification.url, false)?;
-            if url.scheme() != "https" {
-                return Err(invalid());
-            }
+            validate_destination_url(&next.notification.url, false, true)?;
         }
         if !valid_secret(&next.notification.token) {
             return Err(invalid());
@@ -301,6 +306,47 @@ mod tests {
         for secret in ["fixture-secret", "fixture-sts", "fixture-token"] {
             assert!(!view.contains(secret));
         }
+    }
+
+    #[test]
+    fn notification_supports_explicit_http_without_changing_oss_or_saved_token() {
+        let initial = Settings::default()
+            .apply(
+                serde_json::from_value(json!({"notification":{"token":"fixture-token"}})).unwrap(),
+            )
+            .unwrap();
+        for url in [
+            "http://198.51.100.10:8420/api/hooks/captures",
+            "https://studio.example/api/hooks/captures",
+        ] {
+            let next = initial
+                .apply(serde_json::from_value(json!({"notification":{"url":url}})).unwrap())
+                .unwrap();
+            assert_eq!(next.notification.url, url);
+            assert_eq!(next.notification.token, "fixture-token");
+            assert_eq!(next.view()["notification"]["status"], "configured");
+        }
+        for url in [
+            "ftp://studio.example/captures",
+            "http://user:secret@studio.example/captures",
+            "http://studio.example/captures?token=secret",
+            "http://studio.example/captures#secret",
+        ] {
+            assert!(initial
+                .apply(serde_json::from_value(json!({"notification":{"url":url}})).unwrap())
+                .is_err());
+        }
+        assert!(initial
+            .apply(
+                serde_json::from_value(json!({"oss":{"endpoint":"http://oss.example"}})).unwrap()
+            )
+            .is_err());
+        assert!(initial
+            .apply(
+                serde_json::from_value(json!({"oss":{"publicBaseUrl":"http://images.example"}}))
+                    .unwrap()
+            )
+            .is_err());
     }
 
     #[test]

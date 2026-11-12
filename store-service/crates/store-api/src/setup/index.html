@@ -82,7 +82,7 @@
           <label for="ossPrefix">对象路径前缀</label><input id="ossPrefix" autocomplete="off" spellcheck="false" placeholder="screenshots" aria-describedby="ossPrefixHint">
           <p id="ossPrefixHint" class="hint">例如 screenshots；不以斜杠开头或结尾。</p>
           <label for="ossPublicBaseUrl">图片访问域名（可选）</label><input id="ossPublicBaseUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://images.example.com" aria-describedby="ossPublicBaseUrlHint">
-          <p id="ossPublicBaseUrlHint" class="hint">留空时按私有 Bucket 生成一小时有效的签名读取 URL；填写时使用该访问域名，不修改对象 ACL。</p>
+          <p id="ossPublicBaseUrlHint" class="hint">留空时使用 Bucket Endpoint 下的公开 HTTPS 直链；填写时使用该访问域名。链接不含限时签名，不修改对象 ACL。</p>
           <label for="ossAccessKeyId">AccessKey ID</label><input id="ossAccessKeyId" autocomplete="off" spellcheck="false">
           <label for="ossAccessKeySecret">AccessKey Secret</label><input id="ossAccessKeySecret" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="screenshotSecretsHint">
           <label for="ossSecurityToken">STS Security Token（可选）</label><input id="ossSecurityToken" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="screenshotSecretsHint">
@@ -91,7 +91,7 @@
           <label for="screenshotNotificationUrl">通知 URL（可选）</label><input id="screenshotNotificationUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://notify.example.com/screenshot">
           <label for="screenshotNotificationToken">通知鉴权 Token（可选）</label><input id="screenshotNotificationToken" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="screenshotSecretsHint">
           <label for="screenshotNotificationState">通知协议状态</label><input id="screenshotNotificationState" readonly value="读取配置后显示通知状态">
-          <p class="hint">填写 Studio 的 /api/hooks/captures 完整 HTTPS 地址与独立回传 Token。任务结束后中心自动回传；未配置不影响截图，上传成功与通知成功分别记录。</p>
+          <p class="hint">填写 Studio 的 /api/hooks/captures 完整 HTTP 或 HTTPS 地址与独立回传 Token。任务结束后中心自动回传；未配置不影响截图，上传成功与通知成功分别记录。</p>
           <button id="screenshotSettingsSave" type="submit" disabled>保存截图设置</button>
           <button id="screenshotSettingsRefresh" type="button" class="quiet">刷新截图设置</button>
         </form>

@@ -23,10 +23,11 @@ export function bindScreenshotSettings(request, getSession) {
       if (!field.value.trim()) continue;
       try {
         const url = new URL(field.value.trim());
-        if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash
+        const allowedScheme = url.protocol === "https:" || (id === "screenshotNotificationUrl" && url.protocol === "http:");
+        if (!allowedScheme || url.username || url.password || url.search || url.hash
           || (id === "ossEndpoint" && url.pathname !== "/")) throw new Error();
       } catch {
-        field.setCustomValidity(id === "ossEndpoint" ? "请填写完整 HTTPS Bucket 域名或 CNAME，不含路径和查询参数。" : "请填写不含账号信息、查询参数或片段的 HTTPS URL。");
+        field.setCustomValidity(id === "ossEndpoint" ? "请填写完整 HTTPS Bucket 域名或 CNAME，不含路径和查询参数。" : id === "screenshotNotificationUrl" ? "请填写不含账号信息、查询参数或片段的 HTTP 或 HTTPS URL。" : "请填写不含账号信息、查询参数或片段的 HTTPS URL。");
       }
     }
   }

@@ -288,7 +288,7 @@ paths:
   /v1/screenshot-settings:
     get:
       summary: Read masked OSS and Studio capture-v1 notification settings
-      description: HTTPS administrator only. Secret values are never returned. Configured notification URL and independent token enable automatic POST of terminal results using capture-v1; missing config never blocks screenshots.
+      description: HTTPS administrator only. Secret values are never returned. Configured HTTP or HTTPS notification URL and independent token enable automatic POST of terminal results using capture-v1; missing config never blocks screenshots.
       security: [{adminToken: []}]
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
     put:
@@ -320,7 +320,7 @@ paths:
                   type: object
                   additionalProperties: false
                   properties:
-                    url: {type: string}
+                    url: {type: string, description: 'Complete HTTP or HTTPS Studio callback endpoint, including /api/hooks/captures. Image URLs remain HTTPS.'}
                     token: {type: string, writeOnly: true}
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
   /v1/screenshot-connectors:

@@ -941,7 +941,7 @@ Authorization: Bearer INTEGRATION_TOKEN
 管理员在后台「截图上传与结果通知」配置两组信息：
 
 - OSS：启用开关、region、bucket、完整 Bucket Endpoint 或 CNAME、对象前缀、可选图片访问域名、AccessKey ID／Secret、可选 STS Token。密钥加密保存，密码框留空保留原值，不回显，也不进入节点包。
-- 外部结果通知：Studio 的完整 HTTPS `/api/hooks/captures` 地址和独立 Bearer Token；配置状态 configured，缺少地址或 Token 时 not_configured。不把凭据或协议拼进 prompt。OSS 上传成功与外部通知送达分别记录。
+- 外部结果通知：Studio 的完整 HTTP 或 HTTPS `/api/hooks/captures` 地址和独立 Bearer Token；配置状态 configured，缺少地址或 Token 时 not_configured。不把凭据或协议拼进 prompt。OSS 上传成功与外部通知送达分别记录。
 
 配置保存后即时生效。OSS 未启用或未配置不会拦截任务提交、领取和截图，只在实际上传阶段返回 screenshot_oss_not_configured。通知未配置或回传失败也不影响截图和 OSS 上传确认；通知只重试回传，不重新截图。
 
@@ -1009,6 +1009,6 @@ upstream_job_id 就是原中心 jobId；slot、language 分别原样取 target.p
 - 409：版本冲突或采集单被终止，停止自动回传并核对；不盲目递增 revision。
 - 400／422／413：停止自动回传，修正请求或正文大小；不分拆快照。
 
-需要对账时，中心使用同一独立 Bearer Token 调用 `GET https://studio.example.com/api/hooks/captures/{jobId}`，检查 callback_revision、callback_status 和逐项 callback_results。**POST 是结果回传，GET 是对账**；中心任务原 GET 查询路径不变。补截图由 Studio 操作人另建任务；通知重试不会重新执行采集。只处理新版任务的通知意图，历史任务不补发。
+需要对账时，中心使用同一独立 Bearer Token 调用 `GET https://studio.example.com/api/hooks/captures/{jobId}`，检查 callback_revision、callback_status 和逐项 callback_results。通知地址支持显式配置 HTTP 或 HTTPS，图片仍须为公开 HTTPS PNG。**POST 是结果回传，GET 是对账**；中心任务原 GET 查询路径不变。补截图由 Studio 操作人另建任务；通知重试不会重新执行采集。只处理新版任务的通知意图，历史任务不补发。
 
-启用真实回传前，在中心后台填入 Studio 的真实 HTTPS 接口地址和独立 Token，并在 Studio 的 CAPTURE_IMAGE_HOSTS 允许精确图片域名 auto-creative.oss-us-east-1.aliyuncs.com。不要将 OSS 或通知密钥打包进节点。已经运行任务协议 3 的截图节点无需为中心回传功能重新安装；商店节点也无需升级。
+启用真实回传前，在中心后台填入 Studio 的真实 HTTP 或 HTTPS 接口地址和独立 Token，并在 Studio 的 CAPTURE_IMAGE_HOSTS 允许精确图片域名 auto-creative.oss-us-east-1.aliyuncs.com。不要将 OSS 或通知密钥打包进节点。已经运行任务协议 3 的截图节点无需为中心回传功能重新安装；商店节点也无需升级。
