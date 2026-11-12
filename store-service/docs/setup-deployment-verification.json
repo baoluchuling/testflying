@@ -1,11 +1,11 @@
 {
-  "runId": "02a7ae16e2c74539a002b70d9d604f0f",
+  "runId": "0d23777aef504ae081abead2068f7322",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-12T03:42:40.189796+00:00",
-  "deploymentCommit": "d3f2119f414d9dd97efc06485ec5628020ad63e5",
-  "binarySourceCommit": "8994f7d88bd0bc7a4e1f27684d4dba181b7a21d7",
-  "apiSha256": "664172e62ccb0f3b63dc55ff5995eab1b2edf642c808c3568d7900eb0e5e0946",
+  "finishedAt": "2026-11-12T03:58:00.451551+00:00",
+  "deploymentCommit": "8ef243148b8fa7e4faff1469429ce80351f8a6eb",
+  "binarySourceCommit": "ea67ead7bb4fa5354b0697cdedd04a1a3cdbced4",
+  "apiSha256": "814ff08fc4900aeacb2303d1725f4201b68fe9c0a442eedf71ab28f3962e002a",
   "connectorBinarySha256": {
     "linux-amd64": "7430b86d4f970d33819eae02351c4b41c140f5429c6259bc99ccff78abd5de17",
     "darwin-arm64": "26805217d5cd8c0984da7b82de671073e98397ab8975a1d3afcc81b7f7b644e7",
@@ -30,13 +30,6 @@
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
-    "existing Connector inventory available for download verification",
-    "linux-amd64 updated installation package available",
-    "linux-amd64 downloaded native installer preparation program verified",
-    "darwin-arm64 updated installation package available",
-    "darwin-arm64 downloaded native installer preparation program verified",
-    "windows-amd64 updated installation package available",
-    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
     "http ten store, two node and six screenshot endpoints plus upload helpers",
     "http language and device options with platform limits",
@@ -103,7 +96,7 @@
     "imagePathContainsJobId": false,
     "objectPathFormat": "store-studio/materials/xx/32lowerhexImageId.png",
     "callbackHistoryBackfill": false,
-    "settingsCiphertextUnchanged": true,
+    "settingsCiphertextUnchangedDuringDeployment": true,
     "appBindingsUnchanged": true,
     "storeBindings": 6,
     "screenshotBindings": 3,
@@ -113,12 +106,11 @@
     },
     "ossEnabled": true,
     "ossSecretConfigured": true,
-    "notificationStatus": "not_configured",
+    "notificationStatus": "configured",
     "actualOssRequests": 0,
     "actualStoreRequests": 0,
     "storeWrites": 0,
-    "screenshotJobsCreated": 0,
-    "externalNotificationsSent": 0
+    "screenshotJobsCreated": 0
   },
   "screenshotConnectorPublication": {
     "sourceCommit": "d3f2119f414d9dd97efc06485ec5628020ad63e5",
@@ -129,24 +121,23 @@
     "directOssProtocol": 2,
     "taskProtocol": 3,
     "requiresNodeUpgrade": false,
-    "existingProtocol3WorkerCompatible": true
+    "existingProtocol3WorkerCompatible": true,
+    "binaryPreserved": true
+  },
+  "httpCallbackSettings": {
+    "url": "http://47.85.176.62:8420/api/hooks/captures",
+    "status": "configured",
+    "tokenConfigured": true,
+    "tokenOmittedFromUpdate": true,
+    "ossSettingsUnchanged": true,
+    "manualCallbackTestRequests": 0,
+    "automaticDeliveryEnabled": true
   },
   "artifactLifecycle": {
     "runs": [
       {
-        "runId": "1f22d61dadac4706a3982cc5510fc850",
-        "kind": "first rollout",
-        "outcome": "rolled back on old contract-version assertion",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/1f22d61dadac4706a3982cc5510fc850",
-        "evidenceExpiresAt": "2026-11-19T03:40:48.678041+00:00"
-      },
-      {
-        "runId": "88966eb1993142cd8c03d14d7314a6e1",
-        "kind": "mock UI",
+        "runId": "e1ef3d2d8cbf445eae1e042d120dfb90",
+        "kind": "notification config and unauthenticated HTTP route probe",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -156,52 +147,8 @@
         "evidenceExpiresAt": null
       },
       {
-        "runId": "f408caaea01548c5b2e1350df3126ce9",
-        "kind": "initial compile",
-        "outcome": "failed; corrected",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/f408caaea01548c5b2e1350df3126ce9",
-        "evidenceExpiresAt": "2026-11-19T03:18:09.626893+00:00"
-      },
-      {
-        "runId": "59e1c11a4e36445d92e985057a0bcd8a",
-        "kind": "intermediate verification",
-        "outcome": "failed; corrected",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/59e1c11a4e36445d92e985057a0bcd8a",
-        "evidenceExpiresAt": "2026-11-19T03:23:14.264639+00:00"
-      },
-      {
-        "runId": "d0e367ec645e4784b8b7dd3d4e0de6bf",
-        "kind": "initial Windows build",
-        "outcome": "refused changed source",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/d0e367ec645e4784b8b7dd3d4e0de6bf",
-        "evidenceExpiresAt": "2026-11-19T03:27:34.112889+00:00"
-      },
-      {
-        "runId": "db271a6fa5ea429aa85da96692fafe8e",
-        "kind": "initial all-platform build",
-        "outcome": "refused changed source",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/db271a6fa5ea429aa85da96692fafe8e",
-        "evidenceExpiresAt": "2026-11-19T03:30:31.412900+00:00"
-      },
-      {
-        "runId": "4c85f14eb2c34145ba56a55422c189d8",
-        "kind": "final verification",
+        "runId": "d0181e8934ed42c18f537db0272da1c4",
+        "kind": "HTTP callback UI checks",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -211,8 +158,8 @@
         "evidenceExpiresAt": null
       },
       {
-        "runId": "0e852ef910f14aa7baba344b07e7397a",
-        "kind": "final Windows build",
+        "runId": "89479c04d97e4a19a1e2fce0edf03b78",
+        "kind": "HTTP callback full verification",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -222,8 +169,8 @@
         "evidenceExpiresAt": null
       },
       {
-        "runId": "3c076b3eef1743d39bd55f1b0716b85d",
-        "kind": "final all-platform build",
+        "runId": "3b832a31cdf24bf69082b13b1bdea79e",
+        "kind": "API-only release build",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -233,7 +180,7 @@
         "evidenceExpiresAt": null
       }
     ],
-    "deploymentRunId": "02a7ae16e2c74539a002b70d9d604f0f",
+    "deploymentRunId": "0d23777aef504ae081abead2068f7322",
     "deploymentCleanup": "supervisor deleted owned roots; exit 0; no retained success evidence",
     "deploymentRemainingProcesses": 0,
     "deploymentRemainingExternalResources": 0,
