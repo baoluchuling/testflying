@@ -49,6 +49,11 @@ pub(super) fn create_schema(db: &Connection) -> Result<()> {
         db.execute("ALTER TABLE screenshot_jobs ADD COLUMN targets TEXT", [])
             .map_err(database_error)?;
     }
+    // Existing queued/running protocol-3 jobs may still contain signed historical
+    // image URLs. Only jobs created under the callback protocol are eligible.
+    if !columns.iter().any(|name| name == "callback_eligible") {
+        db.execute("ALTER TABLE screenshot_jobs ADD COLUMN callback_eligible INTEGER NOT NULL DEFAULT 0 CHECK(callback_eligible IN (0,1))", []).map_err(database_error)?;
+    }
     db.execute_batch(
         "CREATE TABLE IF NOT EXISTS screenshot_target_tickets (
           job_id TEXT NOT NULL REFERENCES screenshot_jobs(id) ON DELETE CASCADE,
@@ -66,7 +71,15 @@ fn timestamp() -> Result<i64> {
         .map_err(|_| StoreError::new(500, "invalid_clock", "System clock is invalid"))
 }
 
-fn expire(db: &Connection, time: i64) -> Result<()> {
+pub(super) fn expire(db: &Connection, time: i64) -> Result<()> {
+    let expired: Vec<String> = {
+        let mut statement = db.prepare("SELECT id FROM screenshot_jobs WHERE deadline<=?1 AND status IN ('queued','running','uploading')").map_err(database_error)?;
+        let rows = statement
+            .query_map([time], |r| r.get(0))
+            .map_err(database_error)?;
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(database_error)?
+    };
     db.execute(
         "UPDATE screenshot_jobs SET status='failed', prompt='', lease=NULL,
          error=CASE WHEN status='uploading' THEN 'delivery_unknown' ELSE 'job_expired' END
@@ -74,6 +87,9 @@ fn expire(db: &Connection, time: i64) -> Result<()> {
         [time],
     )
     .map_err(database_error)?;
+    for id in expired {
+        super::screenshot_notifications::enqueue(db, &id, time)?;
+    }
     db.execute(
         "DELETE FROM screenshot_jobs WHERE status IN ('failed','succeeded') AND created_at<=?1",
         [time.saturating_sub(7 * 86400)],
@@ -369,8 +385,11 @@ impl Registry {
                 images
             };
             let delivered = images.len() == targets.len();
-            let aggregate = json!({"images":images,"notificationStatus":if settings.notification.url.is_empty() {"not_configured"} else {"protocol_pending"}});
+            let aggregate = json!({"images":images,"notificationStatus":if settings.notification.url.is_empty() || settings.notification.token.is_empty() {"not_configured"} else {"pending"}});
             tx.execute("UPDATE screenshot_jobs SET result=?2,status=?3,lease=CASE WHEN ?4 THEN NULL ELSE lease END WHERE id=?1",params![id,aggregate.to_string(),if delivered {"succeeded"} else {"running"},delivered]).map_err(database_error)?;
+            if delivered {
+                super::screenshot_notifications::enqueue(&tx, id, timestamp()?)?;
+            }
         }
         let (status, result): (String, String) = tx
             .query_row(
@@ -495,15 +514,18 @@ impl Registry {
             return Err(ticket_config_changed());
         }
         let mut result = result.clone();
-        result["notificationStatus"] = json!(if settings.notification.url.is_empty() {
+        result["notificationStatus"] = json!(if settings.notification.url.is_empty()
+            || settings.notification.token.is_empty()
+        {
             "not_configured"
         } else {
-            "protocol_pending"
+            "pending"
         });
         let changed = tx.execute("UPDATE screenshot_jobs SET status='succeeded',result=?4,error=NULL,lease=NULL WHERE id=?1 AND connector_id=?2 AND lease=?3 AND status='running' AND deadline>?5",params![id,node,lease,result.to_string(),timestamp()?]).map_err(database_error)?;
         if changed != 1 {
             return Err(invalid_lease());
         }
+        super::screenshot_notifications::enqueue(&tx, id, timestamp()?)?;
         tx.commit().map_err(database_error)?;
         Ok(result)
     }
@@ -671,8 +693,8 @@ impl Registry {
         }
         let id = Uuid::new_v4().to_string();
         tx.execute(
-            "INSERT INTO screenshot_jobs(id,connector_id,integration_id,profile,prompt,status,created_at,deadline,platform,bundle_identifier,targets)
-             VALUES(?1,?2,?3,?4,?5,'queued',?6,?7,?8,?9,?10)",
+            "INSERT INTO screenshot_jobs(id,connector_id,integration_id,profile,prompt,status,created_at,deadline,platform,bundle_identifier,targets,callback_eligible)
+             VALUES(?1,?2,?3,?4,?5,'queued',?6,?7,?8,?9,?10,CASE WHEN ?10 IS NOT NULL THEN 1 ELSE 0 END)",
             params![id, node, access.id, profile, prompt, time, time + 86400,platform.to_string(),identifier,targets],
         ).map_err(database_error)?;
         tx.commit().map_err(database_error)?;
@@ -682,9 +704,12 @@ impl Registry {
     }
 
     pub(crate) fn screenshot_status(&self, access: &Integration, id: &str) -> Result<Value> {
-        let db = self.db.lock().unwrap();
-        expire(&db, timestamp()?)?;
-        let job = db.query_row(
+        let mut db = self.db.lock().unwrap();
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        expire(&tx, timestamp()?)?;
+        let job = tx.query_row(
             "SELECT connector_id,profile,status,result,error,platform,bundle_identifier,id,targets FROM screenshot_jobs WHERE integration_id=?2 AND id=?1",
             params![id, access.id],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?,
@@ -694,12 +719,14 @@ impl Registry {
             .ok_or_else(|| {
                 StoreError::new(404, "screenshot_job_not_found", "Screenshot job not found")
             })?;
-        let result = result
+        let mut result = result
             .map(|body| serde_json::from_str::<Value>(&body))
             .transpose()
             .map_err(|_| {
                 StoreError::new(500, "registry_error", "Invalid screenshot delivery record")
             })?;
+        super::screenshot_notifications::decorate(&tx, &self.signing_key, id, &mut result)?;
+        tx.commit().map_err(database_error)?;
         let profile = (!profile.is_empty()).then_some(profile);
         Ok(
             json!({"jobId":job_id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()).unwrap_or_else(|| json!([])),"connectorId":node,"platform":platform,"bundleIdentifier":identifier,"profile":profile,"status":status,"result":result,"error":error}),
@@ -768,10 +795,11 @@ impl Registry {
 
     pub(crate) fn begin_screenshot_upload(&self, node: &str, id: &str, lease: &str) -> Result<()> {
         let time = timestamp()?;
-        let count = self
-            .db
-            .lock()
-            .unwrap()
+        let mut db = self.db.lock().unwrap();
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let count = tx
             .execute(
                 "UPDATE screenshot_jobs SET status='uploading', deadline=?4+120
              WHERE id=?1 AND connector_id=?2 AND lease=?3 AND status='running' AND deadline>?4
@@ -782,6 +810,7 @@ impl Registry {
         if count != 1 {
             return Err(invalid_lease());
         }
+        tx.commit().map_err(database_error)?;
         Ok(())
     }
 
@@ -797,11 +826,11 @@ impl Registry {
             Ok(value) => ("succeeded", Some(value.to_string()), None),
             Err(code) => ("failed", None, Some(code)),
         };
-        let count = self
-            .db
-            .lock()
-            .unwrap()
-            .execute(
+        let mut db = self.db.lock().unwrap();
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let count = tx.execute(
                 "UPDATE screenshot_jobs SET status=?4, result=COALESCE(?5,result), error=?6, lease=NULL
              WHERE id=?1 AND connector_id=?2 AND lease=?3 AND status=?7 AND deadline>?8
              AND EXISTS(SELECT 1 FROM integrations WHERE id=screenshot_jobs.integration_id)
@@ -812,6 +841,8 @@ impl Registry {
         if count != 1 {
             return Err(invalid_lease());
         }
+        super::screenshot_notifications::enqueue(&tx, id, timestamp()?)?;
+        tx.commit().map_err(database_error)?;
         Ok(())
     }
 }
@@ -923,7 +954,7 @@ mod direct_delivery_tests {
                 lease,
                 0,
                 &fp,
-                &json!({"imageUrl":"https://cdn.example/first.png"}),
+                &json!({"imageUrl":"https://cdn.example/first.png","sha256":"a".repeat(64)}),
             )
             .unwrap();
         assert_eq!(first["delivered"], false);
@@ -960,7 +991,23 @@ mod direct_delivery_tests {
         assert_eq!(failed["jobId"], id);
         assert_eq!(failed["status"], "failed");
         assert_eq!(failed["error"], "capture_failed");
-        assert_eq!(failed["result"], first["result"]);
+        assert_eq!(failed["result"]["images"], first["result"]["images"]);
+        assert_eq!(failed["result"]["notificationStatus"], "not_configured");
+        assert!(failed["result"]["notificationError"].is_null());
+        assert!(failed["result"]["notificationResults"].is_null());
+        let body: String = registry
+            .db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT body FROM screenshot_notifications WHERE job_id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let body: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(body["status"], "partial");
+        assert_eq!(body["items"].as_array().unwrap().len(), 1);
         assert_eq!(failed["result"]["images"][0]["targetIndex"], 0);
         assert!(registry.target_ticket(&node, id, lease, 1).is_err());
         assert_eq!(
@@ -984,7 +1031,7 @@ mod direct_delivery_tests {
         let targets: Vec<store_protocol::screenshot::ScreenshotTarget> =
             serde_json::from_value(json!([
                 {"locale":"en-US","page":"home","device":"phone"},
-                {"locale":"zh-CN","page":"settings","device":"tablet","theme":"dark"}
+                {"locale":"zh-CN","page":"settings","device":"phone"}
             ]))
             .unwrap();
         let prompt = "  exact prompt\n";

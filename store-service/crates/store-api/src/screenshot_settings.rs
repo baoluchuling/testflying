@@ -198,7 +198,8 @@ impl Settings {
             },
             "notification": {
                 "url": self.notification.url, "tokenConfigured": !self.notification.token.is_empty(),
-                "status": if self.notification.url.is_empty() { "not_configured" } else { "protocol_pending" }
+                "status": if self.notification.url.is_empty() || self.notification.token.is_empty() { "not_configured" } else { "configured" },
+                "protocol": "capture-v1"
             }
         })
     }

@@ -8,6 +8,7 @@ use tokio::sync::Semaphore;
 use zip::{write::SimpleFileOptions, ZipWriter};
 
 mod delivery;
+pub mod notification;
 pub(crate) mod oss;
 
 const MAX_IMAGE: usize = 16 * 1024 * 1024;

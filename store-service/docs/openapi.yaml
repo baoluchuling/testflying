@@ -56,7 +56,6 @@ components:
         locale: {type: string, minLength: 1, maxLength: 80, pattern: '^[A-Za-z0-9_-]+$', description: 'Explicit ASCII language identifier, preserved verbatim without trimming.'}
         page: {type: string, minLength: 1, maxLength: 128, description: 'Caller page identifier, at most 128 UTF-8 bytes; no control characters or surrounding whitespace.'}
         device: {type: string, enum: [phone, tablet, foldable]}
-        theme: {type: string, enum: [light, dark], description: 'Optional; omit when no theme is specified.'}
       description: One explicit screenshot combination; no Cartesian expansion. Device is a form factor, not a fixed simulator ID. Codex manages the local project and simulator.
     ScreenshotJobInput:
       type: object
@@ -72,7 +71,7 @@ components:
           maxItems: 256
           uniqueItems: true
           items: {$ref: '#/components/schemas/ScreenshotTarget'}
-          description: 'Explicit locale/page/device/theme combinations, at most 64 KiB serialized JSON. Duplicate combinations are rejected.'
+          description: 'Explicit locale/page/device combinations, at most 64 KiB serialized JSON. All items must use the same device and have unique (page, locale). Submit separate jobs for different devices. No theme field.'
         profile: {type: [string, 'null'], minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$', description: Optional task hint; no fixed profiles required.}
       description: 'The center creates and returns a UUID jobId. Do not supply jobId, taskId, connectorId, clientRequestId or callback. No store binding or store credentials required. Updated screenshot worker with task protocol 3 is required.'
     ScreenshotImage:
@@ -80,8 +79,7 @@ components:
       properties:
         targetIndex: {type: integer, minimum: 0, description: Zero-based position in the submitted target array.}
         target: {$ref: '#/components/schemas/ScreenshotTarget'}
-        imageUrl: {type: string, format: uri}
-        imageUrlExpiresAt: {type: string, format: date-time}
+        imageUrl: {type: string, format: uri, description: 'Stable unsigned HTTPS PNG direct URL. Object path is prefix/materials/first2/32lowerhexImageId.png and never contains jobId; bucket/CDN must allow public reading.'}
         objectKey: {type: string}
         sizeBytes: {type: integer}
         sha256: {type: string}
@@ -99,7 +97,9 @@ components:
           type: [object, 'null']
           properties:
             images: {type: array, items: {$ref: '#/components/schemas/ScreenshotImage'}, description: 'Confirmed images in target order; partial results remain visible when a later target fails.'}
-            notificationStatus: {type: string, enum: [not_configured, protocol_pending]}
+            notificationStatus: {type: string, enum: [not_configured, pending, sending, retrying, delivered, partial, failed, unauthorized]}
+            notificationError: {type: [string, 'null'], description: Safe fixed error code; no remote response text or secrets.}
+            notificationResults: {type: [array, 'null'], items: {type: object, properties: {index: {type: integer}, result: {type: string, enum: [created, skipped, rejected]}}}}
           description: All targets must be confirmed before status becomes succeeded.
         error: {type: [string, 'null']}
     CreateStoreRelease:
@@ -287,8 +287,8 @@ security: [{integrationToken: []}, {clientToken: []}]
 paths:
   /v1/screenshot-settings:
     get:
-      summary: Read masked OSS and pending external notification settings
-      description: HTTPS administrator only. Secret values are never returned. Fixed callback protocol is pending; this endpoint does not send notifications.
+      summary: Read masked OSS and Studio capture-v1 notification settings
+      description: HTTPS administrator only. Secret values are never returned. Configured notification URL and independent token enable automatic POST of terminal results using capture-v1; missing config never blocks screenshots.
       security: [{adminToken: []}]
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
     put:
@@ -356,7 +356,7 @@ paths:
   /v1/screenshot-jobs:
     post:
       summary: Trigger screenshot targets and receive a center-generated jobId
-      description: HTTPS only; exact screenshot binding required. No random fallback. Offline enabled nodes may queue. At most 20 queued and one running per node. 202 returns jobId and means queued, not completed. Each accepted POST creates a new job; do not automatically replay a request when its response is lost. No query is required to execute or complete the task. Missing OSS or notification configuration does not block execution. Task protocol 3 and per-target direct OSS upload require the updated Screenshot Connector; old nodes including protocol 2 cannot claim new tasks.
+      description: HTTPS only; exact screenshot binding required. No random fallback. Offline enabled nodes may queue. At most 20 queued and one running per node. 202 returns jobId and means queued, not completed. Each accepted POST creates a new job; do not automatically replay a request when its response is lost. No query is required to execute or complete the task. Missing OSS or notification configuration does not block execution. One device per job; split phone/tablet/foldable into separate jobs. No theme field. Task protocol 3 and per-target direct OSS upload require the updated Screenshot Connector; old nodes including protocol 2 cannot claim new tasks.
       security: [{integrationToken: []}]
       requestBody:
         required: true
@@ -367,7 +367,7 @@ paths:
   /v1/screenshot-jobs/{jobId}:
     get:
       summary: Optional diagnostics using the jobId returned by submission
-      description: HTTPS only. Use the existing path with the center-generated jobId and the creating integration token. This query is not part of execution or notification. Other integrations receive 404 even for the same Mac. Result images carry their original target and zero-based targetIndex. All targets must be confirmed for success; partial confirmed images survive a later failure. notificationStatus is not_configured or protocol_pending; no callback is sent yet. Center stores no PNG. Records retained for approximately seven days.
+      description: HTTPS only. Use the existing path with the center-generated jobId and the creating integration token. This query is not part of execution or notification. Other integrations receive 404 even for the same Mac. Result images carry their original target and zero-based targetIndex. All targets must be confirmed for success; partial confirmed images survive a later failure. notificationStatus is independent of screenshot status and reports durable Studio notification progress. Failed callbacks never rerun screenshots. Center stores no PNG. Records retained for approximately seven days.
       security: [{integrationToken: []}]
       parameters: [{name: jobId, in: path, required: true, schema: {type: string, format: uuid}}]
       responses:

@@ -861,8 +861,8 @@ Content-Type: application/json
   "prompt":"截取 Kissreels 指定页面截图。",
   "target":[
     {"locale":"en-US","page":"home","device":"phone"},
-    {"locale":"en-US","page":"home","device":"tablet"},
-    {"locale":"ja-JP","page":"detail","device":"phone","theme":"dark"}
+    {"locale":"en-US","page":"details","device":"phone"},
+    {"locale":"ja-JP","page":"details","device":"phone"}
   ]
 }
 ```
@@ -874,18 +874,17 @@ Content-Type: application/json
 | platform | ios 或 android。 |
 | bundleIdentifier | iOS Bundle ID / Android 包名，与截图绑定大小写精确匹配。 |
 | prompt | 调用方截图要求，非空、最多 16 KiB UTF-8 字节，原文转发，不拼接平台、包名或目标。 |
-| target | 1–256 项的数组，序列化 JSON 最多 64 KiB；每项是一张图的明确组合，不自动展开语言、页面和设备的笛卡尔积。重复组合返回 422。 |
+| target | 1–256 项的数组，序列化 JSON 最多 64 KiB；每项是一张图的明确组合，不自动展开语言、页面和设备的笛卡尔积。同一任务只允许一种 device，(page,locale) 不得重复；不同设备请分别提交，否则返回 422。 |
 
-每个 target 项须提供 `locale`、`page`、`device`，可选 `theme`；不接受其他字段。
+每个 target 项须提供 `locale`、`page`、`device`；不接受其他字段，包括 theme。
 
 | 目标字段 | 取值 |
 |---|---|
 | locale | 非空 ASCII 语言标识，最多 80 字节，例如 en-US、ja-JP；原样保留，不自动转换或回退语言。 |
 | page | 调用方页面标识，最多 128 个 UTF-8 字节，例如 home、detail；非空，不含控制字符或首尾空白。由提示词说明需要的页面内容。 |
 | device | phone（手机）、tablet（平板）、foldable（折叠屏）；不是固定模拟器 ID，不传 duo 或 all。 |
-| theme | 可选 light 或 dark；未指定时省略。 |
 
-同一页面的多种语言、设备或主题分别列项。平台、包名、中心生成的 jobId 和 target 通过节点的 `get_capture_task` 工具结构化提供给 Codex；本机 Codex 自行发现项目、选择或创建模拟器、决定构建和页面操作。可选 `profile` 仅为任务提示，可省略或 null；字符串须为 1–64 个 ASCII 字母、数字、下划线或短横线，不要求固定 profiles。
+同一设备的多页面、多语言分别列项，手机、平板、折叠屏分别创建任务并分别保存 jobId。没有主题参数。page 必须与 Studio 本单的槽位 key 一致（如 details、ranking），locale 必须与期望语言完全一致（如 en）；不要把 en 自动转换为 en-US。平台、包名、中心生成的 jobId 和 target 通过节点的 `get_capture_task` 工具结构化提供给 Codex；本机 Codex 自行发现项目、选择或创建模拟器、决定构建和页面操作。可选 `profile` 仅为任务提示，可省略或 null；字符串须为 1–64 个 ASCII 字母、数字、下划线或短横线，不要求固定 profiles。
 
 成功返回 HTTP 202：
 
@@ -915,17 +914,17 @@ Authorization: Bearer INTEGRATION_TOKEN
   "profile":null,
   "target":[
     {"locale":"en-US","page":"home","device":"phone"},
-    {"locale":"en-US","page":"home","device":"tablet"},
-    {"locale":"ja-JP","page":"detail","device":"phone","theme":"dark"}
+    {"locale":"en-US","page":"details","device":"phone"},
+    {"locale":"ja-JP","page":"details","device":"phone"}
   ],
   "status":"succeeded",
   "result":{
     "images":[
-      {"targetIndex":0,"target":{"locale":"en-US","page":"home","device":"phone"},"imageUrl":"https://cdn.example.com/store-studio/phone.png","objectKey":"store-studio/task/phone.png","sizeBytes":123456,"sha256":"图片SHA256"},
-      {"targetIndex":1,"target":{"locale":"en-US","page":"home","device":"tablet"},"imageUrl":"https://cdn.example.com/store-studio/tablet.png","objectKey":"store-studio/task/tablet.png","sizeBytes":234567,"sha256":"图片SHA256"},
-      {"targetIndex":2,"target":{"locale":"ja-JP","page":"detail","device":"phone","theme":"dark"},"imageUrl":"https://cdn.example.com/store-studio/detail.png","objectKey":"store-studio/task/detail.png","sizeBytes":345678,"sha256":"图片SHA256"}
+      {"targetIndex":0,"target":{"locale":"en-US","page":"home","device":"phone"},"imageUrl":"https://auto-creative.oss-us-east-1.aliyuncs.com/store-studio/materials/4d/4d5327d4bf890c358f780d10c3e10cc2.png","objectKey":"store-studio/materials/4d/4d5327d4bf890c358f780d10c3e10cc2.png","sizeBytes":123456,"sha256":"图片SHA256"},
+      {"targetIndex":1,"target":{"locale":"en-US","page":"details","device":"phone"},"imageUrl":"https://auto-creative.oss-us-east-1.aliyuncs.com/store-studio/materials/ab/ab5327d4bf890c358f780d10c3e10cc2.png","objectKey":"store-studio/materials/ab/ab5327d4bf890c358f780d10c3e10cc2.png","sizeBytes":234567,"sha256":"图片SHA256"},
+      {"targetIndex":2,"target":{"locale":"ja-JP","page":"details","device":"phone"},"imageUrl":"https://auto-creative.oss-us-east-1.aliyuncs.com/store-studio/materials/cd/cd5327d4bf890c358f780d10c3e10cc2.png","objectKey":"store-studio/materials/cd/cd5327d4bf890c358f780d10c3e10cc2.png","sizeBytes":345678,"sha256":"图片SHA256"}
     ],
-    "notificationStatus":"protocol_pending"
+    "notificationStatus":"pending"
   },
   "error":null
 }
@@ -942,11 +941,11 @@ Authorization: Bearer INTEGRATION_TOKEN
 管理员在后台「截图上传与结果通知」配置两组信息：
 
 - OSS：启用开关、region、bucket、完整 Bucket Endpoint 或 CNAME、对象前缀、可选图片访问域名、AccessKey ID／Secret、可选 STS Token。密钥加密保存，密码框留空保留原值，不回显，也不进入节点包。
-- 外部结果通知：接收 URL 和鉴权 Token。固定请求／响应协议尚未确定，本轮只保存配置，状态显示 protocol_pending，不发真实回调；未填地址时为 not_configured。OSS 上传成功不表示外部通知已送达。
+- 外部结果通知：Studio 的完整 HTTPS `/api/hooks/captures` 地址和独立 Bearer Token；配置状态 configured，缺少地址或 Token 时 not_configured。不把凭据或协议拼进 prompt。OSS 上传成功与外部通知送达分别记录。
 
-配置保存后即时生效。OSS 未启用或未配置不会拦截任务提交、领取和截图，只在实际上传阶段返回 screenshot_oss_not_configured。通知尚未接入也不影响 OSS 上传确认成功。
+配置保存后即时生效。OSS 未启用或未配置不会拦截任务提交、领取和截图，只在实际上传阶段返回 screenshot_oss_not_configured。通知未配置或回传失败也不影响截图和 OSS 上传确认；通知只重试回传，不重新截图。
 
-节点上传时先请求绑定本任务租约、图片大小和摘要的最长五分钟 OSS V4 PUT 地址（不超过当前任务租约），再直接上传原始 PNG。中心使用已保存的对象路径签名 HEAD，验证 Content-Type、大小和摘要元数据后记录成功。节点不向 OSS 发送中心或节点 Token；预签名上传地址也不进入日志。未设置图片访问域名时，imageUrl 是一小时有效的下载签名地址，imageUrlExpiresAt 指明过期时间；设置访问域名时返回该域名下的对象路径，不更改 Bucket 或对象权限。
+节点上传时先请求绑定本任务租约、图片大小和摘要的最长五分钟 OSS V4 PUT 地址（不超过当前任务租约），再直接上传原始 PNG。中心使用已保存的对象路径签名 HEAD，验证 Content-Type、大小和摘要元数据后记录成功。节点不向 OSS 发送中心或节点 Token；预签名上传地址也不进入日志。imageUrl 为不带限时签名的 HTTPS PNG 直链，不返回 imageUrlExpiresAt；默认使用完整 Bucket Endpoint，也可设置图片访问域名。对象格式为 `store-studio/materials/图片ID前两位/32位小写十六进制图片ID.png`（前缀可配置），路径不含 jobId。每张图使用独立图片 ID，不覆盖旧对象。Bucket／CDN 必须允许外部公开读取，不需要站点登录态、不重定向；配置域名本身不会修改访问权限。
 
 本轮链路需要升级截图 Connector（任务协议 3，统一使用中心生成的 jobId）。此前协议 2 的双 ID 节点也需要升级；旧节点领取新任务返回 409 screenshot_connector_upgrade_required，任务仍留在队列。OSS 上传仍为多目标 direct-oss-v2。旧 PNG 回传入口在 OSS 启用时返回 screenshot_connector_upgrade_required，不会代替新节点向 OSS 上传。原有 STORE_API_SCREENSHOT_UPLOAD_URL 仅供旧链路过渡使用。
 
@@ -965,7 +964,7 @@ Authorization: Bearer INTEGRATION_TOKEN
     "accessKeySecret": "填写新密钥；更新其他字段时可省略或留空"
   },
   "notification": {
-    "url": "https://external.example.com/screenshot-result",
+    "url": "https://studio.example.com/api/hooks/captures",
     "token": "填写新鉴权 Token；留空保留"
   }
 }
@@ -974,3 +973,42 @@ Authorization: Bearer INTEGRATION_TOKEN
 Endpoint 是已包含 Bucket 的完整主机名或已绑定的 CNAME，中心不会再次拼接 Bucket。开启 OSS 时所有必需字段须完整；更换 AccessKey ID 须同时提供对应 Secret；如未提供新的 STS Token，会清除旧 STS Token，以便切换到长期凭据。图片访问域名只负责生成外部访问 URL，访问权限仍由 OSS／CDN 自身配置决定。
 
 管理员可在后台「截图 Connector 部署」创建截图节点；管理 API 为 POST /v1/connectors，正文 `{"name":"截图 Mac","kind":"screenshot"}`，使用管理员 Token。HTTPS GET /v1/connectors/{connectorId}/screenshot-installer 下载该节点的部署 ZIP，属于程序部署包，不是图片产物。安装、后台运行和日志说明见 [截图 Connector 部署说明](screenshot-connector.md)。本轮多目标和 OSS 直传需要安装最新 arm64 截图节点程序；保留原 connector.json 后重新运行安装脚本，不需要重建节点或绑定。商店节点无需为使用截图接口而升级。
+
+### 6. Studio 结果回传（capture-v1）
+
+Studio 先创建本地采集单，按设备分别调用中心原 `POST /v1/screenshot-jobs`，除 platform、bundleIdentifier、prompt 外还须传 target 数组，并保存响应中的 jobId。prompt 仅包含真实采集要求，不携带上传协议、地址或凭据。Studio 的采集单 ID 不用传入中心。
+
+任务结束后，由中心调用后台配置的完整通知 URL：
+
+```http
+POST https://studio.example.com/api/hooks/captures
+Authorization: Bearer CAPTURE_CALLBACK_TOKEN
+Content-Type: application/json
+
+{
+  "upstream_job_id":"22222222-2222-4222-8222-222222222222",
+  "revision":1,
+  "status":"done",
+  "items":[
+    {
+      "slot":"details",
+      "language":"en",
+      "url":"https://auto-creative.oss-us-east-1.aliyuncs.com/store-studio/materials/4d/4d5327d4bf890c358f780d10c3e10cc2.png",
+      "version":"876ad6cda61468f6ff300f63548d429d195c5a6de39ca968aa03293218344098"
+    }
+  ]
+}
+```
+
+upstream_job_id 就是原中心 jobId；slot、language 分别原样取 target.page、target.locale，version 使用 PNG 的 SHA256。每批只含表中字段，不传 platform/device/app/theme；同一任务只使用一个设备，因此 (slot,language) 不重复。图片 URL 独立于任务 ID，不在原地址覆盖内容。全部目标上传确认为 done；部分图片成功后任务失败为 partial；没有可用图片为 failed。失败时可带最长 2000 字符的 error，未采集条目省略。每次发送完整快照，正文最多 2 MiB，不拆成增量。status 是采集方交付情况，与 Studio 的 coverage_status 相互独立。
+
+中心把通知意图和终态一并持久保存，revision 从 1 开始；同一次交付的重试复用完全相同正文。通知缺失或失败不改变截图 status。`result.notificationStatus` 单独显示通知进度，只有 Studio 确认全部条目 created／skipped 才记为 delivered；HTTP 200 中出现 rejected 不能当作全部成功。不要仅凭 coverage_status 或 received_at 判断单项是否入库。
+
+- 404（可能早于 Studio 保存关联）、5xx 和网络超时：按 2、5、10、30 秒，之后每 60 秒重试，最长 24 小时；不重新截图、不自动创建 Studio 采集单。
+- 401：暂停持续重试，修正后台 Token 后再处理；24 小时窗口不延长。
+- 409：版本冲突或采集单被终止，停止自动回传并核对；不盲目递增 revision。
+- 400／422／413：停止自动回传，修正请求或正文大小；不分拆快照。
+
+需要对账时，中心使用同一独立 Bearer Token 调用 `GET https://studio.example.com/api/hooks/captures/{jobId}`，检查 callback_revision、callback_status 和逐项 callback_results。**POST 是结果回传，GET 是对账**；中心任务原 GET 查询路径不变。补截图由 Studio 操作人另建任务；通知重试不会重新执行采集。只处理新版任务的通知意图，历史任务不补发。
+
+启用真实回传前，在中心后台填入 Studio 的真实 HTTPS 接口地址和独立 Token，并在 Studio 的 CAPTURE_IMAGE_HOSTS 允许精确图片域名 auto-creative.oss-us-east-1.aliyuncs.com。不要将 OSS 或通知密钥打包进节点。已经运行任务协议 3 的截图节点无需为中心回传功能重新安装；商店节点也无需升级。

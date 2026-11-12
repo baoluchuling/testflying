@@ -1443,7 +1443,7 @@ mod tests {
             "prompt":"原文\n  keep spacing and \"quotes\"",
             "target":[
                 {"locale":"zh-CN","page":"home","device":"phone"},
-                {"locale":"en-US","page":"settings","device":"tablet","theme":"dark"}
+                {"locale":"en-US","page":"settings","device":"phone"}
             ]
         }))
         .unwrap();
@@ -1478,7 +1478,10 @@ mod tests {
         assert_eq!(context.value["jobId"], job.job_id.to_string());
         assert!(context.value.get("taskId").is_none());
         assert_eq!(context.value["prompt"], job.prompt);
-        assert_eq!(context.value["target"][1]["theme"], "dark");
+        assert_eq!(context.value["target"][1]["locale"], "en-US");
+        assert_eq!(context.value["target"][1]["page"], "settings");
+        assert_eq!(context.value["target"][1]["device"], "phone");
+        assert!(context.value["target"][1].get("theme").is_none());
         let invalid_context = tools
             .call("get_capture_task", json!({"unexpected":true}), &mut stop)
             .await;
@@ -1532,7 +1535,7 @@ mod tests {
                 json!({
                     "locale":"a".repeat(80),
                     "page":format!("{index:03}{}", "p".repeat(97)),
-                    "device":"phone","theme":"dark"
+                    "device":"phone"
                 })
             })
             .collect();

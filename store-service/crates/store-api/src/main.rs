@@ -28,6 +28,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     println!("Store API listening on {}", listener.local_addr()?);
     let shutdown = state.clone();
+    let notifications = tokio::spawn(store_api::run_screenshot_notifications(state.clone()));
     state.registry.logs.record_service("service.started");
     let maintenance_logs = state.registry.logs.clone();
     let maintenance = tokio::spawn(async move {
@@ -48,6 +49,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .with_graceful_shutdown(async move {
         shutdown_signal().await;
+        notifications.abort();
+        let _ = notifications.await;
         shutdown.registry.logs.record_service("service.stopping");
         shutdown.transport.close_all();
     })

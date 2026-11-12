@@ -139,7 +139,7 @@ if (!production) {
           }
           screenshotSettingsFixture.notification.url = input.notification.url;
           if (input.notification.token) screenshotSettingsFixture.notification.tokenConfigured = true;
-          screenshotSettingsFixture.notification.status = input.notification.url ? "protocol_pending" : "not_configured";
+          screenshotSettingsFixture.notification.status = input.notification.url && screenshotSettingsFixture.notification.tokenConfigured ? "configured" : "not_configured";
           screenshotSettingsFixture.revision++;
         }
         if (heldSettings) { settingsStarted(); await heldSettings; }
@@ -372,7 +372,7 @@ try {
   }
   await assertSettingsSecretsEmpty();
   assert.equal(await page.locator("#screenshotNotificationState").getAttribute("readonly"), "");
-  assert.match(await page.locator("#screenshotNotificationState").inputValue(), /协议待接入，暂不发送通知/);
+  assert.match(await page.locator("#screenshotNotificationState").inputValue(), /未配置完整地址与 Token；不影响截图执行/);
   if (!production) {
     assert.equal(await page.locator("#ossRegion").getAttribute("required"), null);
     await page.locator("#ossEnabled").check();
@@ -393,12 +393,12 @@ try {
     assert.equal(await page.locator("#screenshotSettingsSave").isDisabled(), true);
     assert.equal(await page.locator("#screenshotSettingsRefresh").isDisabled(), true);
     releaseSettings(); heldSettings = undefined;
-    await page.getByText("截图设置已保存，将用于后续上传凭证。通知协议待接入，暂不发送通知。", { exact: true }).waitFor();
+    await page.getByText("截图设置已保存。上传与结果通知将使用最新配置。", { exact: true }).waitFor();
     assert.equal(screenshotSettingsFixture.oss.enabled, true);
     assert.equal(screenshotSettingsFixture.oss.accessKeySecretConfigured, true);
     assert.equal(screenshotSettingsFixture.oss.securityTokenConfigured, true);
     assert.equal(screenshotSettingsFixture.notification.tokenConfigured, true);
-    assert.equal(screenshotSettingsFixture.notification.status, "protocol_pending");
+    assert.equal(screenshotSettingsFixture.notification.status, "configured");
     assert.equal(screenshotSettingsWrites[0].oss.publicBaseUrl, "");
     await assertSettingsSecretsEmpty();
     for (const id of settingsSecrets) assert.equal(await page.locator(`#${id}`).getAttribute("placeholder"), "已配置，留空保留");

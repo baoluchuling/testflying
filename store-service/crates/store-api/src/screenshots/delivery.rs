@@ -18,6 +18,16 @@ fn digest(value: &str, length: usize) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+fn image_object_key(prefix: &str) -> String {
+    let image_id = Uuid::new_v4().simple().to_string();
+    let prefix = if prefix.is_empty() {
+        String::new()
+    } else {
+        format!("{prefix}/")
+    };
+    format!("{prefix}materials/{}/{}.png", &image_id[..2], image_id)
+}
+
 fn ticket_lifetime(deadline: i64, issued_at: u64) -> std::result::Result<u64, StoreError> {
     let deadline = u64::try_from(deadline).map_err(|_| {
         StoreError::new(409, "invalid_job_lease", "Screenshot job lease has expired")
@@ -70,22 +80,7 @@ pub(super) async fn prepare(
             return Err(error.into());
         }
     };
-    let job_id = Uuid::parse_str(&job).map_err(|_| {
-        StoreError::new(
-            409,
-            "invalid_job_lease",
-            "Screenshot job is no longer assigned to this worker",
-        )
-    })?;
-    let key = format!(
-        "{}{job_id}/{}.png",
-        if settings.oss.prefix.is_empty() {
-            String::new()
-        } else {
-            format!("{}/", settings.oss.prefix)
-        },
-        Uuid::new_v4()
-    );
+    let key = image_object_key(&settings.oss.prefix);
     let fingerprint = oss_fingerprint(&settings.oss)?;
     let ticket = if let Some(index) = target_index {
         state.registry.prepare_target_ticket(
@@ -137,6 +132,26 @@ pub(super) async fn prepare(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_keys_use_independent_random_ids_and_two_character_shards() {
+        for prefix in ["", "store-studio", "nested/prefix"] {
+            let first = image_object_key(prefix);
+            let second = image_object_key(prefix);
+            assert_ne!(first, second);
+            let expected_prefix = if prefix.is_empty() {
+                "materials/".to_owned()
+            } else {
+                format!("{prefix}/materials/")
+            };
+            let suffix = first.strip_prefix(&expected_prefix).unwrap();
+            let (shard, filename) = suffix.split_once('/').unwrap();
+            let image_id = filename.strip_suffix(".png").unwrap();
+            assert!(digest(image_id, 32));
+            assert_eq!(shard, &image_id[..2]);
+            assert_eq!(Uuid::parse_str(image_id).unwrap().get_version_num(), 4);
+        }
+    }
 
     #[test]
     fn upload_ticket_cannot_outlive_its_job_lease() {

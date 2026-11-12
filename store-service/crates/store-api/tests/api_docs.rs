@@ -74,7 +74,7 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert!(!raw.contains(ADMIN));
     let catalog: Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(catalog["schemaVersion"], 1);
-    assert_eq!(catalog["contractVersion"], "2026-11-11");
+    assert_eq!(catalog["contractVersion"], "2026-11-12");
     let endpoints = catalog["endpoints"].as_array().unwrap();
     assert_eq!(endpoints.len(), 18);
     assert_eq!(
@@ -135,6 +135,14 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert_eq!(catalog["screenshots"]["requiresConnectorUpgrade"], true);
     assert_eq!(catalog["screenshots"]["taskProtocol"], 3);
     assert_eq!(catalog["screenshots"]["uploadProtocol"], "direct-oss-v2");
+    assert_eq!(catalog["screenshots"]["notificationProtocol"], "capture-v1");
+    assert_eq!(catalog["screenshots"]["notification"]["method"], "POST");
+    assert_eq!(
+        catalog["screenshots"]["notification"]["reconcileMethod"],
+        "GET"
+    );
+    assert_eq!(catalog["screenshots"]["target"]["singleDevicePerJob"], true);
+    assert_eq!(catalog["screenshots"]["target"]["optional"], json!([]));
     assert_eq!(catalog["screenshots"]["jobId"]["generatedBy"], "center");
     assert_eq!(catalog["screenshots"]["jobId"]["callerSupplies"], false);
     assert_eq!(catalog["screenshots"]["target"]["maxItems"], 256);

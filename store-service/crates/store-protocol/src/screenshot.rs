@@ -8,8 +8,6 @@ pub struct ScreenshotTarget {
     pub locale: String,
     pub page: String,
     pub device: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub theme: Option<String>,
 }
 
 pub fn validate_targets(targets: &[ScreenshotTarget]) -> Result<(), StoreError> {
@@ -26,6 +24,14 @@ pub fn validate_targets(targets: &[ScreenshotTarget]) -> Result<(), StoreError> 
     {
         return Err(invalid());
     }
+    let device = &targets[0].device;
+    if targets.iter().any(|target| &target.device != device) {
+        return Err(StoreError::new(
+            422,
+            "invalid_screenshot_target",
+            "Each screenshot job supports one device; split targets into separate jobs per device",
+        ));
+    }
     let mut seen = HashSet::new();
     for target in targets {
         if target.locale.is_empty()
@@ -39,11 +45,7 @@ pub fn validate_targets(targets: &[ScreenshotTarget]) -> Result<(), StoreError> 
             || target.page.trim() != target.page
             || target.page.chars().any(char::is_control)
             || !matches!(target.device.as_str(), "phone" | "tablet" | "foldable")
-            || target
-                .theme
-                .as_deref()
-                .is_some_and(|v| !matches!(v, "light" | "dark"))
-            || !seen.insert(target)
+            || !seen.insert((&target.page, &target.locale))
         {
             return Err(invalid());
         }
@@ -60,7 +62,6 @@ mod tests {
             locale: "en-US".into(),
             page: "home".into(),
             device: "phone".into(),
-            theme: None,
         }
     }
 
@@ -70,7 +71,7 @@ mod tests {
         assert!(validate_targets(&[]).is_err());
         assert!(validate_targets(&vec![target(); 257]).is_err());
         assert!(validate_targets(&[target(), target()]).is_err());
-        for field in ["locale", "page", "device", "theme"] {
+        for field in ["locale", "page", "device"] {
             let mut value = serde_json::to_value(target()).unwrap();
             value[field] = serde_json::json!(" invalid ");
             assert!(validate_targets(&[serde_json::from_value(value).unwrap()]).is_err());
@@ -87,11 +88,36 @@ mod tests {
         let targets: Vec<_> = (0..256)
             .map(|i| ScreenshotTarget {
                 locale: "a".repeat(80),
-                page: format!("{i}{}", "界".repeat(40)),
+                page: format!("{i:03}{}", "\"".repeat(125)),
                 device: "foldable".into(),
-                theme: Some("dark".into()),
             })
             .collect();
+        assert!(targets.iter().all(|target| target.page.len() == 128));
+        assert!(serde_json::to_vec(&targets).unwrap().len() > 64 * 1024);
         assert!(validate_targets(&targets).is_err());
+    }
+
+    #[test]
+    fn targets_require_one_device_and_unique_page_locale_without_theme() {
+        for device in ["phone", "tablet", "foldable"] {
+            let mut first = target();
+            first.device = device.into();
+            let mut next_page = first.clone();
+            next_page.page = "settings".into();
+            let mut next_locale = first.clone();
+            next_locale.locale = "zh-CN".into();
+            assert!(validate_targets(&[first.clone(), next_page, next_locale]).is_ok());
+            assert!(validate_targets(&[first.clone(), first]).is_err());
+        }
+        let mut tablet = target();
+        tablet.device = "tablet".into();
+        let error = validate_targets(&[target(), tablet]).unwrap_err();
+        assert_eq!(error.status, 422);
+        assert!(error.message.contains("separate jobs per device"));
+        for theme in [serde_json::json!("light"), serde_json::Value::Null] {
+            let mut value = serde_json::to_value(target()).unwrap();
+            value["theme"] = theme;
+            assert!(serde_json::from_value::<ScreenshotTarget>(value).is_err());
+        }
     }
 }

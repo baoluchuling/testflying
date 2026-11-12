@@ -133,7 +133,7 @@ async fn destinations_are_https_admin_only_and_setup_session_keeps_secrets_write
     assert_eq!(saved.status(), StatusCode::OK);
     let saved = value(saved).await;
     assert_eq!(saved["oss"]["accessKeySecretConfigured"], true);
-    assert_eq!(saved["notification"]["status"], "protocol_pending");
+    assert_eq!(saved["notification"]["status"], "configured");
     assert_eq!(saved["notification"]["tokenConfigured"], true);
     for secret in [
         "fixture-private-oss-secret",

@@ -19,6 +19,7 @@ use axum::{
     Extension, Json, Router,
 };
 use registry::{Connector, ConnectorInput, ConnectorKind, Registry};
+pub use screenshots::notification::run as run_screenshot_notifications;
 pub use screenshots::ScreenshotUploader;
 use serde::Deserialize;
 use serde_json::{json, Value};

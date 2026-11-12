@@ -49,7 +49,7 @@ export function bindScreenshotSettings(request, getSession) {
       ["screenshotNotificationToken", value.notification.tokenConfigured],
     ]) $(id).placeholder = configured ? "已配置，留空保留" : "尚未配置";
     $("screenshotNotificationState").value = value.notification.status === "not_configured"
-      ? "未配置；协议待接入，暂不发送通知" : "协议待接入，暂不发送通知";
+      ? "未配置完整地址与 Token；不影响截图执行" : "已配置；任务结束后自动回传 Studio";
     clearSecrets();
     validate();
   }
@@ -83,7 +83,7 @@ export function bindScreenshotSettings(request, getSession) {
       if (current !== epoch || active.signal.aborted || getSession() !== active) return;
       populate(result);
       $("screenshotSettingsStatus").textContent = save
-        ? "截图设置已保存，将用于后续上传凭证。通知协议待接入，暂不发送通知。"
+        ? "截图设置已保存。上传与结果通知将使用最新配置。"
         : "截图设置已刷新，密钥不回显。";
     } catch {
       if (current === epoch && !active.signal.aborted && getSession() === active) {

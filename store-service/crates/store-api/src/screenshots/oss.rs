@@ -1,6 +1,6 @@
 //! OSS V4 URL signing and bounded HEAD verification. Never log URLs or upstream errors.
 use crate::screenshot_settings::OssSettings;
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Utc};
 use hmac::{Hmac, Mac};
 use reqwest::{header::HeaderMap, Client, StatusCode, Url};
 use serde_json::{json, Value};
@@ -225,17 +225,15 @@ impl OssStorage {
         if !valid_key(key) {
             return Err(signing_error());
         }
-        if !self.config.public_base_url.is_empty() {
-            let base = Url::parse(&self.config.public_base_url).map_err(|_| config_error())?;
-            return Ok(
-                json!({"imageUrl":format!("{}/{}", base.as_str().trim_end_matches('/'), encode(key, true))}),
-            );
-        }
-        let now = Utc::now();
-        Ok(json!({
-            "imageUrl": self.presign_at("GET", key, &BTreeMap::new(), 3600, now)?,
-            "imageUrlExpiresAt": (now + chrono::Duration::seconds(3600)).to_rfc3339_opts(SecondsFormat::Secs, true)
-        }))
+        let base = if self.config.public_base_url.is_empty() {
+            &self.config.endpoint
+        } else {
+            &self.config.public_base_url
+        };
+        let base = Url::parse(base).map_err(|_| config_error())?;
+        Ok(
+            json!({"imageUrl":format!("{}/{}", base.as_str().trim_end_matches('/'), encode(key, true))}),
+        )
     }
 }
 
@@ -444,14 +442,22 @@ mod tests {
     }
 
     #[test]
-    fn result_uses_private_expiring_get_or_public_url() {
+    fn result_uses_stable_unsigned_endpoint_or_public_url() {
         let mut oss = storage();
         let private = oss.image_result("screenshots/fixture.png").unwrap();
-        assert!(private["imageUrl"]
-            .as_str()
+        assert_eq!(
+            private["imageUrl"],
+            "https://examplebucket.oss-cn-hangzhou.aliyuncs.com/screenshots/fixture.png"
+        );
+        assert_eq!(
+            private,
+            oss.image_result("screenshots/fixture.png").unwrap()
+        );
+        assert!(private.get("imageUrlExpiresAt").is_none());
+        assert!(Url::parse(private["imageUrl"].as_str().unwrap())
             .unwrap()
-            .contains("x-oss-signature="));
-        assert!(private["imageUrlExpiresAt"].is_string());
+            .query()
+            .is_none());
         oss.config.public_base_url = "https://cdn.fixture.example/images/".into();
         let public = oss.image_result("screenshots/图 +.png").unwrap();
         assert_eq!(

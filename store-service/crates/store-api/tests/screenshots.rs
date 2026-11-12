@@ -1246,6 +1246,9 @@ async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids(
         json!([]),
         json!([{"locale":"en-US","page":"home","device":"desktop"}]),
         json!([{"locale":"en-US","page":"home","device":"phone","theme":"auto"}]),
+        json!([{"locale":"en-US","page":"home","device":"phone","theme":"light"}]),
+        json!([{"locale":"en-US","page":"home","device":"phone","theme":null}]),
+        json!([{"locale":"en-US","page":"home","device":"phone"},{"locale":"zh-CN","page":"settings","device":"tablet"}]),
     ] {
         let mut bad = payload.clone();
         bad["target"] = target;
@@ -1424,6 +1427,23 @@ async fn direct_oss_ticket_is_bound_to_worker_file_lease_and_verified_before_ide
     let prepared = screenshot_json(&app, &prepare, &mac_token, lease, metadata.clone()).await;
     assert_eq!(prepared.status(), 200);
     let ticket = value(prepared).await;
+    let key = ticket["objectKey"].as_str().unwrap();
+    assert!(!key.contains(job));
+    let (shard, filename) = key
+        .strip_prefix("screenshots/materials/")
+        .unwrap()
+        .split_once('/')
+        .unwrap();
+    let image_id = filename.strip_suffix(".png").unwrap();
+    assert_eq!(image_id.len(), 32);
+    assert!(image_id
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+    assert_eq!(shard, &image_id[..2]);
+    assert!(ticket["uploadUrl"]
+        .as_str()
+        .unwrap()
+        .contains("x-oss-signature="));
     let repeated =
         value(screenshot_json(&app, &prepare, &mac_token, lease, metadata.clone()).await).await;
     assert_eq!(ticket["objectKey"], repeated["objectKey"]);
@@ -1495,11 +1515,15 @@ async fn direct_oss_ticket_is_bound_to_worker_file_lease_and_verified_before_ide
     assert_eq!(delivered.status(), 200);
     let delivered = value(delivered).await;
     assert_eq!(delivered["delivered"], true);
-    assert_eq!(
-        delivered["result"]["notificationStatus"],
-        "protocol_pending"
-    );
+    assert_eq!(delivered["result"]["notificationStatus"], "pending");
     assert_eq!(delivered["result"]["images"][0]["sha256"], sha256);
+    let image = &delivered["result"]["images"][0];
+    assert_eq!(
+        image["imageUrl"],
+        format!("https://cdn.fixture.example/{key}")
+    );
+    assert!(image.get("imageUrlExpiresAt").is_none());
+    assert!(!image["imageUrl"].as_str().unwrap().contains(job));
     let checks = heads.load(Ordering::SeqCst);
     let repeated =
         value(screenshot_json(&app, &complete, &mac_token, lease, json!({"targetIndex":0})).await)
@@ -1531,7 +1555,10 @@ async fn direct_oss_ticket_is_bound_to_worker_file_lease_and_verified_before_ide
     )
     .await;
     assert_eq!(status["status"], "succeeded");
-    assert_eq!(status["result"], delivered["result"]);
+    assert_eq!(status["result"]["images"], delivered["result"]["images"]);
+    assert_eq!(status["result"]["notificationStatus"], "pending");
+    assert!(status["result"]["notificationError"].is_null());
+    assert!(status["result"]["notificationResults"].is_null());
     assert!(!status.to_string().contains("fixture-access-secret"));
     server.abort();
     let _ = server.await;

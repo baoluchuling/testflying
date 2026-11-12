@@ -90,8 +90,8 @@
           <h3>外部结果通知</h3>
           <label for="screenshotNotificationUrl">通知 URL（可选）</label><input id="screenshotNotificationUrl" type="url" autocomplete="off" spellcheck="false" placeholder="https://notify.example.com/screenshot">
           <label for="screenshotNotificationToken">通知鉴权 Token（可选）</label><input id="screenshotNotificationToken" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="screenshotSecretsHint">
-          <label for="screenshotNotificationState">通知协议状态</label><input id="screenshotNotificationState" readonly value="协议待接入，暂不发送通知">
-          <p class="hint">本次仅保存通知地址与 Token。协议待接入，暂不发送通知；截图上传成功不代表通知成功。</p>
+          <label for="screenshotNotificationState">通知协议状态</label><input id="screenshotNotificationState" readonly value="读取配置后显示通知状态">
+          <p class="hint">填写 Studio 的 /api/hooks/captures 完整 HTTPS 地址与独立回传 Token。任务结束后中心自动回传；未配置不影响截图，上传成功与通知成功分别记录。</p>
           <button id="screenshotSettingsSave" type="submit" disabled>保存截图设置</button>
           <button id="screenshotSettingsRefresh" type="button" class="quiet">刷新截图设置</button>
         </form>

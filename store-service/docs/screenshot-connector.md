@@ -1,6 +1,6 @@
 # macOS 截图 Connector
 
-外部系统按平台、包名绑定截图节点，提交平台、包名、截图要求和 target 数组。中心创建任务并返回 jobId，之后保存、节点执行和结果通知都使用该 ID，调用方无需传入。Mac 上的 Connector 为每个任务开启独立的 Codex Goal 会话。Codex 自行发现项目、准备模拟器和操作 App，并在同一会话中调用 Connector 提供的校验、截图和回传工具。节点将 PNG 直接上传 OSS，中心保存目标与图片地址的对应关系；外部结果通知协议待接入。
+外部系统按平台、包名绑定截图节点，提交平台、包名、截图要求和 target 数组。中心创建任务并返回 jobId，之后保存、节点执行和结果通知都使用该 ID，调用方无需传入。Mac 上的 Connector 为每个任务开启独立的 Codex Goal 会话。Codex 自行发现项目、准备模拟器和操作 App，并在同一会话中调用 Connector 提供的校验、截图和回传工具。节点将 PNG 直接上传 OSS，中心保存目标与图片地址的对应关系；任务结束后中心按 Studio capture-v1 协议回传完整结果；通知独立于截图状态。
 
 ## 创建节点
 
@@ -60,6 +60,6 @@ sh ./install.sh
 
 在中心后台「截图上传与结果通知」保存 OSS 和外部通知配置。OSS 凭据加密保存在中心，节点部署包中不包含 AccessKey。截图节点通过中心获取绑定任务、租约与图片摘要的短时 PUT 地址，将原始 PNG 直接上传至 OSS，再通知中心读取对象元数据验证并记录结果。中心不接收该链路图片字节，也不落盘保存图片。OSS 配置缺失不拦截截图执行，在实际上传阶段返回 screenshot_oss_not_configured。
 
-外部回调的固定格式尚未确定。本轮可保存 URL 和鉴权 Token，状态为 protocol_pending，尚不发送回调；未填 URL 显示 not_configured。上传结果含图片地址、对象路径、摘要和 notificationStatus，明确区分 OSS 上传成功与通知待接入。
+填写 Studio 完整 HTTPS `/api/hooks/captures` 地址和独立 Bearer Token；中心在任务结束后 POST 完整结果，必要时 GET 同路径后追加 jobId 对账。缺少地址或 Token 为 not_configured，不阻止截图执行；通知状态通过 result.notificationStatus 查看，失败只重试回传、不重新执行采集。图片使用公开 HTTPS PNG 直链，路径为 store-studio/materials/图片ID前两位/32位图片ID.png，不含 jobId。没有主题参数，一单只使用一种设备；多页面、多语言仍支持。完整回传格式与重试规则见统一文档。
 
-本轮需在截图 Mac 重新安装最新 arm64 部署包以升级程序，沿用原节点身份和 Codex 环境。旧程序（包括此前协议 2）不能领取协议 3 的新任务，返回 screenshot_connector_upgrade_required 且任务保留在队列；旧 PNG 回传入口在 OSS 启用后也返回该错误。完整配置 API、访问地址有效期和外部接口见[中心统一文档](store-api.md#截图节点与截图任务https)。
+本轮需在截图 Mac 重新安装最新 arm64 部署包以升级程序，沿用原节点身份和 Codex 环境。旧程序（包括此前协议 2）不能领取协议 3 的新任务，返回 screenshot_connector_upgrade_required 且任务保留在队列；旧 PNG 回传入口在 OSS 启用后也返回该错误。完整配置 API、公开直链和外部接口见[中心统一文档](store-api.md#截图节点与截图任务https)。
