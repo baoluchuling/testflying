@@ -1,5 +1,5 @@
 {
-  "runId": "88966eb1993142cd8c03d14d7314a6e1",
+  "runId": "d0181e8934ed42c18f537db0272da1c4",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -19,7 +19,7 @@
     "HTTP displays the HTTPS link without prompting for credentials or contacting the node API",
     "wrong Token stays locked and transient unlock failure can be retried",
     "node setup and integration management appear only after shared HTTPS administrator unlock",
-    "mock OSS and pending notification settings save without notifying; secrets clear before the response and only configured flags return",
+    "mock OSS and HTTP notification settings save without notifying; secrets clear before the response and only configured flags return",
     "blank screenshot passwords are omitted to preserve configured secrets and masked refresh retains ordinary fields",
     "AccessKey changes require a new Secret; failed settings saves keep the admin unlocked and display a fixed safe error",
     "administrator can pause iOS and Android independently and refresh persisted forwarding state",
@@ -43,13 +43,13 @@
     "mobile layout has no horizontal overflow",
     "no credential file or account fields are uploaded and CSP passes"
   ],
-  "windowsExecutableSha256": "1cdce53054471b15fa33ca005f45e93f78e805c013836aa81e8084d9a68e7fc7",
+  "windowsExecutableSha256": "8f7e2789acbe8f2b8c533fd59fabd924c2c88cdc9481378b1a2f039ab22288d9",
   "credentialFilesUploaded": false,
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "5640ef52-cdc0-4c04-b287-4083a912a457",
-    "1989662e-cccc-43c4-a4d5-06202dd20878"
+    "1a475cad-42a5-4cf0-a834-e480aacd836a",
+    "8cb87851-405c-4d2b-a160-2d6feaf09a7f"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0
