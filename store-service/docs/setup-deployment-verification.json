@@ -1,17 +1,17 @@
 {
-  "runId": "2d7dae89d26044148f06bc4b9a7b9903",
+  "runId": "436fcdb7e85e427e8d04df3b1158e135",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-12T10:41:57.641343+00:00",
-  "deploymentCommit": "37c349e3a257c9ddcc368a4210d260834bfe6584",
-  "binarySourceCommit": "ca8b64471663c4ba397f82f6339277f8db026c75",
-  "apiSha256": "1ccde6a5146f2efeac9b0c9f5b09eeb415a5bba0ef28e55d26cd12a10056cfce",
+  "finishedAt": "2026-11-16T15:43:51.198053+00:00",
+  "deploymentCommit": "26d0a2056b6c287b8f017e5605822a52b627e9d0",
+  "binarySourceCommit": "84508c96fb1f74bfe7cdaf9f64fdc989484a9bfd",
+  "apiSha256": "8a2c9961d8bb9a535635f67ebd1baff7f577b757f4ff7d14c6fb9119e33a000e",
   "connectorBinarySha256": {
-    "linux-amd64": "d9e663adaf4328e22448ae8c3022f7a6695afd1f31464833ab4ae3c730ffc368",
-    "darwin-arm64": "115d1f5ea6159e9bcfd56164918bc116b5fd14196d19039338d2debc9a520dbe",
-    "windows-amd64": "0fc35c83f03f50a03bc8863eea5740a1c7d7a83e47eb186c19cfc9b111cc19ef"
+    "linux-amd64": "38791347e74226cc58b59f3e4fe923a58b9829e1c1edbd3e59c0d657e99b2af9",
+    "darwin-arm64": "02e7163ad5cb5f18a2a1fb06648d5179a330ccf9cea19e46e701352feecbdadb",
+    "windows-amd64": "1755a8a74cedd0206259536d82a0442560aebd137ecdc28f72721d0867db49f7"
   },
-  "screenshotConnectorSha256": "24f71555f8cdcad39e80f1d08590fe16b6605d39f1c41b453daf16022bf082e5",
+  "screenshotConnectorSha256": "cc68cee1bc12ae44908188792fa8c93b5402be7ea7193361b1399d16023922d1",
   "screenshotUploadConfigured": false,
   "checks": [
     "node connection inventory readable before rollout",
@@ -70,70 +70,51 @@
   },
   "cleanup": "See the supervisor cleanup report for this runId",
   "storeConnectorPublication": {
-    "runId": "2d7dae89d26044148f06bc4b9a7b9903",
-    "sourceCommit": "37c349e3a257c9ddcc368a4210d260834bfe6584",
+    "runId": "436fcdb7e85e427e8d04df3b1158e135",
+    "sourceCommit": "26d0a2056b6c287b8f017e5605822a52b627e9d0",
     "downloadVerified": {
-      "linux-amd64": "d9e663adaf4328e22448ae8c3022f7a6695afd1f31464833ab4ae3c730ffc368",
-      "darwin-arm64": "115d1f5ea6159e9bcfd56164918bc116b5fd14196d19039338d2debc9a520dbe",
-      "windows-amd64": "0fc35c83f03f50a03bc8863eea5740a1c7d7a83e47eb186c19cfc9b111cc19ef"
+      "linux-amd64": "38791347e74226cc58b59f3e4fe923a58b9829e1c1edbd3e59c0d657e99b2af9",
+      "darwin-arm64": "02e7163ad5cb5f18a2a1fb06648d5179a330ccf9cea19e46e701352feecbdadb",
+      "windows-amd64": "1755a8a74cedd0206259536d82a0442560aebd137ecdc28f72721d0867db49f7"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
     "configurationMergeSupported": true,
     "actualStoreAccountsUsed": false
   },
-  "asyncStoreImages": {
-    "initialSuccessMeaning": "validated and admitted; not store completion",
-    "queryPath": "/v1/store-management/apps/{platform}/{bundleIdentifier}/sync-jobs/{jobId}",
-    "jobIdSource": "original center requestId",
-    "queryThroughHttpsProxyVerified": true,
-    "noStoreRequestsForQuery": true,
-    "retentionDays": 7,
-    "pureTextAndMixedRemainSynchronous": true,
-    "bothUrlAndAssetIdSupported": true,
-    "urlAnonymousTempfile": true,
-    "assetLeaseOwnedByActualBackgroundWorker": true,
-    "earlyHttpResponseDoesNotCleanFiles": true,
-    "requiresStoreNodeUpgrade": true,
-    "legacyNodesRemainSynchronous": true,
-    "centerRestartOnlyReconcilesStatus": true,
-    "storeWriteReplay": false,
-    "settingsCiphertextUnchanged": true,
-    "appBindingsUnchanged": true,
-    "forwardingUnchanged": true,
-    "storeBindings": 6,
-    "screenshotBindings": 3,
-    "actualStoreRequests": 0,
-    "storeWrites": 0,
-    "screenshotJobsCreated": 0,
-    "externalNotificationsSent": 0
-  },
-  "screenshotConnectorPublication": {
-    "sourceCommit": "ca8b64471663c4ba397f82f6339277f8db026c75",
-    "sha256": "24f71555f8cdcad39e80f1d08590fe16b6605d39f1c41b453daf16022bf082e5",
+  "screenshotCodexPermissions": {
+    "cliVersion": "codex-cli 0.139.0",
+    "threadStartSandbox": "danger-full-access",
+    "turnStartSandboxPolicy": {
+      "type": "dangerFullAccess"
+    },
+    "approvalPolicy": "never",
+    "customPermissionProfile": false,
+    "modelRequests": 0,
+    "realCodexTurns": 0,
     "downloadVerified": true,
     "architecture": "arm64",
-    "ossCredentialsInPackage": false,
-    "taskProtocol": 3,
-    "requiresNodeUpgrade": false,
-    "sharedSourceProvenanceRebuild": true
+    "screenshotConnectorSha256": "cc68cee1bc12ae44908188792fa8c93b5402be7ea7193361b1399d16023922d1",
+    "threadAndTurnPoliciesVerifiedByProtocolFixture": true,
+    "goalPromptAndDynamicToolsPreserved": true,
+    "requiresScreenshotNodeUpgrade": true,
+    "requiresStoreNodeUpgrade": false,
+    "globalCodexConfigurationChanged": false,
+    "realSimulatorTasks": 0,
+    "realStoreRequests": 0,
+    "ossRequests": 0,
+    "studioCallbacksTriggered": 0,
+    "settingsCiphertextUnchanged": true,
+    "bindingsUnchanged": true,
+    "forwardingUnchanged": true,
+    "storeBindings": 7,
+    "screenshotBindings": 7
   },
   "artifactLifecycle": {
     "runs": [
       {
-        "runId": "3f3cd69f2c2d4e40b97181212a78e463",
-        "kind": "initial native validation",
-        "outcome": "compile failed; corrected",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": "/Users/admin/Library/Caches/CodexArtifactLifecycle/evidence/store-service-a59b33aca240/3f3cd69f2c2d4e40b97181212a78e463",
-        "evidenceExpiresAt": "2026-11-19T10:16:07.946290+00:00"
-      },
-      {
-        "runId": "d8b03bf5d5d541dab75de66a5d7dbc5f",
-        "kind": "inspection",
+        "runId": "cf977b1c775b46c6a994727a0fd4949e",
+        "kind": "read-only CLI/schema",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -143,8 +124,8 @@
         "evidenceExpiresAt": null
       },
       {
-        "runId": "49f3afe09c214680b9f0ad37ad04ac65",
-        "kind": "pre-final native verification",
+        "runId": "d47a9a61c51945d8a31a5a164121a3e5",
+        "kind": "native validation",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -154,8 +135,8 @@
         "evidenceExpiresAt": null
       },
       {
-        "runId": "5859877f2874484fb91100df0128ae05",
-        "kind": "final native validation",
+        "runId": "c63d42b423c0474191005d754d700f0b",
+        "kind": "all release builds",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
         "releasedBytes": null,
@@ -165,18 +146,7 @@
         "evidenceExpiresAt": null
       },
       {
-        "runId": "71fd473b34cd4e88a1fd91c57175451e",
-        "kind": "all release build",
-        "outcome": "succeeded",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": null,
-        "evidenceExpiresAt": null
-      },
-      {
-        "runId": "f737da16d9ab447aadc5643ceca6f8c0",
+        "runId": "dc0ce10b22834b74846a957eec94370d",
         "kind": "Windows release build",
         "outcome": "succeeded",
         "cleanup": "deleted owned roots",
@@ -187,15 +157,13 @@
         "evidenceExpiresAt": null
       }
     ],
-    "deploymentRunId": "2d7dae89d26044148f06bc4b9a7b9903",
+    "deploymentRunId": "436fcdb7e85e427e8d04df3b1158e135",
     "deploymentOutcome": "succeeded",
     "deploymentCleanup": "deleted owned roots; supervisor report verified after exit",
     "deploymentRemainingProcesses": 0,
     "deploymentRemainingExternalResources": 0,
     "deploymentEvidencePath": null,
     "deploymentEvidenceExpiresAt": null,
-    "installedIntegrationHeartbeatAndHashesVerified": true,
-    "releasedBytes": "not measured",
     "quarantineAdded": false,
     "existingAuditFindings": [
       "1db3215ed081473b86a856c423cd083f",
@@ -204,10 +172,8 @@
       "8bb74c58fb7f431299fce19753d8f672",
       "9bff00c45b9440e9b18bde4cec846364"
     ],
-    "formalDeliverables": "release binaries and verification reports retained; production remains deployed",
-    "preexistingWindowsWarnings": [
-      "store-provider/src/diagnostics.rs:58 unused_mut under Windows",
-      "store-connector/src/install.rs:230 unused_mut under Windows"
-    ]
+    "releasedBytes": "not measured",
+    "installedIntegrationHeartbeatAndHashesVerified": true,
+    "formalDeliverables": "release binaries and reports retained; production service remains deployed"
   }
 }
