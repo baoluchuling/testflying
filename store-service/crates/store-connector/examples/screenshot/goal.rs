@@ -212,7 +212,7 @@ impl Session<'_> {
                 json!({
                     "cwd":self.root,
                     "approvalPolicy":"never",
-                    "sandbox":"workspace-write",
+                    "sandbox":"danger-full-access",
                     "developerInstructions":self.instructions,
                     "dynamicTools":tool_specs()
                 }),
@@ -238,9 +238,17 @@ impl Session<'_> {
         }
         let input = vec![json!({"type":"text","text":self.prompt})];
         // The first turn can issue a tool call immediately after its response.
-        rpc.request(3, "turn/start", json!({"threadId":thread,"input":input}))
-            .await
-            .map_err(|_| "codex_turn_start_failed")?;
+        rpc.request(
+            3,
+            "turn/start",
+            json!({
+                "threadId":thread,"input":input,
+                "approvalPolicy":"never",
+                "sandboxPolicy":{"type":"dangerFullAccess"}
+            }),
+        )
+        .await
+        .map_err(|_| "codex_turn_start_failed")?;
         Ok(thread)
     }
 
@@ -398,6 +406,14 @@ reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
             .map(|line| serde_json::from_str(line).unwrap())
             .collect();
         assert_eq!(messages[2]["params"]["developerInstructions"], INSTRUCTIONS);
+        assert_eq!(messages[2]["params"]["approvalPolicy"], "never");
+        assert_eq!(messages[2]["params"]["sandbox"], "danger-full-access");
+        assert!(messages[2]["params"].get("permissions").is_none());
+        assert_eq!(messages[4]["params"]["approvalPolicy"], "never");
+        assert_eq!(
+            messages[4]["params"]["sandboxPolicy"],
+            json!({"type":"dangerFullAccess"})
+        );
         assert_eq!(messages[3]["params"]["objective"], GOAL);
         assert_eq!(messages[4]["params"]["input"][0]["text"], prompt);
         assert_eq!(messages[5]["id"], "retry");

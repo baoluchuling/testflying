@@ -36,7 +36,7 @@ Content-Type: application/json
 }
 ```
 
-使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 从安装账号的 `PATH` 找到 Codex CLI，沿用该账号的登录和用户配置，并以内置 `workspace-write` 沙盒和 `never` 审批模式启动。特殊安装可通过 `codexPath` 或 `codexHome` 指定绝对路径。Codex 按本机权限查找项目，任务的工作区设为 Connector 创建的私有临时目录，用于存放任务产物，完成、失败或正常停止时清理。[OpenAI Docs](https://learn.chatgpt.com/docs/sandboxing)
+使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 从安装账号的 `PATH` 找到 Codex CLI，沿用该账号的登录和用户配置。截图 Goal 在 App Server 的 `thread/start` 显式设置 `sandbox:"danger-full-access"`、`approvalPolicy:"never"`，首轮 `turn/start` 同时设置 `sandboxPolicy:{"type":"dangerFullAccess"}`、`approvalPolicy:"never"`；后续 Goal 轮次继承该策略。Codex 可以按部署账号的操作系统权限管理临时目录以外的项目、开发工具与模拟器，无需自定义权限 profile 或修改全局 Codex 配置。该设置不替代 macOS 隐私授权或管理员 requirements 限制。特殊安装可通过 `codexPath` 或 `codexHome` 指定绝对路径。任务的私有临时目录仍用于存放产物，完成、失败或正常停止时清理。[App Server 协议](https://learn.chatgpt.com/docs/app-server#turns)
 
 需要支持 Goal 和 App Server 动态工具的 Codex CLI，已验证 0.139.0 的初始化协议。Connector 为该进程启用 Goal。Codex 自行决定复用、创建或启动模拟器，以及是否构建、安装和启动 App。会话先调用 `get_capture_task` 读取 jobId、应用与 target；`validate_simulator` 检查所选设备，`capture_screenshot` 按 targetIndex 截取该设备并返回 screenshotId，`upload_screenshot` 用相同 targetIndex 上传这张图。可恢复的工具失败会返回给当前 Goal，Codex 可以修复后重试。每张图确认后继续下一个目标，全部 target 均确认上传后 Goal 才算完成。[OpenAI Docs](https://learn.chatgpt.com/docs/app-server)
 
