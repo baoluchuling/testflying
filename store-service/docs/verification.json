@@ -1,6 +1,6 @@
 {
-  "runId": "5859877f2874484fb91100df0128ae05",
-  "finishedAt": "2026-11-12T10:36:08.779981+00:00",
+  "runId": "d47a9a61c51945d8a31a5a164121a3e5",
+  "finishedAt": "2026-11-16T15:38:13.437826+00:00",
   "checks": [
     {
       "command": [
@@ -69,24 +69,24 @@
       ],
       "exitCode": 0,
       "testSummaries": [
-        "test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s",
+        "test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
         "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.11s",
-        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s",
-        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.07s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s",
         "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
         "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.22s",
         "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
-        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
         "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
         "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
-        "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
-        "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 18.53s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.35s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
@@ -211,7 +211,7 @@
     "crates/store-connector/Cargo.toml": "aad3220922e27cb57d5c76c1f1e042bc657f0e809fc69a0b81e6f29fe666af9d",
     "crates/store-connector/examples/screenshot/connector.rs": "f288c4db6ff3084c2c5d74e8187efa3f06c5869f9cb78eef1b44546f0c899531",
     "crates/store-connector/examples/screenshot/diagnostic.rs": "ef916e1312de2e90c9b6a0ef766e0f1b81004640099aa34c14fcd0d83cc67ca4",
-    "crates/store-connector/examples/screenshot/goal.rs": "64f5928307f11d4ec6f2565d48b95e386ce1a71315e0ab9b51e03d2ece1a9433",
+    "crates/store-connector/examples/screenshot/goal.rs": "2453c9f713303c07930c23e25a6ea769aa10f58dd847529a01b1103ff24718bd",
     "crates/store-connector/examples/screenshot/worker.rs": "1fd2238caae6e2dab4f6e8c4a12aaeca59a3976e97be91980b0fbdef7f9d848e",
     "crates/store-connector/examples/screenshot-connector.rs": "8ca9480c603296c5ad138a9a66293ad71b29dfe7ce9ce5dc6f835a72f95eb066",
     "crates/store-connector/src/image_jobs.rs": "03af69859d7b378fc3f7e534917e85a21ca84fa615fc50b7493e1b85e16844ab",
@@ -248,7 +248,7 @@
     "packaging/connector/install.sh": "d2e1dc66abe6394e622c7510098571e57fd36e577306db59012ebc97e53b4cb6",
     "packaging/connector/start.cmd": "8d004a7f62d2a5028b308d4c6f22d3dcece518ec4eb2f4543614718c5e8ad5e5",
     "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
-    "packaging/screenshot-connector/README.md": "91eddd47394eb261ab9e577f4e12bebc2758208963f9801be5d33fbf1dc86226",
+    "packaging/screenshot-connector/README.md": "e619f198ee09cf413e839ad42b734a19bc5dc7b88598abb2c09c87c05ed11deb",
     "packaging/screenshot-connector/install.sh": "29a7aafc094792165ccb41fefdb8c715045ed8bcabe80af3bf0b415cd2d6f726",
     "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7",
     "scripts/managed_workspace.py": "840a77c1c75de77372bacfcbd5049179340a5e910923f30b4a7ed0828a37e203",
@@ -263,5 +263,16 @@
     "Cross-platform CI",
     "Deployment"
   ],
-  "cleanup": "See the supervisor cleanup report for this runId"
+  "cleanup": "See the supervisor cleanup report for this runId",
+  "screenshotCodexPermissions": {
+    "cliVersion": "codex-cli 0.139.0",
+    "threadStartSandbox": "danger-full-access",
+    "turnStartSandboxPolicy": {
+      "type": "dangerFullAccess"
+    },
+    "approvalPolicy": "never",
+    "customPermissionProfile": false,
+    "modelRequests": 0,
+    "realCodexTurns": 0
+  }
 }

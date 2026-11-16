@@ -1,7 +1,7 @@
 {
-  "runId": "f737da16d9ab447aadc5643ceca6f8c0",
-  "finishedAt": "2026-11-12T10:37:24.390659+00:00",
-  "sourceCommit": "ca8b64471663c4ba397f82f6339277f8db026c75",
+  "runId": "dc0ce10b22834b74846a957eec94370d",
+  "finishedAt": "2026-11-16T15:38:12.082189+00:00",
+  "sourceCommit": "84508c96fb1f74bfe7cdaf9f64fdc989484a9bfd",
   "sourceHashes": {
     "Cargo.lock": "b9b882b03826bbca9fbaa6a2f78dfdc5c5651c915ddd42c95532603ca375719a",
     "Cargo.toml": "fd87675617bd5deda3fe4e5fb91d81b194a43536aed5a43234b68c7592778db9",
@@ -51,7 +51,7 @@
     "crates/store-connector/Cargo.toml": "aad3220922e27cb57d5c76c1f1e042bc657f0e809fc69a0b81e6f29fe666af9d",
     "crates/store-connector/examples/screenshot/connector.rs": "f288c4db6ff3084c2c5d74e8187efa3f06c5869f9cb78eef1b44546f0c899531",
     "crates/store-connector/examples/screenshot/diagnostic.rs": "ef916e1312de2e90c9b6a0ef766e0f1b81004640099aa34c14fcd0d83cc67ca4",
-    "crates/store-connector/examples/screenshot/goal.rs": "64f5928307f11d4ec6f2565d48b95e386ce1a71315e0ab9b51e03d2ece1a9433",
+    "crates/store-connector/examples/screenshot/goal.rs": "2453c9f713303c07930c23e25a6ea769aa10f58dd847529a01b1103ff24718bd",
     "crates/store-connector/examples/screenshot/worker.rs": "1fd2238caae6e2dab4f6e8c4a12aaeca59a3976e97be91980b0fbdef7f9d848e",
     "crates/store-connector/examples/screenshot-connector.rs": "8ca9480c603296c5ad138a9a66293ad71b29dfe7ce9ce5dc6f835a72f95eb066",
     "crates/store-connector/src/image_jobs.rs": "03af69859d7b378fc3f7e534917e85a21ca84fa615fc50b7493e1b85e16844ab",
@@ -88,7 +88,7 @@
     "packaging/connector/install.sh": "d2e1dc66abe6394e622c7510098571e57fd36e577306db59012ebc97e53b4cb6",
     "packaging/connector/start.cmd": "8d004a7f62d2a5028b308d4c6f22d3dcece518ec4eb2f4543614718c5e8ad5e5",
     "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
-    "packaging/screenshot-connector/README.md": "91eddd47394eb261ab9e577f4e12bebc2758208963f9801be5d33fbf1dc86226",
+    "packaging/screenshot-connector/README.md": "e619f198ee09cf413e839ad42b734a19bc5dc7b88598abb2c09c87c05ed11deb",
     "packaging/screenshot-connector/install.sh": "29a7aafc094792165ccb41fefdb8c715045ed8bcabe80af3bf0b415cd2d6f726",
     "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7",
     "scripts/managed_workspace.py": "840a77c1c75de77372bacfcbd5049179340a5e910923f30b4a7ed0828a37e203",
@@ -100,7 +100,7 @@
   "toolchain": "Rust 1.94.0 / cargo-zigbuild 0.20.1 / Zig 0.14.1",
   "outputs": {
     "releases/windows-amd64/store-connector.exe": {
-      "sha256": "0fc35c83f03f50a03bc8863eea5740a1c7d7a83e47eb186c19cfc9b111cc19ef",
+      "sha256": "1755a8a74cedd0206259536d82a0442560aebd137ecdc28f72721d0867db49f7",
       "bytes": 15802368,
       "format": "PE32+ executable (console) x86-64, for MS Windows",
       "importedDlls": [
