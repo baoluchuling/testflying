@@ -1,20 +1,27 @@
 {
-  "runId": "436fcdb7e85e427e8d04df3b1158e135",
+  "runId": "020812ff304c42d799bf4cb5f73d5eab",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-16T15:43:51.198053+00:00",
-  "deploymentCommit": "26d0a2056b6c287b8f017e5605822a52b627e9d0",
-  "binarySourceCommit": "84508c96fb1f74bfe7cdaf9f64fdc989484a9bfd",
-  "apiSha256": "8a2c9961d8bb9a535635f67ebd1baff7f577b757f4ff7d14c6fb9119e33a000e",
+  "finishedAt": "2026-11-17T15:52:24.386942+00:00",
+  "deploymentCommit": "5003d9acd21ad3f1b209eea9f2415eab61cdcf7b",
+  "binarySourceCommit": "3080279a4a5c25f202509c410a26269a22036b07",
+  "apiSha256": "6b409d6d7494a47b91ca1346c654bab672508afb19fd8d9cc7e94bb40cd316f7",
   "connectorBinarySha256": {
-    "linux-amd64": "38791347e74226cc58b59f3e4fe923a58b9829e1c1edbd3e59c0d657e99b2af9",
-    "darwin-arm64": "02e7163ad5cb5f18a2a1fb06648d5179a330ccf9cea19e46e701352feecbdadb",
-    "windows-amd64": "1755a8a74cedd0206259536d82a0442560aebd137ecdc28f72721d0867db49f7"
+    "linux-amd64": "391d895bcd059a64b5af11e159b9131f9099ca52df05771af64b6936bca6b836",
+    "darwin-arm64": "fdc525704eb8e78abf763d92a43fb59c71bd6587caeaaee64a54d9625ea6db54",
+    "windows-amd64": "162ed7844fe67d02b7b05a275aaed56260e714335b5bf13b94e79ceaa943a0cf"
   },
-  "screenshotConnectorSha256": "cc68cee1bc12ae44908188792fa8c93b5402be7ea7193361b1399d16023922d1",
+  "screenshotConnectorSha256": "9671b4fc6a2146a3c88e2cd59320b45931fb192afe7d855f26eea6a94f143dff",
   "screenshotUploadConfigured": false,
   "checks": [
     "node connection inventory readable before rollout",
+    "consistent cached screenshot route before rollout android/app.snapflix.android",
+    "consistent cached screenshot route before rollout android/com.amberia.android",
+    "consistent cached screenshot route before rollout android/com.app.android.qw.newreadink",
+    "consistent cached screenshot route before rollout android/com.app.android.qw.readink",
+    "consistent cached screenshot route before rollout ios/app.snapflix.ios",
+    "consistent cached screenshot route before rollout ios/com.cfs.amberia",
+    "consistent cached screenshot route before rollout ios/com.cfs.pagealoud.ios",
     "existing integration inventory readable before rollout",
     "existing credential retrieved for continuity check",
     "HTTP health after API-only rollout",
@@ -24,8 +31,11 @@
     "business credentials cannot read administrator logs",
     "exact deployed log viewer asset logs.mjs",
     "exact deployed log viewer asset app.mjs",
+    "exact deployed log viewer asset accounts.mjs",
     "exact deployed log viewer asset index.html",
+    "exact deployed log viewer asset style.css",
     "exact deployed log viewer asset forwarding.mjs",
+    "exact deployed log viewer asset screenshot-settings.mjs",
     "previously connected nodes recovered after center restart",
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
@@ -38,13 +48,15 @@
     "windows-amd64 updated installation package available",
     "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
-    "http eleven store, two node and six screenshot endpoints plus upload helpers",
+    "http eleven store, two node, six screenshot and four account endpoints plus two upload helpers",
+    "http exact four account endpoints and cached directory contract",
     "http language and device options with platform limits",
     "http exact deployed markdown document",
     "http exact deployed openapi document",
     "http anonymous documentation denied",
     "https business-token documentation available",
-    "https eleven store, two node and six screenshot endpoints plus upload helpers",
+    "https eleven store, two node, six screenshot and four account endpoints plus two upload helpers",
+    "https exact four account endpoints and cached directory contract",
     "https language and device options with platform limits",
     "https exact deployed markdown document",
     "https exact deployed openapi document",
@@ -54,13 +66,51 @@
     "integration documentation access still requires HTTPS",
     "verified center release selected",
     "persistent service and HTTP HTTPS proxy configuration preserved",
-    "store and screenshot Connector publication hashes verified"
+    "store and screenshot Connector publication hashes verified",
+    "read-only migration preserves legacyStoreBindings",
+    "read-only migration preserves legacyScreenshotBindings",
+    "read-only migration preserves forwarding",
+    "read-only migration preserves connectorIdentitySha256",
+    "read-only migration preserves integrationsSha256",
+    "read-only migration preserves integrationGrantsSha256",
+    "read-only migration preserves screenshotSettingsSha256",
+    "preexisting account IDs, names, node relations and enabled states preserved",
+    "transactional account migration marker recorded",
+    "administrator account migration inventory readable",
+    "developer account inventory mirrors administrator relations",
+    "public cached account inventory omits node IDs and secrets",
+    "cached account app schema includes separate screenshot resolution 1b109fa0-2900-4922-a186-ff635daeb59b",
+    "cached account app schema includes separate screenshot resolution 9273266c-30c6-4ff5-a05f-f11388d7583b",
+    "cached account app schema includes separate screenshot resolution 5fc49492-4157-4fac-b253-5248756b5aeb",
+    "cached app ownership retains original account nodes /v1/apps/android/app.snapflix.android",
+    "legacy store binding retains original node /v1/apps/android/app.snapflix.android",
+    "legacy screenshot binding or per-app suppression retained /v1/apps/android/app.snapflix.android",
+    "cached app ownership retains original account nodes /v1/apps/android/com.amberia.android",
+    "legacy store binding retains original node /v1/apps/android/com.amberia.android",
+    "legacy screenshot binding or per-app suppression retained /v1/apps/android/com.amberia.android",
+    "cached app ownership retains original account nodes /v1/apps/android/com.app.android.qw.newreadink",
+    "legacy store binding retains original node /v1/apps/android/com.app.android.qw.newreadink",
+    "legacy screenshot binding or per-app suppression retained /v1/apps/android/com.app.android.qw.newreadink",
+    "cached app ownership retains original account nodes /v1/apps/android/com.app.android.qw.readink",
+    "legacy store binding retains original node /v1/apps/android/com.app.android.qw.readink",
+    "legacy screenshot binding or per-app suppression retained /v1/apps/android/com.app.android.qw.readink",
+    "cached app ownership retains original account nodes /v1/apps/ios/app.snapflix.ios",
+    "legacy store binding retains original node /v1/apps/ios/app.snapflix.ios",
+    "legacy screenshot binding or per-app suppression retained /v1/apps/ios/app.snapflix.ios",
+    "cached app ownership retains original account nodes /v1/apps/ios/com.cfs.amberia",
+    "legacy store binding retains original node /v1/apps/ios/com.cfs.amberia",
+    "legacy screenshot binding or per-app suppression retained /v1/apps/ios/com.cfs.amberia",
+    "cached app ownership retains original account nodes /v1/apps/ios/com.cfs.pagealoud.ios",
+    "legacy store binding retains original node /v1/apps/ios/com.cfs.pagealoud.ios",
+    "legacy screenshot binding or per-app suppression retained /v1/apps/ios/com.cfs.pagealoud.ios"
   ],
   "testNodesCreated": 0,
   "appBindingsWritten": 0,
   "actualStoreAccountsUsed": false,
   "apiDocumentation": {
-    "contractVersion": "2026-11-12",
+    "contractVersion": "2026-11-17",
+    "coreEndpoints": 23,
+    "uploadHelpers": 2,
     "formats": [
       "json",
       "markdown",
@@ -69,111 +119,184 @@
     "existingIntegrationTokenVerified": true
   },
   "cleanup": "See the supervisor cleanup report for this runId",
+  "accountMigration": {
+    "verificationMode": "read-only cached GET and SQLite query-only transaction",
+    "providerCalls": 0,
+    "refreshRequests": 0,
+    "accountsCreatedByChecks": 0,
+    "bindingsWrittenByChecks": 0,
+    "legacyStoreBindings": [
+      [
+        "android",
+        "app.snapflix.android",
+        "806eb06e-90ef-43d3-8b0a-ac3410a2a75e"
+      ],
+      [
+        "android",
+        "com.amberia.android",
+        "806eb06e-90ef-43d3-8b0a-ac3410a2a75e"
+      ],
+      [
+        "android",
+        "com.app.android.qw.newreadink",
+        "5d4a07c0-2a1b-47e7-a450-8484e225e168"
+      ],
+      [
+        "android",
+        "com.app.android.qw.readink",
+        "5d4a07c0-2a1b-47e7-a450-8484e225e168"
+      ],
+      [
+        "ios",
+        "app.snapflix.ios",
+        "806eb06e-90ef-43d3-8b0a-ac3410a2a75e"
+      ],
+      [
+        "ios",
+        "com.cfs.amberia",
+        "806eb06e-90ef-43d3-8b0a-ac3410a2a75e"
+      ],
+      [
+        "ios",
+        "com.cfs.pagealoud.ios",
+        "806eb06e-90ef-43d3-8b0a-ac3410a2a75e"
+      ]
+    ],
+    "legacyScreenshotBindings": [
+      [
+        "android",
+        "app.snapflix.android",
+        "e9f1121f-9fcb-412c-a2e5-e24ee544f672"
+      ],
+      [
+        "android",
+        "com.amberia.android",
+        "e9f1121f-9fcb-412c-a2e5-e24ee544f672"
+      ],
+      [
+        "android",
+        "com.app.android.qw.newreadink",
+        "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596"
+      ],
+      [
+        "android",
+        "com.app.android.qw.readink",
+        "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596"
+      ],
+      [
+        "ios",
+        "app.snapflix.ios",
+        "e9f1121f-9fcb-412c-a2e5-e24ee544f672"
+      ],
+      [
+        "ios",
+        "com.cfs.amberia",
+        "e9f1121f-9fcb-412c-a2e5-e24ee544f672"
+      ],
+      [
+        "ios",
+        "com.cfs.pagealoud.ios",
+        "e9f1121f-9fcb-412c-a2e5-e24ee544f672"
+      ]
+    ],
+    "preservedHashes": {
+      "legacyStoreSha256": "49035fb6fc9e8f3f95ddfba7debd098d109ed9d3738bae32064ce86aa37583ec",
+      "legacyScreenshotSha256": "72fb10769a422cdf03da4cc4af25bfa3ed8410ff4f58b6c8670377dcbc94254a",
+      "connectorIdentitySha256": "ebbdc43af832312ad6511204c451d1f1be245c9c622dbf1a1d2f2ed3944d32e5",
+      "integrationsSha256": "6e3dba445355d9dbc3f6369bcde33d5e3afe54cb086503c0ec4b9db46837900c",
+      "integrationGrantsSha256": "d8bf10be532dcd546f6ac23f5829b2b040896a39161e662fc70e7bd511a94591",
+      "screenshotSettingsSha256": "c622c41911c96741bd51174de128133555f09842bedbf6daf3904936a33ae75b"
+    },
+    "forwarding": [
+      [
+        "android",
+        0
+      ],
+      [
+        "ios",
+        1
+      ]
+    ],
+    "accountsBefore": 0,
+    "accountsAfter": 3,
+    "migrationMarkers": [
+      [
+        "accounts_v1"
+      ]
+    ],
+    "migrationIssues": [],
+    "accountMigrationErrors": [],
+    "verifiedOriginalRoutes": [
+      {
+        "platform": "android",
+        "bundleIdentifier": "app.snapflix.android",
+        "storeConnectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "screenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "accountScreenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "accountId": "9273266c-30c6-4ff5-a05f-f11388d7583b"
+      },
+      {
+        "platform": "android",
+        "bundleIdentifier": "com.amberia.android",
+        "storeConnectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "screenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "accountScreenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "accountId": "9273266c-30c6-4ff5-a05f-f11388d7583b"
+      },
+      {
+        "platform": "android",
+        "bundleIdentifier": "com.app.android.qw.newreadink",
+        "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "accountScreenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "accountId": "5fc49492-4157-4fac-b253-5248756b5aeb"
+      },
+      {
+        "platform": "android",
+        "bundleIdentifier": "com.app.android.qw.readink",
+        "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "accountScreenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "accountId": "5fc49492-4157-4fac-b253-5248756b5aeb"
+      },
+      {
+        "platform": "ios",
+        "bundleIdentifier": "app.snapflix.ios",
+        "storeConnectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "screenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "accountScreenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "accountId": "1b109fa0-2900-4922-a186-ff635daeb59b"
+      },
+      {
+        "platform": "ios",
+        "bundleIdentifier": "com.cfs.amberia",
+        "storeConnectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "screenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "accountScreenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "accountId": "1b109fa0-2900-4922-a186-ff635daeb59b"
+      },
+      {
+        "platform": "ios",
+        "bundleIdentifier": "com.cfs.pagealoud.ios",
+        "storeConnectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "screenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "accountScreenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "accountId": "1b109fa0-2900-4922-a186-ff635daeb59b"
+      }
+    ],
+    "unavailableOrInconsistentBeforeRollout": []
+  },
   "storeConnectorPublication": {
-    "runId": "436fcdb7e85e427e8d04df3b1158e135",
-    "sourceCommit": "26d0a2056b6c287b8f017e5605822a52b627e9d0",
+    "runId": "020812ff304c42d799bf4cb5f73d5eab",
+    "sourceCommit": "5003d9acd21ad3f1b209eea9f2415eab61cdcf7b",
     "downloadVerified": {
-      "linux-amd64": "38791347e74226cc58b59f3e4fe923a58b9829e1c1edbd3e59c0d657e99b2af9",
-      "darwin-arm64": "02e7163ad5cb5f18a2a1fb06648d5179a330ccf9cea19e46e701352feecbdadb",
-      "windows-amd64": "1755a8a74cedd0206259536d82a0442560aebd137ecdc28f72721d0867db49f7"
+      "linux-amd64": "391d895bcd059a64b5af11e159b9131f9099ca52df05771af64b6936bca6b836",
+      "darwin-arm64": "fdc525704eb8e78abf763d92a43fb59c71bd6587caeaaee64a54d9625ea6db54",
+      "windows-amd64": "162ed7844fe67d02b7b05a275aaed56260e714335b5bf13b94e79ceaa943a0cf"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
     "configurationMergeSupported": true,
     "actualStoreAccountsUsed": false
-  },
-  "screenshotCodexPermissions": {
-    "cliVersion": "codex-cli 0.139.0",
-    "threadStartSandbox": "danger-full-access",
-    "turnStartSandboxPolicy": {
-      "type": "dangerFullAccess"
-    },
-    "approvalPolicy": "never",
-    "customPermissionProfile": false,
-    "modelRequests": 0,
-    "realCodexTurns": 0,
-    "downloadVerified": true,
-    "architecture": "arm64",
-    "screenshotConnectorSha256": "cc68cee1bc12ae44908188792fa8c93b5402be7ea7193361b1399d16023922d1",
-    "threadAndTurnPoliciesVerifiedByProtocolFixture": true,
-    "goalPromptAndDynamicToolsPreserved": true,
-    "requiresScreenshotNodeUpgrade": true,
-    "requiresStoreNodeUpgrade": false,
-    "globalCodexConfigurationChanged": false,
-    "realSimulatorTasks": 0,
-    "realStoreRequests": 0,
-    "ossRequests": 0,
-    "studioCallbacksTriggered": 0,
-    "settingsCiphertextUnchanged": true,
-    "bindingsUnchanged": true,
-    "forwardingUnchanged": true,
-    "storeBindings": 7,
-    "screenshotBindings": 7
-  },
-  "artifactLifecycle": {
-    "runs": [
-      {
-        "runId": "cf977b1c775b46c6a994727a0fd4949e",
-        "kind": "read-only CLI/schema",
-        "outcome": "succeeded",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": null,
-        "evidenceExpiresAt": null
-      },
-      {
-        "runId": "d47a9a61c51945d8a31a5a164121a3e5",
-        "kind": "native validation",
-        "outcome": "succeeded",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": null,
-        "evidenceExpiresAt": null
-      },
-      {
-        "runId": "c63d42b423c0474191005d754d700f0b",
-        "kind": "all release builds",
-        "outcome": "succeeded",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": null,
-        "evidenceExpiresAt": null
-      },
-      {
-        "runId": "dc0ce10b22834b74846a957eec94370d",
-        "kind": "Windows release build",
-        "outcome": "succeeded",
-        "cleanup": "deleted owned roots",
-        "releasedBytes": null,
-        "remainingProcesses": 0,
-        "remainingExternalResources": 0,
-        "evidencePath": null,
-        "evidenceExpiresAt": null
-      }
-    ],
-    "deploymentRunId": "436fcdb7e85e427e8d04df3b1158e135",
-    "deploymentOutcome": "succeeded",
-    "deploymentCleanup": "deleted owned roots; supervisor report verified after exit",
-    "deploymentRemainingProcesses": 0,
-    "deploymentRemainingExternalResources": 0,
-    "deploymentEvidencePath": null,
-    "deploymentEvidenceExpiresAt": null,
-    "quarantineAdded": false,
-    "existingAuditFindings": [
-      "1db3215ed081473b86a856c423cd083f",
-      "40e1db9ff2e54677b5ee4bff65412593",
-      "54f2240fc93741beaf04b5844736f2f6",
-      "8bb74c58fb7f431299fce19753d8f672",
-      "9bff00c45b9440e9b18bde4cec846364"
-    ],
-    "releasedBytes": "not measured",
-    "installedIntegrationHeartbeatAndHashesVerified": true,
-    "formalDeliverables": "release binaries and reports retained; production service remains deployed"
   }
 }
