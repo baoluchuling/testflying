@@ -119,6 +119,9 @@ async fn authorize_setup(
 
 pub(super) fn routes(state: Arc<super::ApiState>) -> Router<Arc<super::ApiState>> {
     let setup_api = Router::new()
+        .merge(super::accounts::management_routes(
+            "/connector-setup/api/accounts",
+        ))
         .route(
             "/connector-setup/api/screenshot-settings",
             get(super::screenshot_settings::read).put(super::screenshot_settings::update),

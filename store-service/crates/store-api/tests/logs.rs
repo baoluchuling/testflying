@@ -1,3 +1,4 @@
+mod support;
 use axum::{body::Body, http::Request, routing::post, Json, Router};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -71,6 +72,12 @@ async fn node(state: &ApiState, app: Router) -> tokio::task::JoinHandle<()> {
             Some(&format!("http://{}", listener.local_addr().unwrap())),
         )
         .unwrap();
+    support::catalog(
+        &state.registry,
+        &node.connector_id,
+        Platform::Ios,
+        &["com.cfs.amberia"],
+    );
     state
         .registry
         .bind(Platform::Ios, "com.cfs.amberia", &node.connector_id)

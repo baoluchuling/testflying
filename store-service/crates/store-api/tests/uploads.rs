@@ -1,3 +1,4 @@
+mod support;
 use image::ImageEncoder;
 use reqwest::Client;
 use serde_json::{json, Value};
@@ -116,6 +117,12 @@ impl Fixture {
         assert_eq!(
             state.registry.get(&id).unwrap().base_url.as_deref(),
             Some(advertised.as_str())
+        );
+        support::catalog(
+            &state.registry,
+            &id,
+            Platform::Ios,
+            &[APP, "com.example.other"],
         );
         for app in [APP, "com.example.other"] {
             state.registry.bind(Platform::Ios, app, &id).unwrap();

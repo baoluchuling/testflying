@@ -21,6 +21,7 @@ struct Connection {
     logs_supported: bool,
     store_versions_supported: bool,
     async_store_images_supported: bool,
+    catalog_supported: bool,
     close: watch::Sender<bool>,
     screenshot_wake: watch::Sender<()>,
     pending: Pending,
@@ -89,6 +90,37 @@ impl Transport {
             .unwrap()
             .get(id)
             .is_some_and(|c| c.logs_supported)
+    }
+
+    pub fn refresh_catalog(&self, id: &str) -> Result<String> {
+        let connections = self.connections.lock().unwrap();
+        let connection = connections.get(id).ok_or_else(|| {
+            StoreError::new(503, "catalog_offline", "Account Store Connector is offline")
+        })?;
+        if !connection.catalog_supported {
+            return Err(StoreError::new(
+                409,
+                "catalog_upgrade_required",
+                "Upgrade this Store Connector for account catalogs",
+            ));
+        }
+        let request_id = Uuid::new_v4().to_string();
+        connection
+            .sender
+            .try_send(NodeRequest::Catalog(
+                store_protocol::catalog::CatalogRequest {
+                    request_id: request_id.clone(),
+                    catalog_action: "refresh".into(),
+                },
+            ))
+            .map_err(|_| {
+                StoreError::new(
+                    409,
+                    "catalog_refresh_busy",
+                    "Connector command queue is busy; retry refresh",
+                )
+            })?;
+        Ok(request_id)
     }
 
     pub async fn supports_async_store_images(&self, node: &Connector, token: &str) -> Result<bool> {
@@ -439,6 +471,7 @@ impl Transport {
         mut socket: WebSocket,
         key: String,
         screenshot_registry: Option<&Registry>,
+        catalog_registry: Option<(&Registry, &str)>,
         register: impl FnOnce(Option<String>) -> Result<()> + Send,
     ) {
         let authenticated = tokio::time::timeout(Duration::from_secs(10), async {
@@ -482,6 +515,7 @@ impl Transport {
                 registration.logs_version == Some(1),
                 registration.store_versions_version == Some(1),
                 registration.async_store_images_supported,
+                registration.app_catalog_version == Some(1),
             ))
         })
         .await;
@@ -491,6 +525,7 @@ impl Transport {
             logs_supported,
             store_versions_supported,
             async_store_images_supported,
+            catalog_supported,
         ))) = authenticated
         else {
             self.connection_event(
@@ -526,6 +561,7 @@ impl Transport {
                     logs_supported,
                     store_versions_supported,
                     async_store_images_supported,
+                    catalog_supported,
                 },
             );
         }
@@ -571,7 +607,7 @@ impl Transport {
                 request = requests.recv() => {
                     let Some(request) = request else {break;};
                     // A canceled HTTP caller must not cause a command to be sent later.
-                    if !pending.lock().unwrap().contains_key(request.request_id()) {continue;}
+                    if !matches!(&request,NodeRequest::Catalog(_)) && !pending.lock().unwrap().contains_key(request.request_id()) {continue;}
                     let Ok(text) = serde_json::to_string(&request) else {break;};
                     let Ok(records)=channel.encrypt(text.as_bytes()) else {break;};
                     let mut sent=true;
@@ -590,6 +626,13 @@ impl Transport {
                             let Ok(reply) = serde_json::from_slice::<StoreReply>(&plain) else {
                                 self.connection_event(&id,"connector.protocol_failed","invalid_reply_json");break;
                             };
+                            // Catalogs are unsolicited reports and never consume business pending entries.
+                            if let Some(body)=reply.body.get("accountAppCatalog") {
+                                let valid=serde_json::from_value::<store_protocol::catalog::CatalogReport>(body.clone()).ok().filter(|report|reply.status==200 && report.report_id==reply.request_id && reply.body.as_object().is_some_and(|v|v.len()==1));
+                                let accepted=valid.as_ref().is_some_and(|report|catalog_registry.is_some_and(|(registry,token)|registry.ingest_catalog(&id,token,catalog_supported,report).is_ok()));
+                                if !accepted {self.connection_event(&id,"connector.catalog_rejected","invalid_or_unauthorized_catalog");}
+                                continue;
+                            }
                             if !(200..=599).contains(&reply.status) {
                                 self.connection_event(&id,"connector.protocol_failed","invalid_reply_status");break;
                             }

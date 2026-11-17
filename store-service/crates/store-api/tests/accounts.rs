@@ -1,0 +1,629 @@
+mod support;
+use axum::{body::Body, http::Request, Router};
+use http_body_util::BodyExt;
+use serde_json::{json, Value};
+use std::{path::PathBuf, sync::Arc, time::Duration};
+use store_api::{
+    registry::{AccountPatch, Connector, ConnectorInput, ConnectorKind, Registry},
+    ApiState,
+};
+use store_protocol::{
+    catalog::{CatalogReport, CatalogStatus},
+    Platform,
+};
+use tower::ServiceExt;
+
+const KEY: &str = "account-fixture-signing-key-0123456789";
+const ADMIN: &str = "account-fixture-admin-token";
+const CLIENT: &str = "account-fixture-business-token";
+const APP: &str = "com.example.account";
+fn registry() -> Registry {
+    Registry::open(":memory:", KEY).unwrap()
+}
+fn node(r: &Registry, name: &str) -> Connector {
+    r.create(ConnectorInput { name: name.into() }).unwrap()
+}
+fn report(platform: Platform, status: CatalogStatus, fingerprint: Option<&str>) -> CatalogReport {
+    CatalogReport {
+        schema_version: 1,
+        report_id: uuid::Uuid::new_v4().to_string(),
+        platform,
+        status,
+        account_fingerprint: fingerprint.map(str::to_owned),
+        apps: vec![],
+        error_code: None,
+    }
+}
+fn patch(value: Value) -> AccountPatch {
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn precise_candidates_verified_binding_suppression_and_disabled_accounts() {
+    let r = registry();
+    let a = node(&r, "A");
+    let b = node(&r, "B");
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap_err().code,
+        "app_not_found"
+    );
+    assert_eq!(
+        r.bind(Platform::Ios, APP, &a.connector_id)
+            .unwrap_err()
+            .code,
+        "account_membership_unverified"
+    );
+    support::catalog(&r, &a.connector_id, Platform::Ios, &[APP]);
+    let account = r.resolve_account(Platform::Ios, APP).unwrap();
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap().connector_id,
+        a.connector_id
+    );
+    assert_eq!(r.get(&a.connector_id).unwrap().app_count, 1);
+    assert!(r.resolve(Platform::Android, APP).is_err());
+    assert!(r.resolve(Platform::Ios, "com.example.Account").is_err());
+    support::catalog(&r, &b.connector_id, Platform::Ios, &[APP]);
+    assert_eq!(r.resolve(Platform::Ios, APP).unwrap_err().status, 409);
+    assert_eq!(r.get(&a.connector_id).unwrap().app_count, 0);
+    assert_eq!(
+        r.account_apps(&account.id).unwrap()[0]["resolutionStatus"],
+        "account_ambiguous"
+    );
+    r.bind_account(Platform::Ios, APP, &account.id).unwrap();
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap().connector_id,
+        a.connector_id
+    );
+    assert_eq!(
+        r.bind_account(Platform::Android, APP, &account.id)
+            .unwrap_err()
+            .code,
+        "account_membership_unverified"
+    );
+    assert_eq!(
+        r.bind_account(Platform::Ios, "com.example.unknown", &account.id)
+            .unwrap_err()
+            .status,
+        422
+    );
+    r.unbind(Platform::Ios, APP).unwrap();
+    support::catalog(&r, &a.connector_id, Platform::Ios, &[APP]);
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap_err().code,
+        "app_not_found"
+    );
+    r.bind(Platform::Ios, APP, &a.connector_id).unwrap();
+    r.patch_account(&account.id, patch(json!({"enabled":false})))
+        .unwrap();
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap_err().code,
+        "account_disabled"
+    );
+    r.patch_account(&account.id, patch(json!({"enabled":true})))
+        .unwrap();
+    r.set_enabled(&a.connector_id, false).unwrap();
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap_err().code,
+        "connector_disabled"
+    );
+    let screenshot = r
+        .create_with_kind(
+            ConnectorInput { name: "Mac".into() },
+            ConnectorKind::Screenshot,
+        )
+        .unwrap();
+    assert_eq!(
+        r.bind(Platform::Ios, APP, &screenshot.connector_id)
+            .unwrap_err()
+            .code,
+        "invalid_connector_kind"
+    );
+    assert!(r.create_account(serde_json::from_value(json!({"name":"Invalid","platform":"ios","storeConnectorId":screenshot.connector_id})).unwrap()).is_err());
+}
+
+#[test]
+fn full_reports_retain_last_good_on_failure_and_require_identity_acceptance() {
+    let r = registry();
+    let n = node(&r, "A");
+    let token = r.token(&n);
+    support::catalog(&r, &n.connector_id, Platform::Ios, &[APP]);
+    let a = r.resolve_account(Platform::Ios, APP).unwrap();
+    let mut failed = report(Platform::Ios, CatalogStatus::Failed, None);
+    failed.error_code = Some("catalog_unavailable".into());
+    r.ingest_catalog(&n.connector_id, &token, true, &failed)
+        .unwrap();
+    assert_eq!(r.account(&a.id).unwrap().catalog_status, "failed");
+    assert_eq!(r.account(&a.id).unwrap().last_catalog_at, a.last_catalog_at);
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap().connector_id,
+        n.connector_id
+    );
+    let changed = report(Platform::Ios, CatalogStatus::Ready, Some(&"b".repeat(64)));
+    r.ingest_catalog(&n.connector_id, &token, true, &changed)
+        .unwrap();
+    assert_eq!(r.account(&a.id).unwrap().catalog_status, "identity_changed");
+    assert_eq!(r.account_apps(&a.id).unwrap().len(), 1);
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap_err().code,
+        "identity_changed"
+    );
+    assert_eq!(
+        r.bind_account(Platform::Ios, APP, &a.id).unwrap_err().code,
+        "identity_changed"
+    );
+    let second = node(&r, "Second");
+    support::catalog(&r, &second.connector_id, Platform::Ios, &[APP]);
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap_err().code,
+        "account_ambiguous"
+    );
+    assert_eq!(r.get(&second.connector_id).unwrap().app_count, 0);
+    r.set_enabled(&second.connector_id, false).unwrap();
+    let old = report(Platform::Ios, CatalogStatus::Failed, None);
+    r.ingest_catalog(&n.connector_id, &token, true, &old)
+        .unwrap();
+    assert_eq!(r.account(&a.id).unwrap().catalog_status, "identity_changed");
+    r.patch_account(&a.id, patch(json!({"acceptIdentityChange":true})))
+        .unwrap();
+    assert_eq!(r.account(&a.id).unwrap().catalog_status, "awaiting_catalog");
+    assert!(r.account_apps(&a.id).unwrap().is_empty());
+    let mut fresh = changed.clone();
+    fresh.report_id = uuid::Uuid::new_v4().to_string();
+    r.ingest_catalog(&n.connector_id, &token, true, &fresh)
+        .unwrap();
+    assert_eq!(r.account(&a.id).unwrap().catalog_status, "ready");
+    // A replay cannot revert or reapply a previously seen report.
+    r.ingest_catalog(&n.connector_id, &token, true, &failed)
+        .unwrap();
+    assert_eq!(r.account(&a.id).unwrap().catalog_status, "ready");
+    assert_eq!(
+        r.patch_account(&a.id, patch(json!({"acceptIdentityChange":true})))
+            .unwrap_err()
+            .code,
+        "identity_change_not_pending"
+    );
+    r.rotate(&n.connector_id).unwrap();
+    assert_eq!(
+        r.ingest_catalog(&n.connector_id, &token, true, &fresh)
+            .unwrap_err()
+            .code,
+        "invalid_node_token"
+    );
+    let current = r.get(&n.connector_id).unwrap();
+    assert_eq!(
+        r.ingest_catalog(&n.connector_id, &r.token(&current), false, &fresh)
+            .unwrap_err()
+            .code,
+        "catalog_upgrade_required"
+    );
+    let screenshot = r
+        .create_with_kind(
+            ConnectorInput { name: "Mac".into() },
+            ConnectorKind::Screenshot,
+        )
+        .unwrap();
+    assert_eq!(
+        r.ingest_catalog(
+            &screenshot.connector_id,
+            &r.token(&screenshot),
+            true,
+            &fresh
+        )
+        .unwrap_err()
+        .code,
+        "invalid_node_token"
+    );
+}
+
+#[test]
+fn migration_is_one_time_preserves_settings_snapshots_and_flags_conflicts_and_orphans() {
+    for conflict in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("registry.sqlite");
+        let r = Registry::open(&path, KEY).unwrap();
+        let store = node(&r, "Legacy");
+        let mac = r
+            .create_with_kind(
+                ConnectorInput { name: "Mac".into() },
+                ConnectorKind::Screenshot,
+            )
+            .unwrap();
+        let other = r
+            .create_with_kind(
+                ConnectorInput {
+                    name: "Other Mac".into(),
+                },
+                ConnectorKind::Screenshot,
+            )
+            .unwrap();
+        r.set_forwarding(Platform::Android, false).unwrap();
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.execute("DELETE FROM account_migrations", []).unwrap();
+        for identifier in [APP, "com.example.second"] {
+            db.execute(
+                "INSERT INTO app_bindings VALUES('ios',?1,?2)",
+                rusqlite::params![identifier, store.connector_id],
+            )
+            .unwrap();
+            let screenshot = if conflict && identifier != APP {
+                &other.connector_id
+            } else {
+                &mac.connector_id
+            };
+            db.execute(
+                "INSERT INTO screenshot_app_bindings VALUES('ios',?1,?2)",
+                rusqlite::params![identifier, screenshot],
+            )
+            .unwrap();
+        }
+        db.execute(
+            "INSERT INTO screenshot_app_bindings VALUES('ios','com.example.orphan',?1)",
+            [&mac.connector_id],
+        )
+        .unwrap();
+        db.execute("INSERT INTO store_image_jobs VALUES('old-store-job',NULL,'ios',?1,?2,1,1,'queued','{}',1)",rusqlite::params![APP,store.connector_id]).unwrap();
+        db.execute("INSERT INTO screenshot_jobs(id,connector_id,integration_id,profile,prompt,status,created_at,deadline) VALUES('old-shot',?1,'old-owner','','original','queued',1,2)",[&mac.connector_id]).unwrap();
+        drop(r);
+        let r = Registry::open(&path, KEY).unwrap();
+        let a = r.resolve_account(Platform::Ios, APP).unwrap();
+        assert_eq!(r.accounts().unwrap().len(), 1);
+        assert_eq!(
+            a.screenshot_connector_id,
+            if conflict {
+                None
+            } else {
+                Some(mac.connector_id.clone())
+            }
+        );
+        assert_eq!(
+            a.migration_error.as_deref(),
+            if conflict {
+                Some("legacy_screenshot_conflict")
+            } else {
+                None
+            }
+        );
+        assert_eq!(
+            r.account_migration_issues().unwrap()[0]["code"],
+            "legacy_screenshot_orphan"
+        );
+        assert_eq!(
+            r.account_apps(&a.id).unwrap()[0]["resolutionStatus"],
+            "provisional"
+        );
+        assert!(!r.forwarding().unwrap().android);
+        assert_eq!(
+            r.bind(Platform::Ios, APP, &store.connector_id)
+                .unwrap_err()
+                .code,
+            "account_membership_unverified"
+        );
+        let failed = report(Platform::Ios, CatalogStatus::Failed, None);
+        r.ingest_catalog(&store.connector_id, &r.token(&store), true, &failed)
+            .unwrap();
+        assert!(r.resolve(Platform::Ios, APP).is_ok());
+        drop(r);
+        let r = Registry::open(&path, KEY).unwrap();
+        assert_eq!(r.accounts().unwrap()[0].id, a.id);
+        support::catalog(
+            &r,
+            &store.connector_id,
+            Platform::Ios,
+            &["com.example.second"],
+        );
+        assert_eq!(
+            r.resolve(Platform::Ios, APP).unwrap_err().code,
+            "account_membership_unverified"
+        );
+        assert!(r.resolve(Platform::Ios, "com.example.second").is_ok());
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM app_bindings", [], |row| row
+                .get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+        r.patch_account(
+            &a.id,
+            patch(json!({"screenshotConnectorId":other.connector_id})),
+        )
+        .unwrap();
+        let replacement = node(&r, "Replacement store");
+        r.patch_account(
+            &a.id,
+            patch(json!({"storeConnectorId":replacement.connector_id})),
+        )
+        .unwrap();
+        assert_eq!(
+            r.resolve(Platform::Ios, "com.example.second")
+                .unwrap_err()
+                .code,
+            "account_membership_unverified"
+        );
+        support::catalog(
+            &r,
+            &replacement.connector_id,
+            Platform::Ios,
+            &["com.example.second"],
+        );
+        assert_eq!(
+            r.resolve(Platform::Ios, "com.example.second")
+                .unwrap()
+                .connector_id,
+            replacement.connector_id
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT connector_id FROM screenshot_jobs WHERE id='old-shot'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            mac.connector_id
+        );
+        assert_eq!(
+            db.query_row(
+                "SELECT connector FROM store_image_jobs WHERE id='old-store-job'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            store.connector_id
+        );
+    }
+}
+
+fn state() -> Arc<ApiState> {
+    ApiState::new(
+        registry(),
+        ADMIN.into(),
+        CLIENT.into(),
+        "https://center.invalid".into(),
+        PathBuf::from("unused"),
+        Duration::from_secs(1),
+    )
+    .unwrap()
+}
+async fn call(app: &Router, method: &str, path: &str, token: &str, body: Value) -> (u16, Value) {
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method(method)
+                .uri(path)
+                .header("authorization", format!("Bearer {token}"))
+                .header("x-forwarded-proto", "https")
+                .header("content-type", "application/json")
+                .body(Body::from(body.to_string()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = response.status().as_u16();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+#[tokio::test]
+async fn all_account_routes_keep_admin_query_binding_and_session_boundaries() {
+    let state = state();
+    let a = node(&state.registry, "A");
+    let b = node(&state.registry, "B");
+    support::catalog(&state.registry, &a.connector_id, Platform::Ios, &[APP]);
+    support::catalog(&state.registry, &b.connector_id, Platform::Ios, &[APP]);
+    let account = state
+        .registry
+        .accounts()
+        .unwrap()
+        .into_iter()
+        .find(|v| v.store_connector_id == a.connector_id)
+        .unwrap();
+    let app = store_api::router(state.clone());
+    let create = json!({"name":"Android","platform":"android","storeConnectorId":a.connector_id});
+    for prefix in ["/v1/accounts", "/connector-setup/api/accounts"] {
+        for (method, path, body) in [
+            ("GET", prefix.to_owned(), Value::Null),
+            ("POST", prefix.to_owned(), create.clone()),
+            (
+                "PATCH",
+                format!("{prefix}/{}", account.id),
+                json!({"name":"Renamed"}),
+            ),
+            ("GET", format!("{prefix}/{}/apps", account.id), Value::Null),
+            (
+                "POST",
+                format!("{prefix}/{}/refresh", account.id),
+                json!({}),
+            ),
+        ] {
+            assert_eq!(
+                call(&app, method, &path, CLIENT, body).await.0,
+                401,
+                "{method} {path}"
+            );
+        }
+        assert_eq!(call(&app, "GET", prefix, ADMIN, Value::Null).await.0, 200);
+        assert_eq!(
+            call(
+                &app,
+                "GET",
+                &format!("{prefix}/{}/apps", account.id),
+                ADMIN,
+                Value::Null
+            )
+            .await
+            .1["apps"][0]["resolutionStatus"],
+            "account_ambiguous"
+        );
+    }
+    assert_eq!(
+        call(&app, "POST", "/v1/accounts", ADMIN, create).await.0,
+        201
+    );
+    let integration = call(
+        &app,
+        "POST",
+        "/v1/integrations",
+        ADMIN,
+        json!({"name":"All accounts"}),
+    )
+    .await
+    .1["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let binding = format!("/v1/apps/ios/{APP}/account");
+    for path in [
+        "/v1/store-management/accounts".to_owned(),
+        format!("/v1/store-management/accounts/{}/apps", account.id),
+        binding.clone(),
+    ] {
+        assert_eq!(call(&app, "GET", &path, "wrong", Value::Null).await.0, 401);
+        let (status, body) = call(&app, "GET", &path, &integration, Value::Null).await;
+        assert_eq!(status, if path == binding { 409 } else { 200 });
+        assert!(body.get("storeConnectorId").is_none());
+        assert!(!body.to_string().contains(&a.connector_id));
+        assert!(!body.to_string().contains(&b.connector_id));
+    }
+    let bind = json!({"accountId":account.id});
+    assert_eq!(
+        call(&app, "PUT", &binding, CLIENT, bind.clone()).await.0,
+        401
+    );
+    assert_eq!(
+        call(&app, "PUT", &binding, &integration, bind.clone())
+            .await
+            .0,
+        200
+    );
+    assert_eq!(
+        call(&app, "GET", &binding, CLIENT, Value::Null).await.1["account"]["id"],
+        account.id
+    );
+    assert_eq!(
+        call(
+            &app,
+            "PUT",
+            "/v1/apps/android/com.example.account/account",
+            &integration,
+            bind.clone()
+        )
+        .await
+        .0,
+        422
+    );
+    assert_eq!(
+        call(
+            &app,
+            "PUT",
+            "/v1/apps/ios/com.example.unknown/account",
+            &integration,
+            bind
+        )
+        .await
+        .0,
+        422
+    );
+    let refresh = call(
+        &app,
+        "POST",
+        &format!("/v1/accounts/{}/refresh", account.id),
+        ADMIN,
+        json!({}),
+    )
+    .await;
+    assert_eq!(refresh.0, 503);
+    assert_eq!(refresh.1["error"]["code"], "catalog_offline");
+}
+
+#[tokio::test]
+async fn screenshot_delete_is_per_app_and_legacy_put_cannot_replace_account_node() {
+    let state = state();
+    let store = node(&state.registry, "Store");
+    support::catalog(
+        &state.registry,
+        &store.connector_id,
+        Platform::Ios,
+        &[APP, "com.example.peer"],
+    );
+    let account = state.registry.resolve_account(Platform::Ios, APP).unwrap();
+    let mac = state
+        .registry
+        .create_with_kind(
+            ConnectorInput { name: "Mac".into() },
+            ConnectorKind::Screenshot,
+        )
+        .unwrap();
+    let other = state
+        .registry
+        .create_with_kind(
+            ConnectorInput {
+                name: "Other".into(),
+            },
+            ConnectorKind::Screenshot,
+        )
+        .unwrap();
+    let app = store_api::router(state.clone());
+    let path = format!("/v1/apps/ios/{APP}/screenshot-connector");
+    assert_eq!(
+        call(
+            &app,
+            "PUT",
+            &path,
+            ADMIN,
+            json!({"connectorId":mac.connector_id})
+        )
+        .await
+        .0,
+        200
+    );
+    assert_eq!(
+        call(
+            &app,
+            "PUT",
+            &path,
+            ADMIN,
+            json!({"connectorId":other.connector_id})
+        )
+        .await
+        .0,
+        409
+    );
+    assert_eq!(call(&app, "DELETE", &path, ADMIN, Value::Null).await.0, 204);
+    assert_eq!(call(&app, "GET", &path, ADMIN, Value::Null).await.0, 404);
+    assert_eq!(
+        state
+            .registry
+            .account(&account.id)
+            .unwrap()
+            .screenshot_connector_id,
+        Some(mac.connector_id.clone())
+    );
+    assert_eq!(
+        call(
+            &app,
+            "GET",
+            "/v1/apps/ios/com.example.peer/screenshot-connector",
+            ADMIN,
+            Value::Null
+        )
+        .await
+        .1["connector"]["connectorId"],
+        mac.connector_id
+    );
+    assert_eq!(
+        call(
+            &app,
+            "PUT",
+            &path,
+            ADMIN,
+            json!({"connectorId":mac.connector_id})
+        )
+        .await
+        .0,
+        200
+    );
+    assert_eq!(call(&app, "GET", &path, ADMIN, Value::Null).await.0, 200);
+}

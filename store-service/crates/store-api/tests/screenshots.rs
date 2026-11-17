@@ -1,3 +1,4 @@
+mod support;
 use axum::{
     body::{Body, Bytes},
     http::{header, HeaderMap, Request, StatusCode},
@@ -224,7 +225,25 @@ async fn integration(app: &Router, name: &str, nodes: &[&str]) -> String {
     value(response).await["token"].as_str().unwrap().into()
 }
 
-async fn bind_app(app: &Router, token: &str, node: &str) {
+async fn bind_app(registry: &Registry, app: &Router, token: &str, node: &str) {
+    let store = registry
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|n| n.kind == store_api::registry::ConnectorKind::Store)
+        .unwrap_or_else(|| {
+            registry
+                .create(store_api::registry::ConnectorInput {
+                    name: "Catalog fixture".into(),
+                })
+                .unwrap()
+        });
+    support::catalog(
+        registry,
+        &store.connector_id,
+        store_protocol::Platform::Ios,
+        &["com.example.app"],
+    );
     let response = send(
         app,
         "PUT",
@@ -246,6 +265,12 @@ async fn screenshot_discovery_and_app_bindings_route_precisely_without_touching_
     let (mac_b, _) = node(&app, "Mac B", "screenshot").await;
     let (disabled, _) = node(&app, "Disabled Mac", "screenshot").await;
     let (store, _) = node(&app, "Store", "store").await;
+    for platform in [
+        store_protocol::Platform::Ios,
+        store_protocol::Platform::Android,
+    ] {
+        support::catalog(&state.registry, &store, platform, &["com.example.App"]);
+    }
     let token = integration(&app, "routing", &[]).await;
     state.registry.set_enabled(&disabled, false).unwrap();
     assert_eq!(
@@ -383,6 +408,22 @@ async fn screenshot_discovery_and_app_bindings_route_precisely_without_touching_
         send(&app, "PUT", ios, &token, json!({"connectorId":mac_b}))
             .await
             .status(),
+        409
+    );
+    let account = state
+        .registry
+        .resolve_account(store_protocol::Platform::Ios, "com.example.App")
+        .unwrap();
+    assert_eq!(
+        send(
+            &app,
+            "PATCH",
+            &format!("/v1/accounts/{}", account.id),
+            ADMIN,
+            json!({"screenshotConnectorId":mac_b})
+        )
+        .await
+        .status(),
         200
     );
     assert_eq!(
@@ -457,6 +498,18 @@ async fn screenshot_discovery_and_app_bindings_route_precisely_without_touching_
         .await
         .status(),
         422
+    );
+    assert_eq!(
+        send(
+            &app,
+            "PATCH",
+            &format!("/v1/accounts/{}", account.id),
+            ADMIN,
+            json!({"screenshotConnectorId":mac_a})
+        )
+        .await
+        .status(),
+        200
     );
     assert_eq!(
         send(&app, "PUT", ios, ADMIN, json!({"connectorId":mac_a}))
@@ -572,7 +625,7 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     assert!(state.transport.connected(&mac));
     let (store, store_token) = node(&app, "Store Connector", "store").await;
     let client = integration(&app, "screenshots", &[&store]).await;
-    bind_app(&app, &client, &mac).await;
+    bind_app(&state.registry, &app, &client, &mac).await;
     let peer = integration(&app, "same Mac, different integration", &[&mac]).await;
     let submit = "/v1/screenshot-jobs";
     let prompt = "  请打开设置并保留当前页面。\n  ";
@@ -1019,13 +1072,14 @@ async fn installer_is_an_https_admin_only_mac_package_for_the_selected_node() {
 async fn jobs_run_without_a_destination_and_only_image_delivery_fails() {
     let database = tempfile::tempdir().unwrap();
     let database_path = database.path().join("registry.sqlite3");
-    let app = store_api::router(state_with_database(
+    let state = state_with_database(
         PathBuf::from("unused-releases"),
         database_path.to_str().unwrap(),
-    ));
+    );
+    let app = store_api::router(state.clone());
     let (mac, mac_token) = node(&app, "Mac", "screenshot").await;
     let token = integration(&app, "external", &[&mac]).await;
-    bind_app(&app, &token, &mac).await;
+    bind_app(&state.registry, &app, &token, &mac).await;
     let payload = screenshot_payload(
         json!({"platform":"ios","bundleIdentifier":"com.example.app","prompt":"Open settings"}),
     );
@@ -1184,11 +1238,12 @@ async fn screenshot_json(
 
 #[tokio::test]
 async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids() {
-    let app = store_api::router(state());
+    let state = state();
+    let app = store_api::router(state.clone());
     let (mac, worker) = node(&app, "V2 fixture", "screenshot").await;
     let client = integration(&app, "V2 primary", &[]).await;
     let peer = integration(&app, "V2 peer", &[]).await;
-    bind_app(&app, &client, &mac).await;
+    bind_app(&state.registry, &app, &client, &mac).await;
     let payload = json!({"platform":"ios","bundleIdentifier":"com.example.app","prompt":"  exact\n","target":[{"locale":"en-US","page":"home","device":"phone"}]});
     let submit = "/v1/screenshot-jobs";
     assert_eq!(
@@ -1367,7 +1422,7 @@ async fn direct_oss_ticket_is_bound_to_worker_file_lease_and_verified_before_ide
     let (mac, mac_token) = node(&app, "Direct OSS Mac", "screenshot").await;
     let (other, other_token) = node(&app, "Other Mac", "screenshot").await;
     let client = integration(&app, "direct screenshots", &[&mac]).await;
-    bind_app(&app, &client, &mac).await;
+    bind_app(&state.registry, &app, &client, &mac).await;
     let job=value(send(&app,"POST","/v1/screenshot-jobs",&client,screenshot_payload(json!({"platform":"ios","bundleIdentifier":"com.example.app","prompt":"Capture fixture"}))).await).await;
     let claimed = value(
         send(
@@ -1566,10 +1621,11 @@ async fn direct_oss_ticket_is_bound_to_worker_file_lease_and_verified_before_ide
 
 #[tokio::test]
 async fn unconfigured_oss_fails_at_upload_ticket_after_job_claim() {
-    let app = store_api::router(state());
+    let state = state();
+    let app = store_api::router(state.clone());
     let (mac, token) = node(&app, "Unconfigured OSS Mac", "screenshot").await;
     let client = integration(&app, "unconfigured direct screenshots", &[&mac]).await;
-    bind_app(&app, &client, &mac).await;
+    bind_app(&state.registry, &app, &client, &mac).await;
     let queued=send(&app,"POST","/v1/screenshot-jobs",&client,screenshot_payload(json!({"platform":"ios","bundleIdentifier":"com.example.app","prompt":"Capture before checking storage"}))).await;
     assert_eq!(queued.status(), 202);
     let job = value(queued).await;

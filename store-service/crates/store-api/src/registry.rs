@@ -10,6 +10,8 @@ use store_protocol::{validate_identifier, Platform, StoreError};
 use subtle::ConstantTimeEq;
 use uuid::Uuid;
 
+pub(crate) mod accounts;
+pub use accounts::{Account, AccountInput, AccountPatch};
 mod integrations;
 pub(crate) mod screenshot_notifications;
 mod screenshot_settings;
@@ -69,7 +71,7 @@ impl Registry {
                 "Node signing key must contain at least 32 bytes",
             ));
         }
-        let db = Connection::open(path).map_err(database_error)?;
+        let mut db = Connection::open(path).map_err(database_error)?;
         db.pragma_update(None, "foreign_keys", "ON")
             .map_err(database_error)?;
         db.busy_timeout(std::time::Duration::from_secs(5))
@@ -103,6 +105,7 @@ impl Registry {
         store_jobs::create_schema(&db)?;
         screenshot_settings::create_schema(&db)?;
         screenshot_notifications::create_schema(&db)?;
+        accounts::create_schema(&mut db)?;
         let db = Arc::new(Mutex::new(db));
         let logs = crate::logs::LogStore::new(db.clone())?;
         Ok(Self {
@@ -190,11 +193,14 @@ impl Registry {
     }
 
     pub fn get(&self, id: &str) -> Result<Connector> {
-        self.db.lock().unwrap().query_row("SELECT c.id,c.name,c.mode,c.base_url,c.enabled,c.nonce,(SELECT count(*) FROM app_bindings a WHERE a.connector_id=c.id)+(SELECT count(*) FROM screenshot_app_bindings a WHERE a.connector_id=c.id) FROM connectors c WHERE c.id=?1", [id], |row| Ok(Connector {
+        let db = self.db.lock().unwrap();
+        let mut node=db.query_row("SELECT c.id,c.name,c.mode,c.base_url,c.enabled,c.nonce FROM connectors c WHERE c.id=?1", [id], |row| Ok(Connector {
             connector_id: row.get(0)?, name: row.get(1)?,
             kind: if row.get::<_, String>(2)? == "screenshot" { ConnectorKind::Screenshot } else { ConnectorKind::Store },
-            base_url: row.get(3)?, enabled: row.get(4)?, nonce: row.get(5)?, app_count: row.get::<_, i64>(6)? as u64,
-        })).optional().map_err(database_error)?.ok_or_else(|| StoreError::new(404, "connector_not_found", "Connector not found"))
+            base_url: row.get(3)?, enabled: row.get(4)?, nonce: row.get(5)?, app_count: 0,
+        })).optional().map_err(database_error)?.ok_or_else(|| StoreError::new(404, "connector_not_found", "Connector not found"))?;
+        node.app_count = accounts::app_count(&db, id, node.kind == ConnectorKind::Screenshot)?;
+        Ok(node)
     }
 
     pub fn list(&self) -> Result<Vec<Connector>> {
@@ -311,71 +317,63 @@ impl Registry {
 
     pub fn bind(&self, platform: Platform, identifier: &str, id: &str) -> Result<Connector> {
         validate_identifier(identifier)?;
-        {
-            let mut db = self.db.lock().unwrap();
-            let transaction = db
-                .transaction_with_behavior(TransactionBehavior::Immediate)
-                .map_err(database_error)?;
-            let node: Option<(bool, String)> = transaction
-                .query_row(
-                    "SELECT enabled,mode FROM connectors WHERE id=?1",
-                    [id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()
-                .map_err(database_error)?;
-            match node {
-                None => {
-                    return Err(StoreError::new(
-                        404,
-                        "connector_not_found",
-                        "Connector not found",
-                    ))
-                }
-                Some((false, _)) => {
-                    return Err(StoreError::new(
-                        409,
-                        "connector_disabled",
-                        "Connector is disabled",
-                    ))
-                }
-                Some((true, mode)) if mode == "screenshot" => {
-                    return Err(StoreError::new(
-                        422,
-                        "invalid_connector_kind",
-                        "App bindings require a Store Connector",
-                    ))
-                }
-                Some((true, _)) => {}
-            }
-            transaction.execute("INSERT INTO app_bindings(platform,bundle_identifier,connector_id) VALUES(?1,?2,?3) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET connector_id=excluded.connector_id", params![platform.to_string(),identifier,id]).map_err(database_error)?;
-            transaction.commit().map_err(database_error)?;
+        let node = self.get(id)?;
+        if node.kind != ConnectorKind::Store {
+            return Err(StoreError::new(
+                422,
+                "invalid_connector_kind",
+                "App bindings require a Store Connector",
+            ));
         }
+        if !node.enabled {
+            return Err(StoreError::new(
+                409,
+                "connector_disabled",
+                "Connector is disabled",
+            ));
+        }
+        let account_id: Option<String> = self
+            .db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT id FROM accounts WHERE platform=?1 AND store_connector_id=?2",
+                params![platform.to_string(), id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(database_error)?;
+        let account_id = account_id.ok_or_else(|| {
+            StoreError::new(
+                422,
+                "account_membership_unverified",
+                "Wait for a verified account catalog before binding",
+            )
+        })?;
+        self.bind_account(platform, identifier, &account_id)?;
         self.get(id)
     }
 
     pub fn unbind(&self, platform: Platform, identifier: &str) -> Result<()> {
         validate_identifier(identifier)?;
-        self.db
-            .lock()
-            .unwrap()
-            .execute(
-                "DELETE FROM app_bindings WHERE platform=?1 AND bundle_identifier=?2",
-                params![platform.to_string(), identifier],
-            )
+        let mut db = self.db.lock().unwrap();
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
+        tx.execute("INSERT INTO account_bindings(platform,bundle_identifier,suppressed) VALUES(?1,?2,1) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET suppressed=1",params![platform.to_string(),identifier]).map_err(database_error)?;
+        tx.execute(
+            "DELETE FROM app_bindings WHERE platform=?1 AND bundle_identifier=?2",
+            params![platform.to_string(), identifier],
+        )
+        .map_err(database_error)?;
+        tx.commit().map_err(database_error)?;
         Ok(())
     }
 
     pub fn resolve(&self, platform: Platform, identifier: &str) -> Result<Connector> {
-        validate_identifier(identifier)?;
-        let id = binding(&self.db.lock().unwrap(), platform, identifier)?.ok_or_else(|| {
-            StoreError::new(
-                404,
-                "app_not_found",
-                "No Connector is assigned to this application",
-            )
-        })?;
+        let id = self
+            .resolve_account(platform, identifier)?
+            .store_connector_id;
         let node = self.get(&id)?;
         if !node.enabled {
             return Err(StoreError::new(
@@ -386,14 +384,4 @@ impl Registry {
         }
         Ok(node)
     }
-}
-
-fn binding(db: &Connection, platform: Platform, identifier: &str) -> Result<Option<String>> {
-    db.query_row(
-        "SELECT connector_id FROM app_bindings WHERE platform=?1 AND bundle_identifier=?2",
-        params![platform.to_string(), identifier],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(database_error)
 }

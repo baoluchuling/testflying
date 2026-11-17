@@ -1,3 +1,4 @@
+mod support;
 use axum::{body::Body, http::Request, routing::post, Router};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
@@ -47,6 +48,12 @@ async fn pausing_rejects_new_requests_but_does_not_cancel_a_dispatched_request()
             name: "inflight".into(),
         })
         .unwrap();
+    support::catalog(
+        &registry,
+        &node.connector_id,
+        Platform::Ios,
+        &["com.example.app"],
+    );
     registry
         .bind(Platform::Ios, "com.example.app", &node.connector_id)
         .unwrap();
@@ -139,6 +146,7 @@ async fn independent_platform_controls_persist_and_stop_all_new_store_requests_a
         .register_endpoint(&node.connector_id, &registry.token(&node), Some(&url))
         .unwrap();
     for p in [Platform::Ios, Platform::Android] {
+        support::catalog(&registry, &node.connector_id, p, &["com.example.app"]);
         registry
             .bind(p, "com.example.app", &node.connector_id)
             .unwrap();

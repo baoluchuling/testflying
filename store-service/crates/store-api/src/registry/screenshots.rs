@@ -536,48 +536,7 @@ impl Registry {
         identifier: &str,
         id: &str,
     ) -> Result<Connector> {
-        validate_identifier(identifier)?;
-        {
-            let mut db = self.db.lock().unwrap();
-            let tx = db
-                .transaction_with_behavior(TransactionBehavior::Immediate)
-                .map_err(database_error)?;
-            let node: Option<(bool, String)> = tx
-                .query_row(
-                    "SELECT enabled,mode FROM connectors WHERE id=?1",
-                    [id],
-                    |row| Ok((row.get(0)?, row.get(1)?)),
-                )
-                .optional()
-                .map_err(database_error)?;
-            match node {
-                None => {
-                    return Err(StoreError::new(
-                        404,
-                        "connector_not_found",
-                        "Connector not found",
-                    ))
-                }
-                Some((false, _)) => {
-                    return Err(StoreError::new(
-                        409,
-                        "connector_disabled",
-                        "Connector is disabled",
-                    ))
-                }
-                Some((true, kind)) if kind != "screenshot" => {
-                    return Err(StoreError::new(
-                        422,
-                        "invalid_screenshot_connector",
-                        "Select a Screenshot Connector",
-                    ))
-                }
-                _ => {}
-            }
-            tx.execute("INSERT INTO screenshot_app_bindings(platform,bundle_identifier,connector_id) VALUES(?1,?2,?3) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET connector_id=excluded.connector_id",params![platform.to_string(),identifier,id]).map_err(database_error)?;
-            tx.commit().map_err(database_error)?;
-        }
-        self.get(id)
+        self.bind_account_screenshot(platform, identifier, id)
     }
     pub(crate) fn screenshot_binding(
         &self,
@@ -585,19 +544,23 @@ impl Registry {
         identifier: &str,
     ) -> Result<Connector> {
         validate_identifier(identifier)?;
-        let id:Option<String>=self.db.lock().unwrap().query_row("SELECT connector_id FROM screenshot_app_bindings WHERE platform=?1 AND bundle_identifier=?2",params![platform.to_string(),identifier],|row|row.get(0)).optional().map_err(database_error)?;
-        self.get(&id.ok_or_else(missing_screenshot_binding)?)
+        let id =
+            super::accounts::resolve_screenshot(&self.db.lock().unwrap(), platform, identifier)?;
+        self.get(&id)
     }
     pub(crate) fn unbind_screenshot(&self, platform: Platform, identifier: &str) -> Result<()> {
         validate_identifier(identifier)?;
-        self.db
-            .lock()
-            .unwrap()
-            .execute(
-                "DELETE FROM screenshot_app_bindings WHERE platform=?1 AND bundle_identifier=?2",
-                params![platform.to_string(), identifier],
-            )
+        let mut db = self.db.lock().unwrap();
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
+        tx.execute("INSERT INTO account_bindings(platform,bundle_identifier,screenshot_disabled) VALUES(?1,?2,1) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET screenshot_disabled=1",params![platform.to_string(),identifier]).map_err(database_error)?;
+        tx.execute(
+            "DELETE FROM screenshot_app_bindings WHERE platform=?1 AND bundle_identifier=?2",
+            params![platform.to_string(), identifier],
+        )
+        .map_err(database_error)?;
+        tx.commit().map_err(database_error)?;
         Ok(())
     }
     #[cfg(test)]
@@ -653,15 +616,7 @@ impl Registry {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
         expire(&tx, time)?;
-        let binding:Option<(String,bool)>=tx.query_row("SELECT c.id,c.enabled FROM screenshot_app_bindings b JOIN connectors c ON c.id=b.connector_id WHERE b.platform=?1 AND b.bundle_identifier=?2 AND c.mode='screenshot'",params![platform.to_string(),identifier],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(database_error)?;
-        let (node, enabled) = binding.ok_or_else(missing_screenshot_binding)?;
-        if !enabled {
-            return Err(StoreError::new(
-                503,
-                "screenshot_connector_disabled",
-                "Bound Screenshot Connector is disabled",
-            ));
-        }
+        let node = super::accounts::resolve_screenshot(&tx, platform, identifier)?;
         let permitted: bool = tx
             .query_row(
                 "SELECT EXISTS(SELECT 1 FROM connectors WHERE id=?1 AND enabled=1 AND mode='screenshot'
@@ -847,17 +802,37 @@ impl Registry {
     }
 }
 
-fn missing_screenshot_binding() -> StoreError {
-    StoreError::new(
-        404,
-        "screenshot_app_not_found",
-        "No Screenshot Connector is bound to this platform and package",
-    )
-}
-
 #[cfg(test)]
 mod direct_delivery_tests {
     use super::*;
+
+    fn verified_app(registry: &Registry, identifier: &str) {
+        let store = registry
+            .create(ConnectorInput {
+                name: "Verified screenshot app account".into(),
+            })
+            .unwrap();
+        registry
+            .ingest_catalog(
+                &store.connector_id,
+                &registry.token(&store),
+                true,
+                &store_protocol::catalog::CatalogReport {
+                    schema_version: 1,
+                    report_id: Uuid::new_v4().to_string(),
+                    platform: Platform::Ios,
+                    status: store_protocol::catalog::CatalogStatus::Ready,
+                    account_fingerprint: Some("a".repeat(64)),
+                    apps: vec![store_protocol::catalog::CatalogApp {
+                        bundle_identifier: identifier.into(),
+                        name: "Fixture".into(),
+                        store_app_id: None,
+                    }],
+                    error_code: None,
+                },
+            )
+            .unwrap();
+    }
 
     #[test]
     fn expired_failure_lease_cannot_write_before_expiration_sweep() {
@@ -908,6 +883,7 @@ mod direct_delivery_tests {
                 serde_json::from_value(json!({"name":"Persistent integration"})).unwrap(),
             )
             .unwrap();
+        verified_app(&registry, "com.example.persisted");
         registry
             .bind_screenshot(Platform::Ios, "com.example.persisted", &node)
             .unwrap();
@@ -1157,6 +1133,7 @@ mod direct_delivery_tests {
                 serde_json::from_value(json!({"name":"Fixture screenshots"})).unwrap(),
             )
             .unwrap();
+        verified_app(&registry, "com.example.fixture");
         registry
             .bind_screenshot(Platform::Ios, "com.example.fixture", &node.connector_id)
             .unwrap();

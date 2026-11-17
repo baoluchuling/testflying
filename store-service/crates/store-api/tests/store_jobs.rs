@@ -1,3 +1,4 @@
+mod support;
 use axum::{
     body::Body,
     http::Request,
@@ -70,6 +71,7 @@ async fn accepts_then_observes_business_failure_and_isolates_app_and_platform() 
             name: "jobs".into(),
         })
         .unwrap();
+    support::catalog(&registry, &node.connector_id, Platform::Ios, &[APP]);
     registry
         .bind(Platform::Ios, APP, &node.connector_id)
         .unwrap();

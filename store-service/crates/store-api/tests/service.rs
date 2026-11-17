@@ -1,3 +1,4 @@
+mod support;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -92,6 +93,18 @@ fn registry_persists_many_apps_exact_platform_and_rotated_identity() {
     let first = registry.create(input()).unwrap();
     let second = registry.create(input()).unwrap();
     let token = registry.token(&first);
+    support::catalog(
+        &registry,
+        &first.connector_id,
+        Platform::Ios,
+        &["com.example.app", "com.example.second"],
+    );
+    support::catalog(
+        &registry,
+        &second.connector_id,
+        Platform::Android,
+        &["com.example.app"],
+    );
     registry
         .bind(Platform::Ios, "com.example.app", &first.connector_id)
         .unwrap();
@@ -175,6 +188,7 @@ async fn admin_api_provisions_authenticates_and_hides_tokens() {
     assert!(!listed.to_string().contains(token));
     assert!(!listed.to_string().contains("nonce"));
     let path = "/v1/apps/ios/com.example.app/connector";
+    support::catalog(&state.registry, id, Platform::Ios, &["com.example.app"]);
     assert_eq!(
         call(app.clone(), "PUT", path, ADMIN, json!({"connectorId":id}))
             .await
@@ -306,6 +320,15 @@ impl EncryptedSocket {
     }
 }
 async fn ws_connect(base: &str, id: &str, token: &str, key: &str) -> EncryptedSocket {
+    ws_connect_catalog(base, id, token, key, false).await
+}
+async fn ws_connect_catalog(
+    base: &str,
+    id: &str,
+    token: &str,
+    key: &str,
+    capable: bool,
+) -> EncryptedSocket {
     let mut request = format!("{}/v1/connectors/{id}/ws", base.replacen("http", "ws", 1))
         .into_client_request()
         .unwrap();
@@ -321,7 +344,7 @@ async fn ws_connect(base: &str, id: &str, token: &str, key: &str) -> EncryptedSo
     let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];
     let size = handshake
         .write_message(
-            &serde_json::to_vec(&json!({"connectorId":id,"baseUrl":null})).unwrap(),
+            &serde_json::to_vec(&json!({"connectorId":id,"baseUrl":null,"appCatalogVersion":if capable {Some(1)}else{None}})).unwrap(),
             &mut buffer,
         )
         .unwrap();
@@ -370,12 +393,223 @@ async fn wait_connected(state: &ApiState, id: &str) {
     .unwrap();
 }
 
+async fn send_catalog(
+    socket: &mut EncryptedSocket,
+    report: &store_protocol::catalog::CatalogReport,
+) {
+    socket
+        .send(Message::Text(
+            serde_json::to_string(&StoreReply {
+                request_id: report.report_id.clone(),
+                status: 200,
+                body: json!({"accountAppCatalog":report}),
+            })
+            .unwrap()
+            .into(),
+        ))
+        .await
+        .unwrap();
+}
+
+async fn catalog_command(socket: &mut EncryptedSocket) -> store_protocol::catalog::CatalogRequest {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            match socket.raw.next().await.unwrap().unwrap() {
+                Message::Ping(bytes) => socket.raw.send(Message::Pong(bytes)).await.unwrap(),
+                Message::Binary(bytes) => {
+                    if let Some(plain) = socket.channel.decrypt(&bytes).unwrap() {
+                        let request: store_protocol::logs::NodeRequest =
+                            serde_json::from_slice(&plain).unwrap();
+                        if let store_protocol::logs::NodeRequest::Catalog(request) = request {
+                            return request;
+                        } else {
+                            panic!("Expected catalog refresh");
+                        }
+                    }
+                }
+                other => panic!("Unexpected catalog frame {other:?}"),
+            }
+        }
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn encrypted_catalog_reports_refresh_capabilities_and_business_pending_are_isolated() {
+    let state = state(Duration::from_secs(3));
+    let node = state.registry.create(input()).unwrap();
+    let token = state.registry.token(&node);
+    let key = state.registry.purpose_key(&node, "message");
+    let account = state
+        .registry
+        .create_account(
+            serde_json::from_value(
+                json!({"name":"WSS account","platform":"ios","storeConnectorId":node.connector_id}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let app = store_api::router(state.clone());
+    let (base, server) = serve(app.clone()).await;
+    let refresh = format!("/v1/accounts/{}/refresh", account.id);
+    assert_eq!(
+        call(app.clone(), "POST", &refresh, ADMIN, json!({}))
+            .await
+            .0,
+        503
+    );
+    let mut old = ws_connect(&base, &node.connector_id, &token, &key).await;
+    wait_connected(&state, &node.connector_id).await;
+    let (status, body) = call(app.clone(), "POST", &refresh, ADMIN, json!({})).await;
+    assert_eq!(status, 409);
+    assert_eq!(body["error"]["code"], "catalog_upgrade_required");
+    let mut report = store_protocol::catalog::CatalogReport {
+        schema_version: 1,
+        report_id: uuid::Uuid::new_v4().to_string(),
+        platform: Platform::Ios,
+        status: store_protocol::catalog::CatalogStatus::Ready,
+        account_fingerprint: Some("a".repeat(64)),
+        apps: vec![store_protocol::catalog::CatalogApp {
+            bundle_identifier: "com.example.app".into(),
+            name: "Verified WSS app".into(),
+            store_app_id: Some("123".into()),
+        }],
+        error_code: None,
+    };
+    send_catalog(&mut old, &report).await;
+    let (transport, copy, secret) = (state.transport.clone(), node.clone(), token.clone());
+    let legacy = tokio::spawn(async move {
+        transport
+            .dispatch(&copy, &secret, command("legacy-business"))
+            .await
+    });
+    let request = next_request(&mut old).await;
+    old.send(Message::Text(
+        serde_json::to_string(&StoreReply {
+            request_id: request.request_id,
+            status: 200,
+            body: json!({"ok":true}),
+        })
+        .unwrap()
+        .into(),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(legacy.await.unwrap().unwrap().body["ok"], true);
+    assert!(state.registry.account_apps(&account.id).unwrap().is_empty());
+    old.close(None).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while state.transport.connected(&node.connector_id) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let mut socket = ws_connect_catalog(&base, &node.connector_id, &token, &key, true).await;
+    wait_connected(&state, &node.connector_id).await;
+    send_catalog(&mut socket, &report).await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while state.registry.account_apps(&account.id).unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let business_id = uuid::Uuid::new_v4().to_string();
+    let (transport, copy, secret, business) = (
+        state.transport.clone(),
+        node.clone(),
+        token.clone(),
+        command(&business_id),
+    );
+    let pending = tokio::spawn(async move { transport.dispatch(&copy, &secret, business).await });
+    let request = next_request(&mut socket).await;
+    assert_eq!(request.request_id, business_id);
+    // Catalog refresh is dispatched even while the store business lock is held.
+    let (status, accepted) = call(app.clone(), "POST", &refresh, ADMIN, json!({})).await;
+    assert_eq!(status, 202);
+    let refresh_request = catalog_command(&mut socket).await;
+    assert_eq!(refresh_request.catalog_action, "refresh");
+    assert_eq!(accepted["requestId"], refresh_request.request_id);
+    // A valid unsolicited report using the pending request ID cannot complete the business request.
+    report.report_id = business_id.clone();
+    report.apps[0].name = "Updated catalog".into();
+    send_catalog(&mut socket, &report).await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while state.registry.account_apps(&account.id).unwrap()[0]["name"] != "Updated catalog" {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(!pending.is_finished());
+    // Invalid directory content is safely discarded without closing the business channel.
+    report.report_id = uuid::Uuid::new_v4().to_string();
+    report.apps.push(report.apps[0].clone());
+    send_catalog(&mut socket, &report).await;
+    socket
+        .send(Message::Text(
+            serde_json::to_string(&StoreReply {
+                request_id: business_id,
+                status: 200,
+                body: json!({"businessResult":true}),
+            })
+            .unwrap()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(pending.await.unwrap().unwrap().body["businessResult"], true);
+    assert!(state.transport.connected(&node.connector_id));
+    assert_eq!(state.registry.account_apps(&account.id).unwrap().len(), 1);
+    // Rotating credentials revokes catalog writes from the already-authenticated old session.
+    state.registry.rotate(&node.connector_id).unwrap();
+    report.report_id = uuid::Uuid::new_v4().to_string();
+    report.apps.truncate(1);
+    report.apps[0].name = "Must be rejected".into();
+    send_catalog(&mut socket, &report).await;
+    let (transport, copy, secret) = (state.transport.clone(), node.clone(), token.clone());
+    let last = tokio::spawn(async move {
+        transport
+            .dispatch(&copy, &secret, command("after-rotation"))
+            .await
+    });
+    let request = next_request(&mut socket).await;
+    socket
+        .send(Message::Text(
+            serde_json::to_string(&StoreReply {
+                request_id: request.request_id,
+                status: 200,
+                body: json!({}),
+            })
+            .unwrap()
+            .into(),
+        ))
+        .await
+        .unwrap();
+    last.await.unwrap().unwrap();
+    assert_eq!(
+        state.registry.account_apps(&account.id).unwrap()[0]["name"],
+        "Updated catalog"
+    );
+    socket.close(None).await.unwrap();
+    server.abort();
+    let _ = server.await;
+}
+
 #[tokio::test]
 async fn websocket_routes_multiple_apps_and_rejects_duplicate_nodes() {
     let state = state(Duration::from_secs(1));
     let node = state.registry.create(input()).unwrap();
     let token = state.registry.token(&node);
     for name in ["com.example.app", "com.example.other"] {
+        support::catalog(
+            &state.registry,
+            &node.connector_id,
+            Platform::Ios,
+            &["com.example.app", "com.example.other"],
+        );
         state
             .registry
             .bind(Platform::Ios, name, &node.connector_id)
@@ -818,6 +1052,12 @@ async fn real_connector_active_loop_and_api_round_trip() {
     let state = state(Duration::from_secs(2));
     let node = state.registry.create(input()).unwrap();
     let token = state.registry.token(&node);
+    support::catalog(
+        &state.registry,
+        &node.connector_id,
+        Platform::Ios,
+        &["com.example.app"],
+    );
     state
         .registry
         .bind(Platform::Ios, "com.example.app", &node.connector_id)

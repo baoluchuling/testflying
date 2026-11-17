@@ -1,3 +1,4 @@
+mod accounts;
 mod api_docs;
 pub mod forwarding;
 mod integrations;
@@ -179,6 +180,7 @@ pub fn router_with_screenshots(
     uploader: Option<ScreenshotUploader>,
 ) -> Router {
     let management = Router::new()
+        .merge(accounts::management_routes("/v1/accounts"))
         .route("/v1/forwarding", get(forwarding::read))
         .route("/v1/forwarding/{platform}", put(forwarding::update))
         .route("/v1/logs", get(logs::read))
@@ -211,6 +213,15 @@ pub fn router_with_screenshots(
             )),
         );
     let public = Router::new()
+        .route("/v1/store-management/accounts", get(accounts::public_list))
+        .route(
+            "/v1/store-management/accounts/{id}/apps",
+            get(accounts::apps),
+        )
+        .route(
+            "/v1/apps/{platform}/{identifier}/account",
+            get(accounts::app_account),
+        )
         .route(
             "/v1/store-management/apps/{platform}/{identifier}/sync-jobs/{jobId}",
             get(store_jobs::read),
@@ -250,6 +261,13 @@ pub fn router_with_screenshots(
             }),
         )
         .route("/v1/apps/{platform}/{identifier}/connector", binding)
+        .route(
+            "/v1/apps/{platform}/{identifier}/account",
+            put(accounts::bind).route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                integrations::authorize_binding,
+            )),
+        )
         .route("/v1/connectors/{id}/ws", get(connect_ws))
         .route(
             "/v1/store-management/apps/{platform}/{identifier}/uploads/{asset}",
@@ -436,12 +454,14 @@ async fn connect_ws(
                 let key = state.registry.purpose_key(&node, "message");
                 let (transport, registration_state, registration_id) =
                     (state.transport.clone(), state.clone(), id.clone());
+                let catalog_token = token.clone();
                 transport
                     .serve(
                         id,
                         socket,
                         key,
                         screenshot.then_some(&state.registry),
+                        Some((&state.registry, catalog_token.as_str())),
                         move |endpoint| {
                             if screenshot && endpoint.is_some() {
                                 return Err(store_protocol::crypto::error());

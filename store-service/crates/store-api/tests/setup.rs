@@ -1,3 +1,4 @@
+mod support;
 use axum::{body::Body, http::Request};
 use hmac::{Hmac, Mac};
 use http_body_util::BodyExt;
@@ -480,6 +481,15 @@ async fn new_and_existing_integration_tokens_access_all_nodes_without_reissuing(
     }
 
     let own = "/v1/apps/ios/com.example.allowed/connector";
+    let catalogs = Registry::open(&path, SIGNING_KEY).unwrap();
+    for id in &ids {
+        support::catalog(
+            &catalogs,
+            id,
+            store_protocol::Platform::Ios,
+            &["com.example.allowed", "com.example.other"],
+        );
+    }
     let other = "/v1/apps/ios/com.example.other/connector";
     let node = |index: usize| serde_json::json!({"connectorId":ids[index]});
     for (path, key, index, expected) in [
