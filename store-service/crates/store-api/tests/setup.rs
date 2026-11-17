@@ -372,7 +372,7 @@ async fn new_and_existing_integration_tokens_access_all_nodes_without_reissuing(
         );
     }
     let legacy_id = "11111111-1111-4111-8111-111111111111";
-    let db = rusqlite::Connection::open(path).unwrap();
+    let db = rusqlite::Connection::open(&path).unwrap();
     db.execute(
         "INSERT INTO integrations(id,name) VALUES(?1,'Previously issued')",
         [legacy_id],

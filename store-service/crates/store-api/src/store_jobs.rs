@@ -544,6 +544,26 @@ mod tests {
             .register_endpoint(&node.connector_id, &registry.token(&node), Some(&url))
             .unwrap();
         registry
+            .ingest_catalog(
+                &node.connector_id,
+                &registry.token(&node),
+                true,
+                &store_protocol::catalog::CatalogReport {
+                    schema_version: 1,
+                    report_id: Uuid::new_v4().to_string(),
+                    platform: Platform::Ios,
+                    status: store_protocol::catalog::CatalogStatus::Ready,
+                    account_fingerprint: Some("a".repeat(64)),
+                    apps: vec![store_protocol::catalog::CatalogApp {
+                        bundle_identifier: "com.example.legacy".into(),
+                        name: "Legacy fixture".into(),
+                        store_app_id: None,
+                    }],
+                    error_code: None,
+                },
+            )
+            .unwrap();
+        registry
             .bind(Platform::Ios, "com.example.legacy", &node.connector_id)
             .unwrap();
         let state = ApiState::new(

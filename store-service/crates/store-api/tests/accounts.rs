@@ -216,6 +216,157 @@ fn full_reports_retain_last_good_on_failure_and_require_identity_acceptance() {
 }
 
 #[test]
+fn disabled_candidates_remain_ambiguous_until_explicit_verified_selection() {
+    for disable_account in [true, false] {
+        let r = registry();
+        let a = node(&r, "First owner");
+        let b = node(&r, "Second owner");
+        support::catalog(&r, &a.connector_id, Platform::Ios, &[APP]);
+        let first = r.resolve_account(Platform::Ios, APP).unwrap();
+        support::catalog(&r, &b.connector_id, Platform::Ios, &[APP]);
+        let second = r
+            .accounts()
+            .unwrap()
+            .into_iter()
+            .find(|account| account.store_connector_id == b.connector_id)
+            .unwrap();
+        let mac = r
+            .create_with_kind(
+                ConnectorInput {
+                    name: "Shared screenshot node".into(),
+                },
+                ConnectorKind::Screenshot,
+            )
+            .unwrap();
+        r.patch_account(
+            &first.id,
+            patch(json!({"screenshotConnectorId":mac.connector_id})),
+        )
+        .unwrap();
+        r.patch_account(
+            &second.id,
+            patch(json!({"screenshotConnectorId":mac.connector_id})),
+        )
+        .unwrap();
+        if disable_account {
+            r.patch_account(&first.id, patch(json!({"enabled":false})))
+                .unwrap();
+        } else {
+            r.set_enabled(&a.connector_id, false).unwrap();
+        }
+        let error = r.resolve(Platform::Ios, APP).unwrap_err();
+        assert_eq!(error.status, 409);
+        assert_eq!(error.code, "account_ambiguous");
+        assert_eq!(r.get(&a.connector_id).unwrap().app_count, 0);
+        assert_eq!(r.get(&b.connector_id).unwrap().app_count, 0);
+        assert_eq!(r.get(&mac.connector_id).unwrap().app_count, 0);
+        r.bind_account(Platform::Ios, APP, &second.id).unwrap();
+        assert_eq!(
+            r.resolve(Platform::Ios, APP).unwrap().connector_id,
+            b.connector_id
+        );
+        assert_eq!(r.get(&b.connector_id).unwrap().app_count, 1);
+        assert_eq!(r.get(&mac.connector_id).unwrap().app_count, 1);
+    }
+}
+
+#[tokio::test]
+async fn merchant_disable_preserves_screenshot_branch_and_counts_but_account_disable_blocks_both() {
+    let state = state();
+    let store = node(&state.registry, "Sole owner");
+    support::catalog(&state.registry, &store.connector_id, Platform::Ios, &[APP]);
+    let account = state.registry.resolve_account(Platform::Ios, APP).unwrap();
+    let mac = state
+        .registry
+        .create_with_kind(
+            ConnectorInput {
+                name: "Enabled screenshot node".into(),
+            },
+            ConnectorKind::Screenshot,
+        )
+        .unwrap();
+    state
+        .registry
+        .patch_account(
+            &account.id,
+            patch(json!({"screenshotConnectorId":mac.connector_id})),
+        )
+        .unwrap();
+    assert_eq!(
+        state.registry.get(&store.connector_id).unwrap().app_count,
+        1
+    );
+    assert_eq!(state.registry.get(&mac.connector_id).unwrap().app_count, 1);
+    state
+        .registry
+        .set_enabled(&store.connector_id, false)
+        .unwrap();
+    let error = state.registry.resolve(Platform::Ios, APP).unwrap_err();
+    assert_eq!(error.status, 503);
+    assert_eq!(error.code, "connector_disabled");
+    assert_eq!(
+        state.registry.get(&store.connector_id).unwrap().app_count,
+        0
+    );
+    assert_eq!(state.registry.get(&mac.connector_id).unwrap().app_count, 1);
+    let app = store_api::router(state.clone());
+    let shot = format!("/v1/apps/ios/{APP}/screenshot-connector");
+    assert_eq!(
+        call(&app, "GET", &shot, ADMIN, Value::Null).await.1["connector"]["connectorId"],
+        mac.connector_id
+    );
+    let token = call(
+        &app,
+        "POST",
+        "/v1/integrations",
+        ADMIN,
+        json!({"name":"Screenshot branch"}),
+    )
+    .await
+    .1["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let request = json!({"platform":"ios","bundleIdentifier":APP,"prompt":"Synthetic queue only","target":[{"locale":"en-US","page":"home","device":"phone"}]});
+    let queued = call(&app, "POST", "/v1/screenshot-jobs", &token, request.clone()).await;
+    assert_eq!(queued.0, 202);
+    assert_eq!(queued.1["connectorId"], mac.connector_id);
+    state
+        .registry
+        .patch_account(&account.id, patch(json!({"enabled":false})))
+        .unwrap();
+    let error = state.registry.resolve(Platform::Ios, APP).unwrap_err();
+    assert_eq!(error.status, 503);
+    assert_eq!(error.code, "account_disabled");
+    assert_eq!(
+        call(&app, "GET", &shot, ADMIN, Value::Null).await.1["error"]["code"],
+        "account_disabled"
+    );
+    assert_eq!(
+        call(&app, "POST", "/v1/screenshot-jobs", &token, request.clone())
+            .await
+            .0,
+        503
+    );
+    assert_eq!(state.registry.get(&mac.connector_id).unwrap().app_count, 0);
+    state
+        .registry
+        .patch_account(&account.id, patch(json!({"enabled":true})))
+        .unwrap();
+    state
+        .registry
+        .set_enabled(&mac.connector_id, false)
+        .unwrap();
+    let shot_error = call(&app, "GET", &shot, ADMIN, Value::Null).await;
+    assert_eq!(shot_error.0, 503);
+    assert_eq!(
+        shot_error.1["error"]["code"],
+        "screenshot_connector_disabled"
+    );
+    assert_eq!(state.registry.get(&mac.connector_id).unwrap().app_count, 0);
+}
+
+#[test]
 fn migration_is_one_time_preserves_settings_snapshots_and_flags_conflicts_and_orphans() {
     for conflict in [false, true] {
         let dir = tempfile::tempdir().unwrap();

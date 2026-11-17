@@ -160,7 +160,7 @@ fn node(db: &Connection, id: &str, screenshot: bool) -> Result<()> {
     }
 }
 
-fn usable(db: &Connection, value: &Account) -> Result<()> {
+fn usable(value: &Account) -> Result<()> {
     if !value.enabled {
         return Err(StoreError::new(
             503,
@@ -175,12 +175,7 @@ fn usable(db: &Connection, value: &Account) -> Result<()> {
             "Administrator must accept the changed account identity",
         ));
     }
-    node(db, &value.store_connector_id, false).map_err(|mut e| {
-        if e.code == "connector_disabled" {
-            e.status = 503;
-        }
-        e
-    })
+    Ok(())
 }
 
 fn member(db: &Connection, id: &str, identifier: &str) -> Result<bool> {
@@ -209,7 +204,7 @@ pub(crate) fn resolve_account(
         }
         if let Some(id) = id {
             let value = account(db, &id)?;
-            usable(db, &value)?;
+            usable(&value)?;
             if member(db, &id, identifier)? || (provisional && value.last_catalog_at.is_none()) {
                 return Ok(value);
             }
@@ -221,7 +216,9 @@ pub(crate) fn resolve_account(
         }
     }
     let ids: Vec<String> = {
-        let mut stmt=db.prepare("SELECT a.id FROM accounts a JOIN account_apps p ON p.account_id=a.id JOIN connectors c ON c.id=a.store_connector_id WHERE a.platform=?1 AND p.bundle_identifier=?2 AND a.enabled=1 AND c.enabled=1 AND c.mode!='screenshot' ORDER BY a.id").map_err(database_error)?;
+        // Availability cannot choose ownership: disabling one matching account or
+        // merchant node must never make another account the implicit destination.
+        let mut stmt=db.prepare("SELECT a.id FROM accounts a JOIN account_apps p ON p.account_id=a.id WHERE a.platform=?1 AND p.bundle_identifier=?2 ORDER BY a.id").map_err(database_error)?;
         let rows = stmt
             .query_map(params![platform.to_string(), identifier], |r| r.get(0))
             .map_err(database_error)?;
@@ -231,7 +228,7 @@ pub(crate) fn resolve_account(
     match ids.as_slice() {
         [id] => {
             let value = account(db, id)?;
-            usable(db, &value)?;
+            usable(&value)?;
             Ok(value)
         }
         [] => Err(StoreError::new(
@@ -287,20 +284,18 @@ pub(crate) fn resolve_screenshot(
 }
 
 pub(super) fn app_count(db: &Connection, id: &str, screenshot: bool) -> Result<u64> {
-    db.query_row("WITH eligible AS (
-      SELECT a.* FROM accounts a JOIN connectors c ON c.id=a.store_connector_id
-      WHERE a.enabled=1 AND c.enabled=1 AND c.mode!='screenshot'),
-      candidates AS (
-      SELECT a.id,a.platform,p.bundle_identifier FROM eligible a JOIN account_apps p ON p.account_id=a.id),
+    db.query_row("WITH candidates AS (
+      SELECT a.id,a.platform,p.bundle_identifier FROM accounts a JOIN account_apps p ON p.account_id=a.id),
       routes AS (
-      SELECT b.platform,b.bundle_identifier,b.account_id FROM account_bindings b JOIN eligible a ON a.id=b.account_id
+      SELECT b.platform,b.bundle_identifier,b.account_id FROM account_bindings b JOIN accounts a ON a.id=b.account_id
       WHERE b.suppressed=0 AND ((b.provisional=1 AND a.last_catalog_at IS NULL) OR EXISTS(SELECT 1 FROM account_apps p WHERE p.account_id=a.id AND p.bundle_identifier=b.bundle_identifier))
       UNION ALL
       SELECT c.platform,c.bundle_identifier,MIN(c.id) FROM candidates c
       WHERE NOT EXISTS(SELECT 1 FROM account_bindings b WHERE b.platform=c.platform AND b.bundle_identifier=c.bundle_identifier AND (b.suppressed=1 OR b.account_id IS NOT NULL))
       GROUP BY c.platform,c.bundle_identifier HAVING count(*)=1)
-      SELECT count(*) FROM routes r JOIN eligible a ON a.id=r.account_id
-      WHERE a.catalog_status!='identity_changed' AND ((?2=0 AND a.store_connector_id=?1) OR (?2=1 AND a.screenshot_connector_id=?1
+      SELECT count(*) FROM routes r JOIN accounts a ON a.id=r.account_id
+      WHERE a.enabled=1 AND a.catalog_status!='identity_changed' AND ((?2=0 AND a.store_connector_id=?1
+      AND EXISTS(SELECT 1 FROM connectors c WHERE c.id=?1 AND c.enabled=1 AND c.mode!='screenshot')) OR (?2=1 AND a.screenshot_connector_id=?1
       AND EXISTS(SELECT 1 FROM connectors c WHERE c.id=?1 AND c.enabled=1 AND c.mode='screenshot')
       AND NOT EXISTS(SELECT 1 FROM account_bindings b WHERE b.platform=r.platform AND b.bundle_identifier=r.bundle_identifier AND b.screenshot_disabled=1)))",params![id,screenshot],|r|r.get::<_,i64>(0)).map(|count|count as u64).map_err(database_error)
 }
@@ -519,7 +514,7 @@ impl Registry {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
         let value = account(&tx, id)?;
-        usable(&tx, &value)?;
+        usable(&value)?;
         if value.platform != platform || !member(&tx, id, identifier)? {
             return Err(StoreError::new(
                 422,

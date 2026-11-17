@@ -375,6 +375,13 @@ impl Registry {
             .resolve_account(platform, identifier)?
             .store_connector_id;
         let node = self.get(&id)?;
+        if node.kind != ConnectorKind::Store {
+            return Err(StoreError::new(
+                422,
+                "invalid_connector_kind",
+                "Account execution requires a Store Connector",
+            ));
+        }
         if !node.enabled {
             return Err(StoreError::new(
                 503,
