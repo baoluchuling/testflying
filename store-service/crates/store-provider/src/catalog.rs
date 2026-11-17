@@ -58,6 +58,27 @@ fn string<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
     value.get(key).and_then(Value::as_str).ok_or_else(failed)
 }
 impl Gateway {
+    /// Opaque identity of the locally loaded credentials; never performs network I/O.
+    pub fn account_fingerprint(&self, platform: Platform) -> Option<String> {
+        if self.inner.config.mode != "live" {
+            return None;
+        }
+        let identity = match platform {
+            Platform::Ios => self.inner.config.apple_issuer_id.as_deref().filter(|s| {
+                !s.is_empty()
+                    && self.inner.apple_key.is_some()
+                    && self
+                        .inner
+                        .config
+                        .apple_key_id
+                        .as_ref()
+                        .is_some_and(|s| !s.is_empty())
+            })?,
+            Platform::Android => &self.inner.google.as_ref()?.email,
+        };
+        Some(fingerprint(platform, identity))
+    }
+
     pub async fn account_catalog(&self, platform: Platform) -> Result<AccountCatalog> {
         // A whole-discovery deadline also bounds pathological slow pagination.
         tokio::time::timeout(Duration::from_secs(120), self.discover_catalog(platform))
@@ -72,25 +93,9 @@ impl Gateway {
                 "Account catalog is unsupported",
             ));
         }
-        let identity = match platform {
-            Platform::Ios => self
-                .inner
-                .config
-                .apple_issuer_id
-                .as_deref()
-                .filter(|s| {
-                    !s.is_empty()
-                        && self.inner.apple_key.is_some()
-                        && self
-                            .inner
-                            .config
-                            .apple_key_id
-                            .as_ref()
-                            .is_some_and(|s| !s.is_empty())
-                })
-                .ok_or_else(unconfigured)?,
-            Platform::Android => &self.inner.google.as_ref().ok_or_else(unconfigured)?.email,
-        };
+        let fingerprint = self
+            .account_fingerprint(platform)
+            .ok_or_else(unconfigured)?;
         let token = match platform {
             Platform::Ios => self.token(platform).await.map_err(|_| failed())?,
             Platform::Android => self.reporting_token().await?,
@@ -190,10 +195,7 @@ impl Gateway {
             .filter(|s| !s.is_empty());
             let Some(next) = next else {
                 apps.sort_by(|a, b| a.bundle_identifier.cmp(&b.bundle_identifier));
-                let catalog = AccountCatalog {
-                    fingerprint: fingerprint(platform, identity),
-                    apps,
-                };
+                let catalog = AccountCatalog { fingerprint, apps };
                 catalog.validate().map_err(|_| failed())?;
                 // Leave enough room for the encrypted StoreReply envelope.
                 CatalogReport {

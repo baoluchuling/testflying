@@ -542,6 +542,7 @@ fn catalog_page(platform: Platform, suffix: &str, next: Option<&str>) -> Value {
 async fn catalog_absent_credentials_and_mock_are_safe_without_network() {
     let gateway = Gateway::new(ProviderConfig::default()).unwrap();
     for platform in [Platform::Ios, Platform::Android] {
+        assert_eq!(gateway.account_fingerprint(platform), None);
         assert_eq!(
             gateway.account_catalog(platform).await.unwrap_err().code,
             "catalog_not_configured"
@@ -552,6 +553,8 @@ async fn catalog_absent_credentials_and_mock_are_safe_without_network() {
         ..ProviderConfig::default()
     })
     .unwrap();
+    assert_eq!(gateway.account_fingerprint(Platform::Ios), None);
+    assert_eq!(gateway.account_fingerprint(Platform::Android), None);
     assert_eq!(
         gateway
             .account_catalog(Platform::Ios)
@@ -593,7 +596,10 @@ async fn catalog_two_pages_are_complete_and_fingerprints_are_opaque() {
         .await;
         let keys = Keys::new();
         let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+        let local_fingerprint = gateway.account_fingerprint(platform).unwrap();
+        assert!(fake.records().is_empty(), "fingerprinting must be local");
         let catalog = gateway.account_catalog(platform).await.unwrap();
+        assert_eq!(catalog.fingerprint, local_fingerprint);
         assert_eq!(catalog.apps.len(), 2);
         catalog.validate().unwrap();
         use sha2::{Digest, Sha256};
@@ -677,7 +683,10 @@ async fn catalog_rejects_failed_second_page_cycles_duplicates_cross_origin_and_o
                 continue;
             }
             let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+            let fingerprint = gateway.account_fingerprint(platform).unwrap();
+            assert!(fake.records().is_empty());
             let error = gateway.account_catalog(platform).await.unwrap_err();
+            assert_eq!(gateway.account_fingerprint(platform), Some(fingerprint));
             assert_eq!(
                 error.code, "catalog_discovery_failed",
                 "{platform}/{scenario}"
@@ -741,7 +750,16 @@ async fn catalog_reporting_and_publisher_tokens_are_isolated_and_reporting_failu
     }).await;
     let keys = Keys::new();
     let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
-    gateway.account_catalog(Platform::Android).await.unwrap();
+    let fingerprint = gateway.account_fingerprint(Platform::Android).unwrap();
+    assert!(fake.records().is_empty());
+    assert_eq!(
+        gateway
+            .account_catalog(Platform::Android)
+            .await
+            .unwrap()
+            .fingerprint,
+        fingerprint
+    );
     gateway
         .execute(&request(
             Platform::Android,
@@ -752,6 +770,10 @@ async fn catalog_reporting_and_publisher_tokens_are_isolated_and_reporting_failu
         .unwrap();
     reporting_failed.store(true, std::sync::atomic::Ordering::SeqCst);
     assert!(gateway.account_catalog(Platform::Android).await.is_err());
+    assert_eq!(
+        gateway.account_fingerprint(Platform::Android),
+        Some(fingerprint)
+    );
     gateway
         .execute(&request(
             Platform::Android,
@@ -798,11 +820,17 @@ async fn catalog_reporting_oauth_failure_does_not_poison_publisher_token() {
     .await;
     let keys = Keys::new();
     let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let fingerprint = gateway.account_fingerprint(Platform::Android).unwrap();
+    assert!(fake.records().is_empty());
     let error = gateway
         .account_catalog(Platform::Android)
         .await
         .unwrap_err();
     assert_eq!(error.code, "catalog_discovery_failed");
+    assert_eq!(
+        gateway.account_fingerprint(Platform::Android),
+        Some(fingerprint)
+    );
     assert!(!error.message.contains("credential-error"));
     gateway
         .execute(&request(

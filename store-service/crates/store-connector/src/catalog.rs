@@ -37,6 +37,8 @@ async fn discover(executor: Arc<Executor>, platform: Platform) -> CatalogReport 
         error_code: Some("catalog_unsupported".into()),
     };
     if executor.config.platform_mode.supports(platform) {
+        // Identity is local credential state, independent of OAuth/enumeration success.
+        report.account_fingerprint = executor.gateway.account_fingerprint(platform);
         match executor.gateway.account_catalog(platform).await {
             Ok(catalog) => {
                 report.status = CatalogStatus::Ready;
@@ -61,7 +63,7 @@ async fn discover(executor: Arc<Executor>, platform: Platform) -> CatalogReport 
     if report.validate().is_err() {
         report.status = CatalogStatus::Failed;
         report.apps.clear();
-        report.account_fingerprint = None;
+        report.account_fingerprint = executor.gateway.account_fingerprint(platform);
         report.error_code = Some("catalog_discovery_failed".into());
     }
     report
@@ -112,6 +114,21 @@ pub(super) fn start(
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Tungstenite fixes the callback's error to an HTTP response; boxing changes its API.
+    #[allow(clippy::result_large_err)]
+    fn accept_catalog_protocol(
+        _: &tokio_tungstenite::tungstenite::handshake::server::Request,
+        mut response: tokio_tungstenite::tungstenite::handshake::server::Response,
+    ) -> Result<
+        tokio_tungstenite::tungstenite::handshake::server::Response,
+        tokio_tungstenite::tungstenite::handshake::server::ErrorResponse,
+    > {
+        response.headers_mut().insert(
+            header::SEC_WEBSOCKET_PROTOCOL,
+            crypto::SUBPROTOCOL.parse().unwrap(),
+        );
+        Ok(response)
+    }
     fn executor() -> Arc<Executor> {
         Executor::new(serde_json::from_value(json!({"connectorId":"catalog-fixture","token":"fixture-token-0123456789",
             "messageKey":"01".repeat(32),"uploadKey":"02".repeat(32),"serverUrl":"http://127.0.0.1:1",
@@ -205,10 +222,7 @@ mod tests {
         let _node_abort = Session(node);
         tokio::time::timeout(Duration::from_secs(5), async {
             let (stream, _) = listener.accept().await.unwrap();
-            let mut socket = tokio_tungstenite::accept_hdr_async(stream,
-                |_: &tokio_tungstenite::tungstenite::handshake::server::Request, mut response: tokio_tungstenite::tungstenite::handshake::server::Response| {
-                    response.headers_mut().insert(header::SEC_WEBSOCKET_PROTOCOL, crypto::SUBPROTOCOL.parse().unwrap()); Ok(response)
-                }).await.unwrap();
+            let mut socket = tokio_tungstenite::accept_hdr_async(stream, accept_catalog_protocol).await.unwrap();
             let mut handshake = crypto::handshake(&"01".repeat(32), "catalog-ws", false).unwrap();
             let Message::Binary(registration) = socket.next().await.unwrap().unwrap() else { panic!("registration"); };
             let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];

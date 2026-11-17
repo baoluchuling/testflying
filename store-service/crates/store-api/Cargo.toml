@@ -23,6 +23,9 @@ subtle = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
+p256 = { version = "0.13", features = ["pkcs8", "pem"] }
+rsa = { version = "0.9", features = ["pem"] }
+rand = "0.8"
 tokio = { workspace = true, features = ["test-util"] }
 tower.workspace = true
 http-body-util.workspace = true
