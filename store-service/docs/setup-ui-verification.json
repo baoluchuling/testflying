@@ -1,5 +1,5 @@
 {
-  "runId": "d0181e8934ed42c18f537db0272da1c4",
+  "runId": "e07e29b4bef2485695fbe37738759f25",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -12,8 +12,8 @@
     },
     "packageSha256": "5117f4a2a645aeb307bf3b829c575ad58135cc97e75291e594532ab5b5b21b23"
   },
-  "packageTestsRunId": "17aaa5415a9340bdbfb9f43133d88704",
-  "packageTestsPassed": 6,
+  "packageTestsRunId": "d15ae986375c4f3eafe0543e1f63cf43",
+  "packageTestsPassed": 7,
   "production": false,
   "checks": [
     "HTTP displays the HTTPS link without prompting for credentials or contacting the node API",
@@ -36,21 +36,38 @@
     "locking hides screenshot settings and clears all unsaved OSS and notification passwords",
     "screenshot node is available in its own deployment panel and excluded from Store Connector downloads",
     "admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it",
+    "loopback accounts create/edit, shared screenshot node, Unix-second timestamp, safe offline error, refresh, per-app screenshot suppression, verified ambiguity binding and identity acceptance",
     "unlocked admin can provision a screenshot node and download its macOS deployment ZIP",
     "locking aborts an in-flight screenshot settings refresh and prevents a late response from restoring the form",
     "refresh restores the HTTPS session and clears local files without writing to web storage",
     "locking clears the cookie and a subsequent refresh stays locked",
     "mobile layout has no horizontal overflow",
-    "no credential file or account fields are uploaded and CSP passes"
+    "no provider credential fields or files are uploaded and CSP passes"
   ],
-  "windowsExecutableSha256": "8f7e2789acbe8f2b8c533fd59fabd924c2c88cdc9481378b1a2f039ab22288d9",
+  "windowsExecutableSha256": "162ed7844fe67d02b7b05a275aaed56260e714335b5bf13b94e79ceaa943a0cf",
   "credentialFilesUploaded": false,
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "1a475cad-42a5-4cf0-a834-e480aacd836a",
-    "8cb87851-405c-4d2b-a160-2d6feaf09a7f"
+    "afccea67-9033-43fd-af3c-42d90770079f",
+    "76f84648-f124-4b52-9466-828e0a44deb6"
   ],
   "verificationNodesDisabled": false,
-  "secureNavigationProbes": 0
+  "secureNavigationProbes": 0,
+  "sourceHashes": {
+    "crates/store-api/src/setup/accounts.mjs": "bfd4defd002e29bcf6ece8b1ba89539c04d62c562f80e765f6a8e49f7e0b276e",
+    "crates/store-api/src/setup/app.mjs": "49001e3d8ad6120024ac1c34409af568a75ed76be98c60142122a7c117615d39",
+    "crates/store-api/src/setup/forwarding.mjs": "04a01dacf546f66786f9cc440fae66ee77fd031d752ac5d07ce7c4efa9a6cc7b",
+    "crates/store-api/src/setup/index.html": "1daea6990cb62df054ff18ddb15a4ec3c4607fb7888b7033c2f1d7e54ad9ff37",
+    "crates/store-api/src/setup/integrations.mjs": "1e12510de9980e761afeb0b67e19d27d221d2ca19f416804f7b1fc1e66edd172",
+    "crates/store-api/src/setup/logs.mjs": "f2e0f8ff2929fbd6fae9dddef2ad60d009324fb1aade4253285bf2dd8f6d5670",
+    "crates/store-api/src/setup/packager.mjs": "bfb769c527866d1357db21fdc9f5bd3165fbbba0aa41ca6038a4e8f50a7e1a54",
+    "crates/store-api/src/setup/screenshot-settings.mjs": "d16cac03d9e1225abab1f25f730d9b24cfb9b2c43fda632d70a9de194bc561bb",
+    "crates/store-api/src/setup/style.css": "200c92bb937540fca4fb38724a442161c5414b766f40a254b663777355a01410",
+    "crates/store-api/src/setup/vendor/JSZIP-LICENSE.markdown": "566c953c6090b1218ca6217dd7359d45dde46581968586dc607d59a78af6a9c4",
+    "crates/store-api/src/setup/vendor/jszip.min.js": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
+    "scripts/verify_setup_ui.mjs": "88ff2254ac5d3148821e0d4b8bc74ebb9d44a5ca21b48d4ee8dd3dab60943971",
+    "scripts/verify_setup_ui.py": "fe7a011495656968f6f3a97bbef72473c8d3c1a3f3e48601534ae5fac359e118"
+  },
+  "uiSourceCommit": "3080279a4a5c25f202509c410a26269a22036b07"
 }
