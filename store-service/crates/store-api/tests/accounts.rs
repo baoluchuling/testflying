@@ -260,6 +260,9 @@ fn disabled_candidates_remain_ambiguous_until_explicit_verified_selection() {
         assert_eq!(r.get(&a.connector_id).unwrap().app_count, 0);
         assert_eq!(r.get(&b.connector_id).unwrap().app_count, 0);
         assert_eq!(r.get(&mac.connector_id).unwrap().app_count, 0);
+        let row = &r.account_apps(&second.id).unwrap()[0];
+        assert_eq!(row["screenshotEnabled"], false);
+        assert_eq!(row["screenshotResolutionStatus"], "account_ambiguous");
         r.bind_account(Platform::Ios, APP, &second.id).unwrap();
         assert_eq!(
             r.resolve(Platform::Ios, APP).unwrap().connector_id,
@@ -310,6 +313,10 @@ async fn merchant_disable_preserves_screenshot_branch_and_counts_but_account_dis
     );
     assert_eq!(state.registry.get(&mac.connector_id).unwrap().app_count, 1);
     let app = store_api::router(state.clone());
+    let row = &state.registry.account_apps(&account.id).unwrap()[0];
+    assert_eq!(row["resolutionStatus"], "resolved");
+    assert_eq!(row["screenshotEnabled"], true);
+    assert_eq!(row["screenshotResolutionStatus"], "resolved");
     let shot = format!("/v1/apps/ios/{APP}/screenshot-connector");
     assert_eq!(
         call(&app, "GET", &shot, ADMIN, Value::Null).await.1["connector"]["connectorId"],
@@ -338,6 +345,9 @@ async fn merchant_disable_preserves_screenshot_branch_and_counts_but_account_dis
     let error = state.registry.resolve(Platform::Ios, APP).unwrap_err();
     assert_eq!(error.status, 503);
     assert_eq!(error.code, "account_disabled");
+    let row = &state.registry.account_apps(&account.id).unwrap()[0];
+    assert_eq!(row["screenshotEnabled"], false);
+    assert_eq!(row["screenshotResolutionStatus"], "account_disabled");
     assert_eq!(
         call(&app, "GET", &shot, ADMIN, Value::Null).await.1["error"]["code"],
         "account_disabled"
@@ -364,6 +374,12 @@ async fn merchant_disable_preserves_screenshot_branch_and_counts_but_account_dis
         "screenshot_connector_disabled"
     );
     assert_eq!(state.registry.get(&mac.connector_id).unwrap().app_count, 0);
+    let row = &state.registry.account_apps(&account.id).unwrap()[0];
+    assert_eq!(row["screenshotEnabled"], false);
+    assert_eq!(
+        row["screenshotResolutionStatus"],
+        "screenshot_connector_disabled"
+    );
 }
 
 #[test]
@@ -744,6 +760,23 @@ async fn screenshot_delete_is_per_app_and_legacy_put_cannot_replace_account_node
     );
     assert_eq!(call(&app, "DELETE", &path, ADMIN, Value::Null).await.0, 204);
     assert_eq!(call(&app, "GET", &path, ADMIN, Value::Null).await.0, 404);
+    let rows = state.registry.account_apps(&account.id).unwrap();
+    let disabled = rows
+        .iter()
+        .find(|row| row["bundleIdentifier"] == APP)
+        .unwrap();
+    assert_eq!(disabled["resolutionStatus"], "resolved");
+    assert_eq!(disabled["screenshotEnabled"], false);
+    assert_eq!(
+        disabled["screenshotResolutionStatus"],
+        "screenshot_app_not_found"
+    );
+    let peer = rows
+        .iter()
+        .find(|row| row["bundleIdentifier"] == "com.example.peer")
+        .unwrap();
+    assert_eq!(peer["screenshotEnabled"], true);
+    assert_eq!(peer["screenshotResolutionStatus"], "resolved");
     assert_eq!(
         state
             .registry
@@ -777,4 +810,94 @@ async fn screenshot_delete_is_per_app_and_legacy_put_cannot_replace_account_node
         200
     );
     assert_eq!(call(&app, "GET", &path, ADMIN, Value::Null).await.0, 200);
+    assert_eq!(
+        state.registry.account_apps(&account.id).unwrap()[0]["screenshotEnabled"],
+        true
+    );
+}
+
+#[tokio::test]
+async fn setup_session_can_bind_only_verified_app_rows() {
+    let state = state();
+    let a = node(&state.registry, "A");
+    let b = node(&state.registry, "B");
+    support::catalog(&state.registry, &a.connector_id, Platform::Ios, &[APP]);
+    support::catalog(&state.registry, &b.connector_id, Platform::Ios, &[APP]);
+    let account = state
+        .registry
+        .accounts()
+        .unwrap()
+        .into_iter()
+        .find(|value| value.store_connector_id == a.connector_id)
+        .unwrap();
+    let app = store_api::router(state.clone());
+    let login = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/connector-setup/api/session")
+                .header("x-forwarded-proto", "https")
+                .header("x-testflying-setup", "1")
+                .header("authorization", format!("Bearer {ADMIN}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login.status(), 204);
+    let cookie = login.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    for (identifier, scheme, marked, expected) in [
+        (APP, "http", true, 403),
+        (APP, "https", false, 401),
+        ("com.example.unverified", "https", true, 422),
+        (APP, "https", true, 200),
+    ] {
+        let mut request = Request::builder()
+            .method("PUT")
+            .uri(format!(
+                "/connector-setup/api/apps/ios/{identifier}/account"
+            ))
+            .header("x-forwarded-proto", scheme)
+            .header("cookie", &cookie)
+            .header("content-type", "application/json");
+        if marked {
+            request = request.header("x-testflying-setup", "1");
+        }
+        let response = app
+            .clone()
+            .oneshot(
+                request
+                    .body(Body::from(json!({"accountId":account.id}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected);
+    }
+    assert_eq!(
+        state
+            .registry
+            .resolve_account(Platform::Ios, APP)
+            .unwrap()
+            .id,
+        account.id
+    );
+    let other = state
+        .registry
+        .accounts()
+        .unwrap()
+        .into_iter()
+        .find(|value| value.store_connector_id == b.connector_id)
+        .unwrap();
+    let row = &state.registry.account_apps(&other.id).unwrap()[0];
+    assert_eq!(row["resolutionStatus"], "bound_elsewhere");
+    assert_eq!(row["screenshotEnabled"], false);
+    assert_eq!(row["screenshotResolutionStatus"], "bound_elsewhere");
 }

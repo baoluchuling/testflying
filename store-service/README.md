@@ -103,7 +103,13 @@ curl -X POST "$BASE_URL/v1/connectors" \
 
 创建响应包含 `connector` 和 `installation`。前者是脱敏节点信息，后者包含运行时 `connectorId`、`token`、`serverUrl`、独立的 `messageKey`/`uploadKey` 及初始 Provider 配置。普通节点列表不返回秘密。新增节点只生成配置并打 ZIP，不重新编译程序。
 
-映射应用，多个应用可以传同一个 `CONNECTOR_ID`：
+节点升级并连接后，中心为每个平台／商店节点建立稳定账号；从完整目录精确匹配平台和包名，唯一候选自动路由，多候选返回 409，需显式选择已验证账号。管理员可在 HTTPS 配置页「账号目录与节点路由」创建、编辑账号、选择商店与截图节点、刷新／检查目录并从已验证应用行解决重复归属；同一截图节点可供多个账号使用。
+
+Apple 从 `/v1/apps` 发现可访问应用。Android 目录需要启用 Google Play Developer Reporting API、授予服务账号 Play 应用访问权限，并使用 `https://www.googleapis.com/auth/playdeveloperreporting` scope；Reporting 的 token 缓存与原 Publisher 独立。目录失败保留上次成功结果，不影响既有已验证／迁移绑定的商店操作。请为旧商店节点安装「仅升级程序」包，保留本机配置及凭据；截图节点协议维持现状。目录发现及手动刷新不占用商店业务锁。
+
+外部四个新增账号查询／绑定接口和完整字段见 [统一接口文档](docs/store-api.md#账号目录与应用归属)。普通商店和截图请求不增加 accountId。应用先确定所属账号，再解析该账号的节点；停用的重复候选仍参与归属冲突，商店节点停用只阻止商店执行，停用账号阻止商店和截图。已创建异步任务保留原节点快照。
+
+兼容的旧节点映射接口仍可使用，目标对应账号目录必须已经验证此应用，多个应用可以传同一个 `CONNECTOR_ID`：
 
 ```sh
 curl -X PUT "$BASE_URL/v1/apps/ios/com.example.app/connector" \
@@ -111,7 +117,7 @@ curl -X PUT "$BASE_URL/v1/apps/ios/com.example.app/connector" \
   -d "{\"connectorId\":\"$CONNECTOR_ID\"}"
 ```
 
-相同平台和标识只保留一个映射；再次 PUT 会明确重新绑定。大小写精确匹配，iOS 和 Android 的同名标识互不影响。DELETE 同一路径解除映射，GET 读取映射。
+相同平台和标识只保留一个映射；再次 PUT 会明确重新绑定。大小写精确匹配，iOS 和 Android 的同名标识互不影响。DELETE 同一路径解除映射并抑制自动发现，GET 读取映射。截图旧 PUT 仅可匹配账号已配置节点，未配置时可初始化；更换节点请修改账号配置。截图单应用 DELETE 不清空整个账号截图节点。
 
 节点管理：
 

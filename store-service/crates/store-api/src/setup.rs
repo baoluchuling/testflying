@@ -123,6 +123,10 @@ pub(super) fn routes(state: Arc<super::ApiState>) -> Router<Arc<super::ApiState>
             "/connector-setup/api/accounts",
         ))
         .route(
+            "/connector-setup/api/apps/{platform}/{identifier}/account",
+            axum::routing::put(super::accounts::bind),
+        )
+        .route(
             "/connector-setup/api/screenshot-settings",
             get(super::screenshot_settings::read).put(super::screenshot_settings::update),
         )
@@ -212,6 +216,10 @@ async fn asset(Path(name): Path<String>) -> Response {
         "app.mjs" => (
             "text/javascript; charset=utf-8",
             include_bytes!("setup/app.mjs"),
+        ),
+        "accounts.mjs" => (
+            "text/javascript; charset=utf-8",
+            include_bytes!("setup/accounts.mjs"),
         ),
         "integrations.mjs" => (
             "text/javascript; charset=utf-8",

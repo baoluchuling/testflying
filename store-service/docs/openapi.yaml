@@ -1,20 +1,29 @@
 openapi: 3.1.0
 info:
-  title: Unified Center API - Stores, Nodes and Screenshots
-  version: '2026-11-11'
+  title: Unified Center API - Stores, Accounts, Nodes and Screenshots
+  version: '2026-11-17'
   description: >-
     Store calls are real-time without drafts or automatic mutation retries.
     Screenshot jobs are asynchronous, routed by exact platform/package bindings and retained for seven days.
     Screenshot images upload directly from nodes to OSS; center stores no image bytes. Screenshot routes require HTTPS.
+    Public core endpoints total 23 (store 11, node 2, screenshot 6, account 4), plus two upload helpers.
+    Ownership is determined before availability; disabled candidates remain ambiguous. Merchant disable stops store execution only;
+    account disable stops both store and screenshot execution. Account queries use cached directories, never provider calls.
+    Directory discovery requires upgraded store nodes (program-only upgrade preserves node credentials/configuration).
+    Apple discovers accessible apps with GET /v1/apps. Android requires Google Play Developer Reporting API enablement,
+    service-account Play app access and scope https://www.googleapis.com/auth/playdeveloperreporting for apps.search.
+    Reporting uses a separate token cache from Publisher; failed discovery retains the previous complete catalog and existing bindings.
+    Credentials remain on nodes. Account routing does not change screenshot worker protocol or its arm64-only packaging.
 servers:
   - url: http://localhost:8200
 components:
   securitySchemes:
-    integrationToken: {type: http, scheme: bearer, description: 'HTTPS integration credential; enabled store and screenshot nodes, independent app bindings and business calls. Screenshot job visibility is limited to the creating integration.'}
+    integrationToken: {type: http, scheme: bearer, description: 'HTTPS integration credential covering all nodes/accounts including future nodes; verified app binding and business calls. Screenshot job visibility is limited to the creating integration.'}
     clientToken: {type: http, scheme: bearer, description: STORE_API_TOKEN}
     adminToken: {type: http, scheme: bearer, description: STORE_API_ADMIN_TOKEN}
     nodeToken: {type: http, scheme: bearer, description: Individually provisioned Connector token}
     uploadToken: {type: http, scheme: bearer, bearerFormat: JWT, description: Thirty-minute file/application-scoped upload credential; not stored in database.}
+    setupSession: {type: apiKey, in: cookie, name: __Secure-tf-setup, description: 'HTTPS HttpOnly SameSite=Strict administrator session. Requires X-Testflying-Setup: 1. Existing POST/DELETE /connector-setup/api/session login/logout and token persistence are unchanged.'}
   parameters:
     platform:
       name: platform
@@ -41,7 +50,118 @@ components:
       in: query
       description: For store-images only. Omit or blank for all. iOS supports all three; Android supports phone/tablet and rejects foldable with 422 unsupported_image_device. Do not send all or duo.
       schema: {type: string, enum: [phone, tablet, foldable, '']}
+    accountId:
+      name: accountId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    setupHeader:
+      name: X-Testflying-Setup
+      in: header
+      required: false
+      description: Required with setupSession authentication; administrator Bearer fallback remains supported without this header.
+      schema: {type: string, const: '1'}
   schemas:
+    PublicAccount:
+      type: object
+      required: [id, name, platform, enabled, catalogStatus, catalogError, lastCatalogAt]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        platform: {type: string, enum: [ios, android]}
+        enabled: {type: boolean}
+        catalogStatus: {type: string, enum: [awaiting_catalog, ready, failed, not_configured, unsupported, identity_changed]}
+        catalogError: {type: [string, 'null'], description: Safe error code; never raw provider output.}
+        lastCatalogAt: {type: [integer, 'null'], description: Unix seconds of the last successful full catalog; null before success. Failed reports retain the previous catalog and timestamp.}
+      description: No connector IDs, credentials, tokens or identity fingerprints. Integration scope covers all accounts.
+    Account:
+      allOf:
+        - {$ref: '#/components/schemas/PublicAccount'}
+        - type: object
+          required: [storeConnectorId, screenshotConnectorId, migrationError]
+          properties:
+            storeConnectorId: {type: string, format: uuid}
+            screenshotConnectorId: {type: [string, 'null'], format: uuid, description: A screenshot node can serve multiple accounts.}
+            migrationError: {type: [string, 'null']}
+    AccountApp:
+      type: object
+      required: [platform, bundleIdentifier, name, storeAppId, accountId, resolutionStatus, screenshotEnabled, screenshotResolutionStatus]
+      properties:
+        platform: {type: string, enum: [ios, android]}
+        bundleIdentifier: {type: string}
+        name: {type: string}
+        storeAppId: {type: [string, 'null']}
+        accountId: {type: string, format: uuid}
+        resolutionStatus: {type: string, description: 'Account membership/ownership only: resolved, provisional, bound_elsewhere or a safe resolver error such as account_ambiguous, account_membership_unverified, identity_changed, account_disabled or app_not_found.'}
+        screenshotEnabled: {type: boolean, description: 'Computed with the execution screenshot resolver; true only when owned by this account and the route resolves. Does not mean online or immediate execution. Per-app DELETE returns false without clearing the account screenshot node.'}
+        screenshotResolutionStatus: {type: string, description: 'resolved on success, otherwise safe screenshot or ownership error. Other-account, ambiguous, suppressed and unavailable routes are false; account settings alone do not determine this field.'}
+      example: {platform: ios, bundleIdentifier: com.example.app, name: Example, storeAppId: '123456789', accountId: 7da6a0fb-16e7-45e5-9782-1f5b47697b73, resolutionStatus: resolved, screenshotEnabled: false, screenshotResolutionStatus: screenshot_app_not_found}
+    PublicAccountList:
+      type: object
+      required: [accounts]
+      properties:
+        accounts: {type: array, items: {$ref: '#/components/schemas/PublicAccount'}}
+    PublicAccountResponse:
+      type: object
+      required: [account]
+      properties:
+        account: {$ref: '#/components/schemas/PublicAccount'}
+    AccountAppList:
+      type: object
+      required: [apps]
+      properties:
+        apps: {type: array, items: {$ref: '#/components/schemas/AccountApp'}}
+    AccountList:
+      type: object
+      required: [accounts, migrationIssues]
+      properties:
+        accounts: {type: array, items: {$ref: '#/components/schemas/Account'}}
+        migrationIssues:
+          type: array
+          items:
+            type: object
+            required: [platform, bundleIdentifier, code]
+            properties:
+              platform: {type: string, enum: [ios, android]}
+              bundleIdentifier: {type: string}
+              code: {type: string}
+    AccountResponse:
+      type: object
+      required: [account]
+      properties:
+        account: {$ref: '#/components/schemas/Account'}
+    AccountInput:
+      type: object
+      additionalProperties: false
+      required: [name, platform, storeConnectorId]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 160, description: Non-whitespace, at most 160 UTF-8 bytes.}
+        platform: {type: string, enum: [ios, android]}
+        storeConnectorId: {type: string, format: uuid}
+        screenshotConnectorId: {type: [string, 'null'], format: uuid}
+    AccountPatch:
+      type: object
+      additionalProperties: false
+      properties:
+        name: {type: string, minLength: 1, maxLength: 160}
+        enabled: {type: boolean}
+        storeConnectorId: {type: string, format: uuid}
+        screenshotConnectorId: {type: [string, 'null'], format: uuid, description: Omit to retain; null to clear.}
+        acceptIdentityChange: {type: boolean, description: 'Explicitly accept pending identity; invalidate old membership then refresh. No pending change returns 409 identity_change_not_pending.'}
+      description: Platform is immutable. Send changed node fields only to preserve unrelated settings on disabled nodes.
+    AccountBindingInput:
+      type: object
+      additionalProperties: false
+      required: [accountId]
+      properties:
+        accountId: {type: string, format: uuid}
+      example: {accountId: 7da6a0fb-16e7-45e5-9782-1f5b47697b73}
+    AccountRefreshAccepted:
+      type: object
+      required: [requestId, status]
+      properties:
+        requestId: {type: string, format: uuid}
+        status: {type: string, const: accepted}
     ScreenshotBindingInput:
       type: object
       additionalProperties: false
@@ -63,7 +183,7 @@ components:
       required: [platform, bundleIdentifier, prompt, target]
       properties:
         platform: {type: string, enum: [ios, android]}
-        bundleIdentifier: {type: string, minLength: 1, maxLength: 180, pattern: '^[A-Za-z0-9_.-]+$', description: 'Exact case-sensitive Bundle ID or package, independently bound to a screenshot node.'}
+        bundleIdentifier: {type: string, minLength: 1, maxLength: 180, pattern: '^[A-Za-z0-9_.-]+$', description: 'Exact case-sensitive Bundle ID or package; resolves account ownership then its screenshot node and per-app suppression.'}
         prompt: {type: string, minLength: 1, maxLength: 16384, description: 'At most 16 KiB UTF-8 bytes; forwarded verbatim. App identity and targets are supplied separately through get_capture_task.'}
         target:
           type: array
@@ -73,7 +193,7 @@ components:
           items: {$ref: '#/components/schemas/ScreenshotTarget'}
           description: 'Explicit locale/page/device combinations, at most 64 KiB serialized JSON. All items must use the same device and have unique (page, locale). Submit separate jobs for different devices. No theme field.'
         profile: {type: [string, 'null'], minLength: 1, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$', description: Optional task hint; no fixed profiles required.}
-      description: 'The center creates and returns a UUID jobId. Do not supply jobId, taskId, connectorId, clientRequestId or callback. No store binding or store credentials required. Updated screenshot worker with task protocol 3 is required.'
+      description: 'The center creates and returns a UUID jobId. Do not supply jobId, taskId, connectorId, accountId, clientRequestId or callback. Verified account ownership and an available account screenshot route are required; no separate legacy store binding or credentials in the request. Updated screenshot worker with task protocol 3 is required.'
     ScreenshotImage:
       type: object
       properties:
@@ -302,6 +422,132 @@ components:
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
 security: [{integrationToken: []}, {clientToken: []}]
 paths:
+  /v1/store-management/accounts:
+    get:
+      summary: List account metadata from cached directories
+      security: [{integrationToken: []}, {clientToken: []}]
+      responses:
+        '200': {description: Accounts without connector IDs or secrets, content: {application/json: {schema: {$ref: '#/components/schemas/PublicAccountList'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/store-management/accounts/{accountId}/apps:
+    parameters: [{$ref: '#/components/parameters/accountId'}]
+    get:
+      summary: List verified directory members and retained legacy mismatches
+      description: Cached account ownership and per-app screenshot resolution; does not call providers or check node online state.
+      security: [{integrationToken: []}, {clientToken: []}]
+      responses:
+        '200': {description: App rows with separate screenshot availability, content: {application/json: {schema: {$ref: '#/components/schemas/AccountAppList'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/apps/{platform}/{bundleIdentifier}/account:
+    parameters: [{$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}]
+    get:
+      summary: Resolve exact application ownership
+      description: 'Zero candidates returns 404 app_not_found; duplicates return 409 account_ambiguous, including disabled accounts or merchant nodes. Explicit migrated binding can remain provisional until the first successful catalog. Disabled account returns 503 account_disabled.'
+      security: [{integrationToken: []}, {clientToken: []}]
+      responses:
+        '200': {description: Selected account, content: {application/json: {schema: {$ref: '#/components/schemas/PublicAccountResponse'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    put:
+      summary: Explicitly select a verified account member
+      description: Exact platform and identifier must belong to the selected successful directory; unknown or cross-platform selection returns 422 account_membership_unverified. Business query tokens cannot bind. Rebinding affects new jobs only.
+      security: [{integrationToken: []}, {adminToken: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountBindingInput'}}}}
+      responses:
+        '200': {description: Selected account, content: {application/json: {schema: {$ref: '#/components/schemas/PublicAccountResponse'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/accounts:
+    get:
+      summary: Administrator account/node relations and migration issues
+      security: [{adminToken: []}]
+      responses:
+        '200': {description: Technical account inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AccountList'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      summary: Create a platform account attached to a store node
+      security: [{adminToken: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountInput'}}}}
+      responses:
+        '201': {description: Account created, content: {application/json: {schema: {$ref: '#/components/schemas/AccountResponse'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/accounts/{accountId}:
+    parameters: [{$ref: '#/components/parameters/accountId'}]
+    patch:
+      summary: Update account routing or accept a changed identity
+      security: [{adminToken: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountPatch'}}}}
+      responses:
+        '200': {description: Account updated, content: {application/json: {schema: {$ref: '#/components/schemas/AccountResponse'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/accounts/{accountId}/apps:
+    parameters: [{$ref: '#/components/parameters/accountId'}]
+    get:
+      summary: Administrator app membership and screenshot routing
+      security: [{adminToken: []}]
+      responses:
+        '200': {description: App rows, content: {application/json: {schema: {$ref: '#/components/schemas/AccountAppList'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/accounts/{accountId}/refresh:
+    parameters: [{$ref: '#/components/parameters/accountId'}]
+    post:
+      summary: Request an asynchronous node catalog refresh
+      description: 'Requires an enabled account and live capable store node. 503 catalog_offline, 409 catalog_upgrade_required or identity_changed. Accept identity changes explicitly before refresh. Node coalesces refreshes with a 60-second per-platform minimum, without the business lock. This endpoint invokes provider discovery on the node; release checks must never call it.'
+      security: [{adminToken: []}]
+      responses:
+        '202': {description: Refresh accepted, content: {application/json: {schema: {$ref: '#/components/schemas/AccountRefreshAccepted'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/accounts:
+    parameters: [{$ref: '#/components/parameters/setupHeader'}]
+    get:
+      summary: HTTPS developer session account inventory
+      security: [{setupSession: []}, {adminToken: []}]
+      responses:
+        '200': {description: Technical account inventory, content: {application/json: {schema: {$ref: '#/components/schemas/AccountList'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      summary: HTTPS developer session account creation
+      security: [{setupSession: []}, {adminToken: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountInput'}}}}
+      responses:
+        '201': {description: Account created, content: {application/json: {schema: {$ref: '#/components/schemas/AccountResponse'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/accounts/{accountId}:
+    parameters: [{$ref: '#/components/parameters/accountId'}, {$ref: '#/components/parameters/setupHeader'}]
+    patch:
+      summary: HTTPS developer session account update
+      security: [{setupSession: []}, {adminToken: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountPatch'}}}}
+      responses:
+        '200': {description: Account updated, content: {application/json: {schema: {$ref: '#/components/schemas/AccountResponse'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/accounts/{accountId}/apps:
+    parameters: [{$ref: '#/components/parameters/accountId'}, {$ref: '#/components/parameters/setupHeader'}]
+    get:
+      summary: HTTPS developer session cached app rows
+      security: [{setupSession: []}, {adminToken: []}]
+      responses:
+        '200': {description: App rows, content: {application/json: {schema: {$ref: '#/components/schemas/AccountAppList'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/accounts/{accountId}/refresh:
+    parameters: [{$ref: '#/components/parameters/accountId'}, {$ref: '#/components/parameters/setupHeader'}]
+    post:
+      summary: HTTPS developer session asynchronous refresh
+      security: [{setupSession: []}, {adminToken: []}]
+      responses:
+        '202': {description: Refresh accepted, content: {application/json: {schema: {$ref: '#/components/schemas/AccountRefreshAccepted'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/apps/{platform}/{identifier}/account:
+    parameters:
+      - {$ref: '#/components/parameters/platform'}
+      - {name: identifier, in: path, required: true, schema: {type: string}}
+      - {$ref: '#/components/parameters/setupHeader'}
+    put:
+      summary: Bind a verified developer app row to an account
+      description: Internal session mirror of the public account PUT, using the same membership validator. Not an additional public core endpoint.
+      security: [{setupSession: []}, {adminToken: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountBindingInput'}}}}
+      responses:
+        '200': {description: Selected account, content: {application/json: {schema: {$ref: '#/components/schemas/PublicAccountResponse'}}}}
+        default: {$ref: '#/components/responses/Error'}
   /v1/screenshot-settings:
     get:
       summary: Read masked OSS and Studio capture-v1 notification settings
@@ -353,21 +599,21 @@ paths:
   /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector:
     parameters: [{$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}]
     put:
-      summary: Bind or replace the app's screenshot Mac independently of its store binding
-      description: HTTPS only. Requires an enabled Screenshot Connector; offline is permitted. Rebinding only affects future jobs; already-created jobs keep their assigned node. Persistent across center restarts.
+      summary: Enable the verified app's account screenshot route
+      description: HTTPS only. Requires verified account membership and an enabled Screenshot Connector; offline is permitted. Initializes an empty account screenshot node or matches its existing node; another node returns 409 account_screenshot_conflict and requires account configuration. Legacy conflicts return 409 legacy_screenshot_conflict. Existing jobs keep their assigned node. Persistent across center restarts.
       security: [{integrationToken: []}, {adminToken: []}]
       requestBody:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/ScreenshotBindingInput'}}}
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
     get:
-      summary: Read the app's screenshot binding, even if the node has since been disabled
-      description: HTTPS only; missing binding returns 404 screenshot_app_not_found.
+      summary: Resolve the app's current screenshot route
+      description: HTTPS only. Uses the execution resolver; per-app disabled or missing screenshot node returns 404 screenshot_app_not_found, disabled screenshot node returns 503 screenshot_connector_disabled, disabled account returns 503 account_disabled and ambiguous ownership returns 409 account_ambiguous.
       security: [{integrationToken: []}, {adminToken: []}]
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
     delete:
       summary: Remove a screenshot app binding without canceling existing jobs
-      description: HTTPS only; idempotent; store binding unaffected.
+      description: HTTPS only; idempotent per-app screenshot suppression. Preserves the account screenshotConnectorId and other apps. Store binding and existing job snapshots are unaffected.
       security: [{integrationToken: []}, {adminToken: []}]
       responses: {'204': {description: Screenshot binding removed or already absent}, default: {$ref: '#/components/responses/Error'}}
   /v1/screenshot-jobs:
@@ -605,12 +851,14 @@ paths:
     put:
       security: [{integrationToken: []}, {adminToken: []}]
       summary: Set or replace exact application mapping, many applications to one Connector
+      description: Preserves original request fields and authentication. The platform account attached to the selected enabled store node must contain the exact identifier in its verified directory; otherwise 422 account_membership_unverified. Existing jobs retain their assigned node.
       requestBody:
         required: true
         content: {application/json: {schema: {type: object, required: [connectorId], additionalProperties: false, properties: {connectorId: {type: string, format: uuid}}}}}
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
     delete:
       security: [{adminToken: []}]
+      description: Suppress automatic rediscovery for this application until a later verified explicit binding.
       responses: {'204': {description: Mapping removed}, default: {$ref: '#/components/responses/Error'}}
   /v1/store-management/apps/{platform}/{bundleIdentifier}/sync-jobs/{jobId}:
     get:

@@ -541,7 +541,17 @@ impl Registry {
         };
         apps.into_iter().map(|(identifier,name,store_app_id)| {
             let resolution=match resolve_account(&db,value.platform,&identifier) {Ok(selected) if selected.id==id=>if member(&db,id,&identifier)? {"resolved".to_owned()} else {"provisional".to_owned()},Ok(_)=>"bound_elsewhere".into(),Err(e)=>e.code};
-            Ok(json!({"platform":value.platform,"bundleIdentifier":identifier,"name":name,"storeAppId":store_app_id,"accountId":id,"resolutionStatus":resolution}))
+            // Use execution's resolver rather than inferring per-app availability
+            // from the account setting (legacy DELETE can suppress one app).
+            let screenshot_resolution = if resolution == "resolved" || resolution == "provisional" {
+                match resolve_screenshot(&db, value.platform, &identifier) {
+                    Ok(_) => "resolved".to_owned(),
+                    Err(error) => error.code,
+                }
+            } else {
+                resolution.clone()
+            };
+            Ok(json!({"platform":value.platform,"bundleIdentifier":identifier,"name":name,"storeAppId":store_app_id,"accountId":id,"resolutionStatus":resolution,"screenshotEnabled":screenshot_resolution=="resolved","screenshotResolutionStatus":screenshot_resolution}))
         }).collect()
     }
 

@@ -74,9 +74,22 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert!(!raw.contains(ADMIN));
     let catalog: Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(catalog["schemaVersion"], 1);
-    assert_eq!(catalog["contractVersion"], "2026-11-12");
+    assert_eq!(catalog["contractVersion"], "2026-11-17");
     let endpoints = catalog["endpoints"].as_array().unwrap();
-    assert_eq!(endpoints.len(), 19);
+    assert_eq!(endpoints.len(), 23);
+    assert_eq!(
+        catalog["endpointCounts"],
+        json!({"store":11,"node":2,"screenshot":6,"account":4,"uploads":2})
+    );
+    assert_eq!(
+        endpoints
+            .iter()
+            .filter(|endpoint| endpoint["group"] == "account")
+            .count(),
+        4
+    );
+    assert_eq!(catalog["accounts"]["lastCatalogAtUnit"], "unix_seconds");
+    assert_eq!(catalog["accounts"]["queryCallsProviders"], false);
     assert_eq!(
         endpoints
             .iter()
@@ -100,7 +113,15 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
             )
         })
         .collect();
-    assert_eq!(unique.len(), 19);
+    assert_eq!(unique.len(), 23);
+    for (method, path) in [
+        ("GET", "/v1/store-management/accounts"),
+        ("GET", "/v1/store-management/accounts/{accountId}/apps"),
+        ("GET", "/v1/apps/{platform}/{bundleIdentifier}/account"),
+        ("PUT", "/v1/apps/{platform}/{bundleIdentifier}/account"),
+    ] {
+        assert!(unique.contains(&(method, path)));
+    }
     assert_eq!(
         endpoints
             .iter()

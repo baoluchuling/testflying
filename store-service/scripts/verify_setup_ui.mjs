@@ -58,6 +58,9 @@ const screenshotSettingsFixture = {
   notification: { url: "", tokenConfigured: false, status: "not_configured" },
 };
 const screenshotSettingsWrites = [];
+const accountFixtures = [], accountWrites = [];
+const accountDirectories = new Map(), accountBindings = new Map();
+let failNextCatalogRefresh = false;
 let heldSettings;
 let settingsStarted;
 let releaseSettings;
@@ -71,6 +74,7 @@ if (!production) {
   const assetPaths = {
     "": [path.join(web, "index.html"), "text/html"],
     "app.mjs": [path.join(web, "app.mjs"), "text/javascript"],
+    "accounts.mjs": [path.join(web, "accounts.mjs"), "text/javascript"],
     "integrations.mjs": [path.join(web, "integrations.mjs"), "text/javascript"],
     "logs.mjs": [path.join(web, "logs.mjs"), "text/javascript"],
     "forwarding.mjs": [path.join(web,"forwarding.mjs"),"text/javascript"],
@@ -118,6 +122,59 @@ if (!production) {
         if (!fixtureSession || !req.headers.cookie?.split(/;\s*/).includes(`${sessionCookie}=${fixtureSession}`)) {
           res.writeHead(401).end("{}"); return;
         }
+      }
+      if (url.pathname === setupApi + "accounts" || url.pathname.startsWith(setupApi + "accounts/")) {
+        const suffix = url.pathname.slice((setupApi + "accounts").length).split("/").filter(Boolean);
+        const account = accountFixtures.find((item) => item.id === suffix[0]);
+        let input;
+        if (["POST", "PATCH"].includes(req.method)) {
+          let body = ""; for await (const part of req) body += part;
+          input = JSON.parse(body); accountWrites.push({ method: req.method, suffix, input });
+        }
+        if (suffix.length === 0 && req.method === "POST") {
+          assert(nodes.some((node) => node.connectorId === input.storeConnectorId && node.kind === "store"));
+          const value = { id: randomUUID(), ...input, enabled: true, screenshotConnectorId: input.screenshotConnectorId ?? null, catalogStatus: "awaiting_catalog", catalogError: null, lastCatalogAt: null, migrationError: null };
+          accountFixtures.push(value); res.writeHead(201).end(JSON.stringify({ account: value })); return;
+        }
+        if (suffix.length === 0) { res.end(JSON.stringify({ accounts: accountFixtures, migrationIssues: [] })); return; }
+        assert(account);
+        if (suffix[1] === "refresh") {
+          if (failNextCatalogRefresh) {
+            failNextCatalogRefresh = false;
+            res.writeHead(503).end(JSON.stringify({ error: { code: "catalog_offline", message: "<img src=x onerror=alert(1)> fixture-provider-secret" } })); return;
+          }
+          account.catalogStatus = "ready"; account.catalogError = null; account.lastCatalogAt = 1800000000;
+          accountDirectories.set(account.id, ["com.example.account-ui", "com.example.suppressed"]);
+          res.writeHead(202).end(JSON.stringify({ requestId: randomUUID(), status: "accepted" })); return;
+        }
+        if (suffix[1] === "apps") {
+          const apps = (accountDirectories.get(account.id) || []).map((bundleIdentifier) => {
+            const candidates = accountFixtures.filter((candidate) => candidate.platform === account.platform && accountDirectories.get(candidate.id)?.includes(bundleIdentifier));
+            const owner = accountBindings.get(`${account.platform}/${bundleIdentifier}`);
+            const resolutionStatus = owner ? (owner === account.id ? "resolved" : "bound_elsewhere") : candidates.length > 1 ? "account_ambiguous" : "resolved";
+            const screenshotResolutionStatus = resolutionStatus !== "resolved" ? resolutionStatus : !account.enabled ? "account_disabled" : bundleIdentifier.endsWith("suppressed") || !account.screenshotConnectorId ? "screenshot_app_not_found" : "resolved";
+            return { platform: account.platform, bundleIdentifier, name: "Fixture application", storeAppId: "fixture-store-id", accountId: account.id, resolutionStatus, screenshotEnabled: screenshotResolutionStatus === "resolved", screenshotResolutionStatus };
+          });
+          if (accountDirectories.has(account.id)) apps.push({ platform: account.platform, bundleIdentifier: "com.example.unverified", name: "Legacy mismatch", storeAppId: null, accountId: account.id, resolutionStatus: "account_membership_unverified", screenshotEnabled: false, screenshotResolutionStatus: "account_membership_unverified" });
+          res.end(JSON.stringify({ apps })); return;
+        }
+        if (req.method === "PATCH") {
+          if (input.acceptIdentityChange) { account.catalogStatus = "awaiting_catalog"; accountDirectories.delete(account.id); }
+          else Object.assign(account, input);
+          res.end(JSON.stringify({ account })); return;
+        }
+        res.writeHead(405).end("{}"); return;
+      }
+      if (/^apps\/[^/]+\/[^/]+\/account$/.test(url.pathname.slice(setupApi.length)) && req.method === "PUT") {
+        let body = ""; for await (const part of req) body += part;
+        const input = JSON.parse(body);
+        assert.deepEqual(Object.keys(input), ["accountId"]);
+        const [platform, identifier] = url.pathname.slice(setupApi.length).split("/").slice(1, 3).map(decodeURIComponent);
+        const account = accountFixtures.find((item) => item.id === input.accountId);
+        assert(account && account.platform === platform && accountDirectories.get(account.id)?.includes(identifier));
+        accountBindings.set(`${platform}/${identifier}`, account.id);
+        accountWrites.push({ method: "PUT", input, identifier });
+        res.end(JSON.stringify({ account })); return;
       }
       if (url.pathname === setupApi + "screenshot-settings") {
         assert(["GET", "PUT"].includes(req.method));
@@ -314,6 +371,10 @@ try {
     const loginRequest = adminRequest && url.pathname === setupApi + "session" && request.method() === "POST";
     if (production && url.pathname === setupApi + "screenshot-settings" && request.method() !== "GET") {
       violations.push("blocked production screenshot settings write");
+      return route.abort();
+    }
+    if (production && (url.pathname.startsWith(setupApi + "accounts") || url.pathname.startsWith(setupApi + "apps/")) && request.method() !== "GET") {
+      violations.push("blocked production account or app-binding write");
       return route.abort();
     }
     if (!!headers.authorization !== loginRequest || (headers["x-testflying-setup"] === "1") !== adminRequest) {
@@ -613,6 +674,84 @@ try {
     assert.equal(nodeConfig.kind, "screenshot");
     assert.deepEqual(Object.keys(deployment.files).sort(),
       ["README.md", "connector.json", "install.sh", "run.sh", "screenshot-connector", "testflying-prod-ca.crt"]);
+    await page.locator("#accountsWorkspace summary").click();
+    await page.locator("#accountsReload:enabled").waitFor();
+    const firstStore = nodes.find((node) => node.kind === "store");
+    const secondStore = { connectorId: randomUUID(), kind: "store", name: "Second account store", enabled: true, connected: false };
+    nodes.push(secondStore);
+    await page.locator("#accountsReload").click();
+    await page.locator(`#accountStoreNode option[value="${secondStore.connectorId}"]`).waitFor({ state: "attached" });
+    await page.locator("#accountSave:enabled").waitFor();
+    await page.locator("#managedAccountName").fill("Fixture account A");
+    await page.locator("#accountStoreNode").selectOption(firstStore.connectorId);
+    await page.locator("#accountScreenshotNode").selectOption(screenshotNode.connectorId);
+    await page.locator("#accountSave").click();
+    await page.getByText("账号已保存。目录更新由商店节点上报，刷新后可查看应用。", { exact: true }).waitFor();
+    const firstAccount = accountFixtures[0];
+    assert.equal(await page.locator("#managedAccount").inputValue(), firstAccount.id);
+    assert.equal(await page.locator("#managedAccountPlatform").isDisabled(), true);
+    failNextCatalogRefresh = true;
+    await page.locator("#accountCatalogRefresh").click();
+    await page.getByText("商店节点未连接，无法请求刷新目录", { exact: true }).waitFor();
+    assert.equal(await page.locator("#accountsWorkspace img").count(), 0);
+    assert.equal((await page.locator("#accountsWorkspace").textContent()).includes("fixture-provider-secret"), false);
+    await page.locator("#accountCatalogRefresh").click();
+    await page.getByText("已请求刷新目录；节点完成后请点击「重新读取账号与目录」。", { exact: true }).waitFor();
+    await page.locator("#accountsReload").click();
+    await page.locator("#accountApps li").first().waitFor();
+    await page.locator("#accountSave:enabled").waitFor();
+    assert.match(await page.locator("#accountMetadata").textContent(), /目录：ready/);
+    assert.equal((await page.locator("#accountMetadata").textContent()).includes(await page.evaluate(() => new Date(1800000000 * 1000).toLocaleString())), true);
+    const suppressedRow = page.locator("#accountApps li").filter({ hasText: "com.example.suppressed" });
+    assert.match(await suppressedRow.textContent(), /截图路由：不可用 · screenshot_app_not_found/);
+    assert.equal(await page.locator("#accountApps li").filter({ hasText: "com.example.unverified" }).locator("button").count(), 0);
+    firstStore.enabled = false;
+    await page.locator("#accountsReload").click();
+    await page.getByText("账号目录已读取。", { exact: true }).waitFor();
+    await page.locator("#managedAccountName").fill("Fixture account renamed");
+    await page.locator("#accountSave").click();
+    await page.getByText("账号已保存。目录更新由商店节点上报，刷新后可查看应用。", { exact: true }).waitFor();
+    const renamed = accountWrites.findLast((write) => write.method === "PATCH").input;
+    assert.deepEqual(renamed, { name: "Fixture account renamed", enabled: true });
+    firstStore.enabled = true;
+    await page.locator("#managedAccount").selectOption("");
+    await page.locator("#accountSave:enabled").waitFor();
+    await page.locator("#managedAccountName").fill("Fixture account B");
+    await page.locator("#accountStoreNode").selectOption(secondStore.connectorId);
+    await page.locator("#accountScreenshotNode").selectOption(screenshotNode.connectorId);
+    await page.locator("#accountSave").click();
+    await page.getByText("账号已保存。目录更新由商店节点上报，刷新后可查看应用。", { exact: true }).waitFor();
+    const secondAccount = accountFixtures[1];
+    assert.equal(firstAccount.screenshotConnectorId, secondAccount.screenshotConnectorId);
+    await page.locator("#accountCatalogRefresh").click();
+    await page.getByText("已请求刷新目录；节点完成后请点击「重新读取账号与目录」。", { exact: true }).waitFor();
+    await page.locator("#accountsReload").click();
+    const ownedRow = page.locator("#accountApps li").filter({ hasText: "com.example.account-ui" });
+    await page.waitForFunction(() => document.getElementById("accountApps").textContent.includes("account_ambiguous"));
+    await ownedRow.getByRole("button", { name: "绑定到此账号", exact: true }).click();
+    await page.getByText("应用已绑定到此账号。", { exact: true }).waitFor();
+    assert.equal(accountBindings.get("ios/com.example.account-ui"), secondAccount.id);
+    await page.locator("#managedAccount").selectOption(firstAccount.id);
+    await page.waitForFunction(() => document.getElementById("accountApps").textContent.includes("bound_elsewhere"));
+    await page.locator("#accountSave:enabled").waitFor();
+    await ownedRow.getByRole("button", { name: "绑定到此账号", exact: true }).click();
+    await page.getByText("应用已绑定到此账号。", { exact: true }).waitFor();
+    assert.equal(accountBindings.get("ios/com.example.account-ui"), firstAccount.id);
+    firstAccount.catalogStatus = "identity_changed";
+    await page.locator("#accountsReload").click();
+    await page.locator("#accountAcceptIdentity").waitFor();
+    await page.locator("#accountAcceptIdentity:enabled").waitFor();
+    await page.locator("#accountAcceptIdentity").click();
+    await page.getByText("已接受新身份，旧目录不再用于绑定。请刷新目录。", { exact: true }).waitFor();
+    assert.equal(await page.locator("#accountApps li").count(), 0);
+    checks.push("loopback accounts create/edit, shared screenshot node, Unix-second timestamp, safe offline error, refresh, per-app screenshot suppression, verified ambiguity binding and identity acceptance");
+    await page.locator("#accountCatalogRefresh").click();
+    await page.getByText("已请求刷新目录；节点完成后请点击「重新读取账号与目录」。", { exact: true }).waitFor();
+    await page.locator("#accountsReload").click();
+    await page.locator("#accountApps li").first().waitFor();
+    await page.locator("#accountSave:enabled").waitFor();
+    await page.locator("#accountsWorkspace").screenshot({ path: path.join(tmp, "setup-preview.png") });
+    await page.locator("#accountsWorkspace summary").click();
     await page.locator("#screenshotSettingsWorkspace summary").click();
     await page.locator("#screenshotSettingsSave:enabled").waitFor();
     heldSettings = new Promise((resolve) => { releaseSettings = resolve; });
@@ -630,6 +769,8 @@ try {
     assert.equal(await page.locator("#ossRegion").inputValue(), "");
     await assertSettingsSecretsEmpty();
     assert.equal(await page.locator("#screenshotWorkspace").isVisible(), false);
+    assert.equal(await page.locator("#accountsWorkspace").isVisible(), false);
+    assert.equal(await page.locator("#accountApps li").count(), 0);
     assert.equal(await page.locator("#screenshotNode").inputValue(), "");
     checks.push("unlocked admin can provision a screenshot node and download its macOS deployment ZIP");
     checks.push("locking aborts an in-flight screenshot settings refresh and prevents a late response from restoring the form");
@@ -669,7 +810,7 @@ try {
   if (!production) for (const post of posts) {
     assert.deepEqual(Object.keys(post), post.kind === "screenshot" ? ["name", "kind"] : ["name"]);
   }
-  checks.push("no credential file or account fields are uploaded and CSP passes");
+  checks.push("no provider credential fields or files are uploaded and CSP passes");
   reportPath = path.join(project, "docs", production ? "setup-deployment-verification.json" : "setup-ui-verification.json");
   const report = fs.existsSync(reportPath) ? JSON.parse(fs.readFileSync(reportPath, "utf8")) : {};
   if (production && report.stage === "api-deployed") {

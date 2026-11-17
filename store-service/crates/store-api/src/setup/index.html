@@ -56,6 +56,29 @@
         </section>
         <div class="download-bar"><p>生成的 ZIP 含私钥与节点凭据，请勿公开分享。</p><button id="downloadButton" type="submit">生成并下载 Windows 安装包</button></div>
       </form>
+      <details id="accountsWorkspace" class="card" hidden>
+        <summary>账号目录与节点路由</summary>
+        <p class="muted">查看全部技术关系。归属先按平台和包名确定，再检查账号与节点是否可用；截图路由独立于商店节点启停。目录需要最新版商店节点，凭据仍只存节点。</p>
+        <label for="managedAccount">账号</label><select id="managedAccount"></select>
+        <form id="managedAccountForm" autocomplete="off">
+          <label for="managedAccountName">账号名称</label><input id="managedAccountName" maxlength="160" required>
+          <label for="managedAccountPlatform">平台</label><select id="managedAccountPlatform"><option value="ios">iOS</option><option value="android">Android</option></select>
+          <label for="accountStoreNode">商店节点</label><select id="accountStoreNode" required></select>
+          <label for="accountScreenshotNode">截图节点（可供多个账号使用）</label><select id="accountScreenshotNode"></select>
+          <label class="toggle"><input id="managedAccountEnabled" type="checkbox" checked><span>启用账号（新账号默认启用）</span></label>
+          <button id="accountSave" type="submit">创建账号</button>
+        </form>
+        <p id="accountMetadata" class="account-metadata"></p>
+        <button id="accountCatalogRefresh" type="button" class="quiet">请求刷新目录</button>
+        <button id="accountAcceptIdentity" type="button" class="quiet" hidden>接受新账号身份</button>
+        <button id="accountsReload" type="button" class="quiet">重新读取账号与目录</button>
+        <p id="accountsStatus" role="status" aria-live="polite"></p>
+        <p id="accountMigrationIssues" class="account-metadata"></p>
+        <h4>应用目录与归属</h4>
+        <p class="hint">仅已验证的应用行可绑定到此账号。截图「可用」表示路由可解析，不代表节点在线或立即执行；单应用截图停用与账号截图节点分别显示。</p>
+        <p id="accountAppsEmpty" hidden>暂无应用。请启动或升级商店节点后刷新目录；失败时保留上次成功目录。</p>
+        <ul id="accountApps"></ul>
+      </details>
       <section id="forwardingWorkspace" class="card" hidden>
         <h3>商店接口转发</h3>
         <p class="muted">独立控制所有节点的 iOS 和 Android 商店请求、图片上传。暂停不影响节点连接和日志；已转发的任务继续执行。</p>
