@@ -179,6 +179,7 @@ async fn screenshot_route(state: Arc<ApiState>, platform: Platform) -> (StatusCo
             Request::builder()
                 .uri(format!("/v1/apps/{platform}/{APP}/screenshot-connector"))
                 .header("authorization", format!("Bearer {ADMIN}"))
+                .header("x-forwarded-proto", "https")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -271,10 +272,8 @@ async fn failed_connector_discovery_retains_same_identity_but_blocks_changed_cre
             r.resolve(platform, APP).unwrap().connector_id,
             node.connector_id
         );
-        assert_eq!(
-            screenshot_route(state.clone(), platform).await.0,
-            StatusCode::OK
-        );
+        let (status, body) = screenshot_route(state.clone(), platform).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
 
         let changed = connector_report(provider("b@example.test"), platform, Some(failure)).await;
         assert_eq!(changed.status, CatalogStatus::Failed);
@@ -349,9 +348,7 @@ async fn failed_connector_discovery_retains_same_identity_but_blocks_changed_cre
             r.resolve(platform, APP).unwrap().connector_id,
             node.connector_id
         );
-        assert_eq!(
-            screenshot_route(state.clone(), platform).await.0,
-            StatusCode::OK
-        );
+        let (status, body) = screenshot_route(state.clone(), platform).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
     }
 }
