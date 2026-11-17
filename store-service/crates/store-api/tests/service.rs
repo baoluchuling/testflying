@@ -674,7 +674,12 @@ async fn latest_node_log_streams_over_http_and_encrypted_websocket_without_app_b
     let http = client.get(&url).bearer_auth(ADMIN).send().await.unwrap();
     assert_eq!(http.status(), 200);
     assert_eq!(http.headers()["cache-control"], "no-store");
-    assert_eq!(http.bytes().await.unwrap().as_ref(), expected);
+    let downloaded = http.bytes().await.unwrap();
+    assert_eq!(downloaded.len(), expected.len());
+    assert!(
+        downloaded.as_ref() == expected.as_slice(),
+        "HTTP log snapshot content differs"
+    );
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let active = tokio::spawn(store_connector::run_active(executor.clone(), stopped));
     wait_connected(&state, &node.connector_id).await;
@@ -692,10 +697,40 @@ async fn latest_node_log_streams_over_http_and_encrypted_websocket_without_app_b
         .await
         .unwrap();
     let current = log.latest_snapshot().unwrap();
-    let expected = std::fs::read(log.directory().join(current["file"].as_str().unwrap())).unwrap();
+    let file = current["file"].as_str().unwrap();
+    let path = log.directory().join(file);
+    let baseline = std::fs::read(&path).unwrap();
+    assert!(baseline.len() >= expected.len());
+    assert!(
+        baseline.starts_with(&expected),
+        "Connected log lost the original fixture prefix"
+    );
     let wss = client.get(&url).bearer_auth(ADMIN).send().await.unwrap();
     assert_eq!(wss.status(), 200);
-    assert_eq!(wss.bytes().await.unwrap().as_ref(), expected);
+    assert_eq!(
+        wss.headers()["content-disposition"],
+        format!("attachment; filename=\"{file}\"")
+    );
+    let snapshot_length = wss.headers()["content-length"]
+        .to_str()
+        .unwrap()
+        .parse::<usize>()
+        .unwrap();
+    let downloaded = wss.bytes().await.unwrap();
+    assert_eq!(downloaded.len(), snapshot_length);
+    assert!(downloaded.len() >= baseline.len());
+    assert!(
+        downloaded.starts_with(&baseline),
+        "Streamed log lost its pre-request baseline prefix"
+    );
+    // Catalog completion may append after the baseline read. Validate every streamed byte
+    // against the immutable prefix of the same source file, including those new events.
+    let after_download = std::fs::read(&path).unwrap();
+    assert!(after_download.len() >= downloaded.len());
+    assert!(
+        downloaded.as_ref() == &after_download[..downloaded.len()],
+        "Encrypted log snapshot content differs"
+    );
     state
         .registry
         .set_enabled(&node.connector_id, false)
