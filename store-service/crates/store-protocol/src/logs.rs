@@ -67,12 +67,14 @@ pub fn log_hour(name: &str) -> Option<u64> {
 pub enum NodeRequest {
     Store(StoreRequest),
     Logs(LogRequest),
+    Catalog(crate::catalog::CatalogRequest),
 }
 impl NodeRequest {
     pub fn request_id(&self) -> &str {
         match self {
             Self::Store(r) => &r.request_id,
             Self::Logs(r) => &r.request_id,
+            Self::Catalog(r) => &r.request_id,
         }
     }
 }

@@ -14,3 +14,4 @@ url = "2"
 jsonwebtoken = "9"
 snow = "0.10"
 base64 = "0.22"
+uuid.workspace = true

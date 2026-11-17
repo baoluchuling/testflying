@@ -3,6 +3,7 @@ mod apple;
 mod apple_image_upload;
 mod apple_images;
 pub mod assets;
+pub mod catalog;
 pub mod diagnostics;
 mod google;
 mod image_query;
@@ -52,6 +53,7 @@ pub struct ProviderConfig {
     pub google_service_account_path: Option<String>,
     pub apple_base_url: String,
     pub google_base_url: String,
+    pub google_reporting_base_url: String,
     pub google_upload_base_url: String,
     pub google_token_url: String,
     pub store_proxy_url: Option<String>,
@@ -66,6 +68,7 @@ impl Default for ProviderConfig {
             google_service_account_path: None,
             apple_base_url: "https://api.appstoreconnect.apple.com".into(),
             google_base_url: "https://androidpublisher.googleapis.com".into(),
+            google_reporting_base_url: "https://playdeveloperreporting.googleapis.com".into(),
             google_upload_base_url: "https://androidpublisher.googleapis.com".into(),
             google_token_url: "https://oauth2.googleapis.com/token".into(),
             store_proxy_url: None,
@@ -97,6 +100,7 @@ struct Inner {
     google: Option<GoogleAccount>,
     apple_token: Mutex<Option<(String, u64)>>,
     google_token: Mutex<Option<(String, u64)>>,
+    google_reporting_token: Mutex<Option<(String, u64)>>,
     limits: Mutex<Limits>,
 }
 struct GoogleAccount {
@@ -132,6 +136,7 @@ impl Gateway {
         for endpoint in [
             &config.apple_base_url,
             &config.google_base_url,
+            &config.google_reporting_base_url,
             &config.google_upload_base_url,
             &config.google_token_url,
         ] {
@@ -198,6 +203,7 @@ impl Gateway {
                 google,
                 apple_token: Mutex::new(None),
                 google_token: Mutex::new(None),
+                google_reporting_token: Mutex::new(None),
                 limits: Mutex::new(Limits {
                     events: HashMap::new(),
                     apple_max: 2880,

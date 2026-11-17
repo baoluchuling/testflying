@@ -68,6 +68,7 @@ fn disabled_provider_configuration_is_ignored() {
     let mut raw = config();
     raw["provider"]["googleServiceAccountPath"] = json!("");
     raw["provider"]["googleTokenUrl"] = json!("invalid-url");
+    raw["provider"]["googleReportingBaseUrl"] = json!("invalid-url");
     raw["platformMode"] = json!("ios");
     assert!(Executor::new(serde_json::from_value(raw.clone()).unwrap()).is_ok());
     raw["platformMode"] = json!("android");

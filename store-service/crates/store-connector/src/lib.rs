@@ -1,3 +1,4 @@
+mod catalog;
 mod image_jobs;
 use axum::{
     extract::{DefaultBodyLimit, State},
@@ -76,6 +77,7 @@ pub struct Executor {
     gateway: Gateway,
     capacity: Arc<Semaphore>,
     image_jobs: image_jobs::ImageJobs,
+    catalog: tokio::sync::Mutex<catalog::CatalogCache>,
     pub assets: Arc<AssetStore>,
 }
 
@@ -138,6 +140,7 @@ impl Executor {
             PlatformMode::Ios => {
                 provider.google_service_account_path = None;
                 provider.google_base_url = defaults.google_base_url;
+                provider.google_reporting_base_url = defaults.google_reporting_base_url;
                 provider.google_upload_base_url = defaults.google_upload_base_url;
                 provider.google_token_url = defaults.google_token_url;
             }
@@ -151,6 +154,7 @@ impl Executor {
         let assets = AssetStore::new(config.connector_id.clone(), config.upload_key.clone());
         let gateway = Gateway::with_log(provider, Some(assets.clone()), log.clone())?;
         Ok(Arc::new(Self {
+            catalog: tokio::sync::Mutex::new(catalog::CatalogCache::default()),
             log,
             config,
             gateway,
@@ -546,7 +550,7 @@ async fn connection(
             true,
         )?;
         let registration = serde_json::to_vec(
-            &json!({"connectorId":executor.config.connector_id,"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1,"asyncStoreImagesSupported":true}),
+            &json!({"connectorId":executor.config.connector_id,"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1,"appCatalogVersion":1,"asyncStoreImagesSupported":true}),
         )
         .map_err(|_| crypto::error())?;
         let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];
@@ -582,6 +586,7 @@ async fn connection(
         log.event("connection.connected", json!({"protocol":"noise-v2"}));
     }
     let (mut write, mut read) = socket.split();
+    let (catalog_refresh, mut catalog_reports, _catalog_session) = catalog::start(executor.clone());
     let mut uploads = Vec::<UploadGuard>::new();
     let (results, mut result_receiver) = mpsc::channel::<StoreReply>(1);
     let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
@@ -599,6 +604,11 @@ async fn connection(
                 for record in channel.encrypt(text.as_bytes())? { if !bounded_send(&mut write,Message::Binary(record.into())).await {sent=false;break;} }
                 if !sent {break;}
             }
+            report = catalog_reports.recv() => {
+                let Some(result)=report else {break;};
+                let plain=serde_json::to_vec(&result).map_err(|_|crypto::error())?;
+                for record in channel.encrypt(&plain)? { if !bounded_send(&mut write,Message::Binary(record.into())).await {return Err(crypto::error());} }
+            }
             message = read.next() => {
                 let Some(Ok(message)) = message else {break;};
                 last_seen=tokio::time::Instant::now();
@@ -607,6 +617,15 @@ async fn connection(
                         let Some(plain)=channel.decrypt(&bytes)? else {continue;};
                         let envelope:NodeRequest=serde_json::from_slice(&plain).map_err(|_|StoreError::new(422,"invalid_request","Invalid Store API command"))?;
                         let request=match envelope {
+                            NodeRequest::Catalog(request)=>{
+                                let result = match request.validate() {
+                                    Ok(()) => { let _=catalog_refresh.try_send(()); StoreReply {request_id:request.request_id,status:202,body:json!({"accepted":true})} },
+                                    Err(error)=>StoreReply::from_result(request.request_id,Err(error)),
+                                };
+                                let plain=serde_json::to_vec(&result).map_err(|_|crypto::error())?;
+                                for record in channel.encrypt(&plain)? { if !bounded_send(&mut write,Message::Binary(record.into())).await {return Err(crypto::error());} }
+                                continue;
+                            }
                             NodeRequest::Store(request)=>request,
                             NodeRequest::Logs(request)=>{
                                 let executor=executor.clone();let sender=results.clone();

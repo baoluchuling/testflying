@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 
+pub mod catalog;
 pub mod crypto;
 pub mod logs;
 pub mod screenshot;

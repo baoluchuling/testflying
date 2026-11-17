@@ -521,6 +521,312 @@ struct Keys {
     apple_public: String,
     google_public: String,
 }
+
+fn catalog_app(platform: Platform, suffix: &str) -> Value {
+    match platform {
+        Platform::Ios => {
+            json!({"id":suffix,"attributes":{"bundleId":format!("com.example.{suffix}"),"name":format!("App {suffix}")}})
+        }
+        Platform::Android => {
+            json!({"name":format!("apps/{suffix}"),"packageName":format!("com.example.{suffix}"),"displayName":format!("App {suffix}")})
+        }
+    }
+}
+fn catalog_page(platform: Platform, suffix: &str, next: Option<&str>) -> Value {
+    match platform {
+        Platform::Ios => json!({"data":[catalog_app(platform,suffix)],"links":{"next":next}}),
+        Platform::Android => json!({"apps":[catalog_app(platform,suffix)],"nextPageToken":next}),
+    }
+}
+#[tokio::test]
+async fn catalog_absent_credentials_and_mock_are_safe_without_network() {
+    let gateway = Gateway::new(ProviderConfig::default()).unwrap();
+    for platform in [Platform::Ios, Platform::Android] {
+        assert_eq!(
+            gateway.account_catalog(platform).await.unwrap_err().code,
+            "catalog_not_configured"
+        );
+    }
+    let gateway = Gateway::new(ProviderConfig {
+        mode: "mock".into(),
+        ..ProviderConfig::default()
+    })
+    .unwrap();
+    assert_eq!(
+        gateway
+            .account_catalog(Platform::Ios)
+            .await
+            .unwrap_err()
+            .code,
+        "catalog_unsupported"
+    );
+}
+#[tokio::test]
+async fn catalog_two_pages_are_complete_and_fingerprints_are_opaque() {
+    for platform in [Platform::Ios, Platform::Android] {
+        let fake = Fake::new(move |r| {
+            if r.uri == "/token" {
+                return ok(json!({"access_token":"reporting-token","expires_in":3600}));
+            }
+            assert_eq!(r.method, "GET");
+            assert!(r.uri.starts_with(if platform == Platform::Ios {
+                "/v1/apps?"
+            } else {
+                "/v1beta1/apps:search?"
+            }));
+            let second = r.uri.contains("two");
+            if platform == Platform::Android {
+                assert_eq!(r.headers["authorization"], "Bearer reporting-token");
+            }
+            ok(catalog_page(
+                platform,
+                if second { "two" } else { "one" },
+                if second {
+                    None
+                } else if platform == Platform::Ios {
+                    Some("/v1/apps?cursor=two")
+                } else {
+                    Some("two")
+                },
+            ))
+        })
+        .await;
+        let keys = Keys::new();
+        let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+        let catalog = gateway.account_catalog(platform).await.unwrap();
+        assert_eq!(catalog.apps.len(), 2);
+        catalog.validate().unwrap();
+        use sha2::{Digest, Sha256};
+        let identity = if platform == Platform::Ios {
+            "fake-issuer"
+        } else {
+            "fake@example.test"
+        };
+        assert_eq!(
+            catalog.fingerprint,
+            hex::encode(Sha256::digest(format!("{platform}:{identity}").as_bytes()))
+        );
+        assert!(!serde_json::to_string(&catalog).unwrap().contains(identity));
+        assert_eq!(
+            fake.records().iter().filter(|r| r.method == "GET").count(),
+            2
+        );
+    }
+}
+#[tokio::test]
+async fn catalog_rejects_failed_second_page_cycles_duplicates_cross_origin_and_oversize() {
+    let keys = Keys::new();
+    for platform in [Platform::Ios, Platform::Android] {
+        for scenario in [
+            "second_failure",
+            "cycle",
+            "duplicate",
+            "oversize",
+            "too_many",
+            "cross_origin",
+        ] {
+            let fake = Fake::new(move |r| {
+                if r.uri == "/token" {
+                    return ok(json!({"access_token":"reporting-token","expires_in":3600}));
+                }
+                let second = r.uri.contains("two");
+                if scenario == "oversize" {
+                    return (StatusCode::OK, vec![], vec![b' '; 2 * 1024 * 1024 + 1]);
+                }
+                if scenario == "too_many" {
+                    let apps: Vec<_> = (0..10_001)
+                        .map(|i| catalog_app(platform, &i.to_string()))
+                        .collect();
+                    return ok(if platform == Platform::Ios {
+                        json!({"data":apps})
+                    } else {
+                        json!({"apps":apps})
+                    });
+                }
+                if second && scenario == "second_failure" {
+                    return (
+                        StatusCode::FORBIDDEN,
+                        vec![],
+                        b"secret-upstream-body".to_vec(),
+                    );
+                }
+                let next = if scenario == "cross_origin" && platform == Platform::Ios {
+                    Some("https://untrusted.invalid/v1/apps?cursor=two")
+                } else if !second || scenario == "cycle" {
+                    Some(if platform == Platform::Ios {
+                        "/v1/apps?cursor=two"
+                    } else {
+                        "two"
+                    })
+                } else {
+                    None
+                };
+                ok(catalog_page(
+                    platform,
+                    if second && scenario != "duplicate" {
+                        "two"
+                    } else {
+                        "one"
+                    },
+                    next,
+                ))
+            })
+            .await;
+            // Reporting only receives opaque page tokens; a URL token cannot change its origin.
+            if scenario == "cross_origin" && platform == Platform::Android {
+                continue;
+            }
+            let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+            let error = gateway.account_catalog(platform).await.unwrap_err();
+            assert_eq!(
+                error.code, "catalog_discovery_failed",
+                "{platform}/{scenario}"
+            );
+            assert!(!error.message.contains("secret"));
+            assert!(fake.records().len() <= 4, "cycle must fail promptly");
+            assert!(fake
+                .records()
+                .iter()
+                .all(|r| r.method == "GET" || r.uri == "/token"));
+        }
+    }
+}
+fn catalog_oauth_scope(record: &Record, keys: &Keys, url: &str) -> String {
+    let form = reqwest::Url::parse(&format!(
+        "http://fixture/?{}",
+        String::from_utf8_lossy(&record.bytes)
+    ))
+    .unwrap();
+    let assertion = form
+        .query_pairs()
+        .find(|(k, _)| k == "assertion")
+        .unwrap()
+        .1
+        .into_owned();
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+    validation.set_audience(&[format!("{url}/token")]);
+    jsonwebtoken::decode::<Value>(
+        &assertion,
+        &jsonwebtoken::DecodingKey::from_rsa_pem(keys.google_public.as_bytes()).unwrap(),
+        &validation,
+    )
+    .unwrap()
+    .claims["scope"]
+        .as_str()
+        .unwrap()
+        .into()
+}
+#[tokio::test]
+async fn catalog_reporting_and_publisher_tokens_are_isolated_and_reporting_failure_preserves_business(
+) {
+    let reporting_failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let failed = reporting_failed.clone();
+    let fake = Fake::new(move |r| {
+        if r.uri == "/token" {
+            // Inspect the synthetic assertion only to choose a distinct response token.
+            let form = reqwest::Url::parse(&format!("http://fixture/?{}", String::from_utf8_lossy(&r.bytes))).unwrap();
+            let assertion = form.query_pairs().find(|(k,_)| k == "assertion").unwrap().1.into_owned();
+            let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
+            validation.insecure_disable_signature_validation(); validation.validate_aud = false;
+            let claims = jsonwebtoken::decode::<Value>(&assertion, &jsonwebtoken::DecodingKey::from_secret(b"fixture"), &validation).unwrap().claims;
+            return ok(json!({"access_token":if claims["scope"] == store_provider::catalog::REPORTING_SCOPE { "reporting-token" } else { "publisher-token" },"expires_in":3600}));
+        }
+        if r.uri.starts_with("/v1beta1/apps:search") {
+            assert_eq!(r.headers["authorization"], "Bearer reporting-token");
+            if failed.load(std::sync::atomic::Ordering::SeqCst) { return (StatusCode::FORBIDDEN, vec![], b"disabled".to_vec()); }
+            return ok(catalog_page(Platform::Android, "one", None));
+        }
+        assert_eq!(r.headers["authorization"], "Bearer publisher-token");
+        google_base(r).unwrap_or_else(|| ok(json!({})))
+    }).await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    gateway.account_catalog(Platform::Android).await.unwrap();
+    gateway
+        .execute(&request(
+            Platform::Android,
+            Operation::StoreListings,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    reporting_failed.store(true, std::sync::atomic::Ordering::SeqCst);
+    assert!(gateway.account_catalog(Platform::Android).await.is_err());
+    gateway
+        .execute(&request(
+            Platform::Android,
+            Operation::StoreListings,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    let tokens: Vec<_> = fake
+        .records()
+        .into_iter()
+        .filter(|r| r.uri == "/token")
+        .collect();
+    assert_eq!(tokens.len(), 2);
+    let scopes: std::collections::HashSet<_> = tokens
+        .iter()
+        .map(|r| catalog_oauth_scope(r, &keys, &fake.url))
+        .collect();
+    assert!(scopes.contains(store_provider::catalog::REPORTING_SCOPE));
+    assert!(scopes.contains("https://www.googleapis.com/auth/androidpublisher"));
+}
+#[tokio::test]
+async fn catalog_reporting_oauth_failure_does_not_poison_publisher_token() {
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = calls.clone();
+    let fake = Fake::new(move |r| {
+        if r.uri == "/token" {
+            if counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                return (
+                    StatusCode::FORBIDDEN,
+                    vec![],
+                    b"credential-error-must-stay-local".to_vec(),
+                );
+            }
+            return ok(json!({"access_token":"publisher-token","expires_in":3600}));
+        }
+        assert!(
+            !r.uri.starts_with("/v1beta1/"),
+            "Reporting must stop after OAuth failure"
+        );
+        assert_eq!(r.headers["authorization"], "Bearer publisher-token");
+        google_base(r).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let error = gateway
+        .account_catalog(Platform::Android)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "catalog_discovery_failed");
+    assert!(!error.message.contains("credential-error"));
+    gateway
+        .execute(&request(
+            Platform::Android,
+            Operation::StoreListings,
+            json!({}),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    let tokens: Vec<_> = fake
+        .records()
+        .into_iter()
+        .filter(|r| r.uri == "/token")
+        .collect();
+    assert_eq!(
+        catalog_oauth_scope(&tokens[0], &keys, &fake.url),
+        store_provider::catalog::REPORTING_SCOPE
+    );
+    assert_eq!(
+        catalog_oauth_scope(&tokens[1], &keys, &fake.url),
+        "https://www.googleapis.com/auth/androidpublisher"
+    );
+}
 impl Keys {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
@@ -571,6 +877,7 @@ impl Keys {
             ),
             apple_base_url: url.into(),
             google_base_url: url.into(),
+            google_reporting_base_url: url.into(),
             google_upload_base_url: url.into(),
             google_token_url: format!("{url}/token"),
             ..Default::default()

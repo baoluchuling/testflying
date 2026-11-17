@@ -16,11 +16,12 @@ store-provider.workspace = true
 subtle = "2"
 hex.workspace = true
 sha2.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
+p256 = { version = "0.13", features = ["pkcs8", "pem"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 md5 = "0.7"
 libc = "0.2"
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
-uuid.workspace = true

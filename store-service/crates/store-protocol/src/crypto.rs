@@ -16,6 +16,8 @@ pub struct Registration {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logs_version: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub app_catalog_version: Option<u8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub store_versions_version: Option<u8>,
     #[serde(default)]
     pub async_store_images_supported: bool,
@@ -131,6 +133,7 @@ mod capability_tests {
         let old: Registration =
             serde_json::from_str(r#"{"connectorId":"old","baseUrl":null}"#).unwrap();
         assert!(!old.async_store_images_supported);
+        assert_eq!(old.app_catalog_version, None);
         let new: Registration = serde_json::from_str(
             r#"{"connectorId":"new","baseUrl":null,"asyncStoreImagesSupported":true}"#,
         )
