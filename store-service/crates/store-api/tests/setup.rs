@@ -482,14 +482,6 @@ async fn new_and_existing_integration_tokens_access_all_nodes_without_reissuing(
 
     let own = "/v1/apps/ios/com.example.allowed/connector";
     let catalogs = Registry::open(&path, SIGNING_KEY).unwrap();
-    for id in &ids {
-        support::catalog(
-            &catalogs,
-            id,
-            store_protocol::Platform::Ios,
-            &["com.example.allowed", "com.example.other"],
-        );
-    }
     let other = "/v1/apps/ios/com.example.other/connector";
     let node = |index: usize| serde_json::json!({"connectorId":ids[index]});
     for (path, key, index, expected) in [
@@ -499,6 +491,20 @@ async fn new_and_existing_integration_tokens_access_all_nodes_without_reissuing(
         (own, token, 0, 200),
         (own, token, 1, 200),
     ] {
+        // Simulate an app transfer through complete merchant directories, rather
+        // than allowing a binding request to override duplicate ownership.
+        for (candidate, id) in ids.iter().enumerate() {
+            support::catalog(
+                &catalogs,
+                id,
+                store_protocol::Platform::Ios,
+                if candidate == index {
+                    &["com.example.allowed", "com.example.other"]
+                } else {
+                    &[]
+                },
+            );
+        }
         assert_eq!(
             send("PUT", path, key, "https", node(index))
                 .await
@@ -513,7 +519,7 @@ async fn new_and_existing_integration_tokens_access_all_nodes_without_reissuing(
             .unwrap(),
     )
     .await;
-    assert_eq!(binding["connectorId"], ids[3]);
+    assert_eq!(binding["connectorId"], ids[1]);
     assert_eq!(
         send("DELETE", own, token, "https", Value::Null)
             .await

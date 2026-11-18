@@ -30,7 +30,7 @@
       <div id="status" role="status" aria-live="polite" hidden></div>
       <form id="setupForm" hidden>
         <section class="card">
-          <div class="section-title"><span class="number">01</span><div><h3>节点与系统</h3><p class="muted">同一个节点可保存两套账号凭据，服务多个应用。</p></div></div>
+          <div class="section-title"><div><h3>账号与节点配置</h3><p class="muted">在这里创建商店账号并安装节点。同一个账号可配置 iOS、Android 两个平台，应用由商店接口自动发现。</p></div></div>
           <div class="grid">
             <div><label for="connector">使用节点</label><select id="connector"><option value="new">＋ 新建节点</option></select></div>
             <div><label for="installTarget">安装系统</label><select id="installTarget"><option value="windows-amd64">Windows · x64</option><option value="linux-amd64">Linux · x64</option><option value="darwin-arm64">macOS · Apple Silicon</option></select></div>
@@ -38,9 +38,8 @@
           <div id="nameRow"><label for="connectorName">新节点名称</label><input id="connectorName" maxlength="160" value="双平台商店节点" required autocomplete="off"></div>
           <label id="upgradeRow" class="toggle" hidden><input id="upgrade" type="checkbox"><span><strong>仅升级程序</strong><small>沿用这台机器上的节点配置和商店凭据</small></span></label>
           <p class="hint">重新下载安装现有节点时，请停止旧程序后再运行。同一身份只允许一个活动连接。</p>
-        </section>
-        <section id="accountSection" class="card">
-          <div class="section-title"><span class="number">02</span><div><h3>商店账号</h3><p class="muted">选择本次要配置的平台，可以同时提供两边资料。</p></div></div>
+          <div id="accountSection">
+          <h4>商店凭据</h4><p class="muted">选择本次要配置的平台，可以同时提供两边资料。</p>
           <p id="accountMergeHint" class="hint" hidden>安装到已有节点时，自动补充或更新本次提供的平台资料，未勾选的平台继续保留。只补 iOS 时，无需重新选择原安卓账号文件。</p>
           <div class="account">
             <label class="toggle"><input id="appleEnabled" type="checkbox" checked><span><strong>iOS / App Store Connect</strong><small>Apple 账号</small></span></label>
@@ -53,31 +52,19 @@
             <label class="toggle"><input id="googleEnabled" type="checkbox" checked><span><strong>Android / Google Play</strong><small>Google 服务账号</small></span></label>
             <fieldset id="googleFields"><label for="googleFile">服务账号 JSON 文件</label><input id="googleFile" type="file" accept=".json,application/json" required><p class="hint">账号信息直接从文件读取，无需手动填写邮箱、私钥或路径。</p></fieldset>
           </div>
+          </div>
         </section>
         <div class="download-bar"><p>生成的 ZIP 含私钥与节点凭据，请勿公开分享。</p><button id="downloadButton" type="submit">生成并下载 Windows 安装包</button></div>
       </form>
       <details id="accountsWorkspace" class="card" hidden>
         <summary>账号目录与节点路由</summary>
-        <p class="muted">查看全部技术关系。归属先按平台和包名确定，再检查账号与节点是否可用；截图路由独立于商店节点启停。目录需要最新版商店节点，凭据仍只存节点。</p>
-        <label for="managedAccount">账号</label><select id="managedAccount"></select>
-        <form id="managedAccountForm" autocomplete="off">
-          <label for="managedAccountName">账号名称</label><input id="managedAccountName" maxlength="160" required>
-          <label for="managedAccountPlatform">平台</label><select id="managedAccountPlatform"><option value="ios">iOS</option><option value="android">Android</option></select>
-          <label for="accountStoreNode">商店节点</label><select id="accountStoreNode" required></select>
-          <label for="accountScreenshotNode">截图节点（可供多个账号使用）</label><select id="accountScreenshotNode"></select>
-          <label class="toggle"><input id="managedAccountEnabled" type="checkbox" checked><span>启用账号（新账号默认启用）</span></label>
-          <button id="accountSave" type="submit">创建账号</button>
-        </form>
-        <p id="accountMetadata" class="account-metadata"></p>
-        <button id="accountCatalogRefresh" type="button" class="quiet">请求刷新目录</button>
-        <button id="accountAcceptIdentity" type="button" class="quiet" hidden>接受新账号身份</button>
-        <button id="accountsReload" type="button" class="quiet">重新读取账号与目录</button>
+        <p class="muted">按商店账号展示 iOS、Android 目录。应用根据商店接口返回的目录自动归属，默认开启转发；关闭后不再转发此应用的新商店或截图请求，已创建任务继续执行。账号在上方「账号与节点配置」中创建。</p>
+        <button id="accountsReload" type="button" class="quiet">重新读取目录</button>
         <p id="accountsStatus" role="status" aria-live="polite"></p>
         <p id="accountMigrationIssues" class="account-metadata"></p>
-        <h4>应用目录与归属</h4>
-        <p class="hint">仅已验证的应用行可绑定到此账号。截图「可用」表示路由可解析，不代表节点在线或立即执行；单应用截图停用与账号截图节点分别显示。</p>
-        <p id="accountAppsEmpty" hidden>暂无应用。请启动或升级商店节点后刷新目录；失败时保留上次成功目录。</p>
-        <ul id="accountApps"></ul>
+        <p class="hint">目录失败时保留上次成功结果；尚未成功上报的应用不转发。重复归属不会自动选择账号。截图路由可用不代表节点在线。</p>
+        <p id="accountAppsEmpty" hidden>暂无账号目录。启动商店节点后自动上报。</p>
+        <div id="accountGroups"></div>
       </details>
       <section id="forwardingWorkspace" class="card" hidden>
         <h3>商店接口转发</h3>

@@ -64,7 +64,7 @@ async function request(active, path, { method = "GET", body, binary = false, tok
     if (path === "accounts" || path.startsWith("accounts/") || /^apps\/[^/]+\/[^/]+\/account$/.test(path)) {
       let code;
       try { code = (await response.json()).error?.code; } catch { /* Never display raw provider or server errors. */ }
-      const messages = { account_exists: "该平台和商店节点已有账号", account_ambiguous: "应用属于多个账号，请选择已验证的账号绑定", account_membership_unverified: "账号目录尚未验证此应用，请刷新目录后重试", identity_changed: "账号身份已变化，请显式接受新身份后刷新目录", catalog_upgrade_required: "请先为商店节点安装最新升级包", catalog_offline: "商店节点未连接，无法请求刷新目录", catalog_refresh_busy: "目录刷新正在处理中，请稍后重试", account_disabled: "账号已停用", connector_disabled: "所选节点已停用", connector_not_found: "所选节点不存在，请重新读取节点列表", identity_change_not_pending: "没有待接受的身份变化", account_not_found: "账号不存在", invalid_name: "账号名称须非空且至多 160 字节", invalid_connector_kind: "请选择商店节点", invalid_screenshot_connector: "请选择截图节点", app_not_found: "应用尚未绑定或已被解除绑定" };
+      const messages = { app_catalog_changed: "目录已变化，请重新读取后操作", app_forwarding_disabled: "此应用已关闭转发", account_ambiguous: "多个商店账号返回了此应用，请检查商店目录", account_membership_unverified: "商店目录尚未包含此应用", identity_changed: "账号身份已变化，请由开发人员核对配置", account_disabled: "账号已停用", account_not_found: "账号目录不存在", app_not_found: "商店目录尚未包含此应用" };
       throw new Error(messages[code] || `账号请求失败（${response.status}）`);
     }
     throw new Error(`中心请求失败（${response.status}），请检查节点状态后重试`);

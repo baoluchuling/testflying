@@ -1,6 +1,6 @@
 # 中心统一接口文档
 
-外部后台用同一枚接入 Token 查询账号和节点、绑定应用、调用商店和截图任务。本文统一覆盖 **23 个核心接口：11 个商店业务／任务查询接口、2 个商店节点查询／绑定接口、6 个截图节点／任务接口、4 个账号查询／绑定接口**，另附 2 个商店图片上传配套接口与管理员接口。契约版本：`2026-11-17`。
+外部后台用同一枚接入 Token 查询账号、应用和节点、调用商店和截图任务。本文统一覆盖 **23 个核心接口：11 个商店业务／任务查询接口、2 个商店节点查询／绑定接口、6 个截图节点／任务接口、4 个账号查询／绑定接口**，另附 2 个商店图片上传配套接口与管理员接口。契约版本：`2026-11-18`。
 
 ## 在线获取文档和功能目录
 
@@ -62,9 +62,9 @@ JSON 字段为 camelCase，最大请求体 2 MiB。以下响应均为格式示�
 
 | 凭据 | 支持入口 | 用途 |
 |---|---|---|
-| 接入 Token | HTTPS | 查全部启用的商店节点、绑定或换绑应用、调用商店业务、申请上传 |
+| 接入 Token | HTTPS | 查全部启用商店节点、校验自动归属、调用商店业务、申请上传 |
 | 业务 API Token（`STORE_API_TOKEN`） | HTTP、HTTPS | 查启用的商店节点、调用已绑定应用的商店接口、申请上传 |
-| 管理 Token | HTTP、HTTPS | 查询节点详情、读取当前绑定、绑定或换绑应用 |
+| 管理 Token | HTTP、HTTPS | 查询节点详情、读取目录路由、管理应用转发开关 |
 | 接入 Token（截图） | 仅 HTTPS | 列出截图节点、按平台／包名绑定截图节点、提交任务、查询本人任务 |
 | 短时 `uploadToken` | 使用返回的 `uploadUrl` | 上传图片文件字节 |
 
@@ -88,7 +88,7 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 | 序号 | 方法 | 路径 | 用途 |
 |---|---|---|---|
 | — | GET | /v1/store-management/connectors | 读取全部启用的商店节点 |
-| — | PUT | /v1/apps/{platform}/{bundleIdentifier}/connector | 设置或更换应用绑定 |
+| — | PUT | /v1/apps/{platform}/{bundleIdentifier}/connector | 兼容校验目录自动归属节点 |
 | 1 | GET | {APP}/supported-locales | 查询现有商店语言 |
 | 2 | GET | {APP}/store-listings | 查询商店文案 |
 | 3 | GET | {APP}/store-images | 查询图片和截图 |
@@ -147,18 +147,22 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 `AccountApp` 示例：
 
 ```json
-{"platform":"ios","bundleIdentifier":"com.example.app","name":"Example","storeAppId":"123456789","accountId":"7da6a0fb-16e7-45e5-9782-1f5b47697b73","resolutionStatus":"resolved","screenshotEnabled":false,"screenshotResolutionStatus":"screenshot_app_not_found"}
+{"platform":"ios","bundleIdentifier":"com.example.app","name":"Example","storeAppId":"123456789","accountId":"7da6a0fb-16e7-45e5-9782-1f5b47697b73","enabled":true,"resolutionStatus":"resolved","screenshotEnabled":false,"screenshotResolutionStatus":"screenshot_app_not_found"}
 ```
 
-`storeAppId` 可空。`resolutionStatus` 表示账号成员／归属状态：`resolved`（已验证且归属此账号）、`provisional`（仅迁移旧绑定的临时信任）、`bound_elsewhere`，或 `account_ambiguous`、`account_membership_unverified`、`identity_changed`、`account_disabled`、`app_not_found` 等安全错误码。列表保留旧绑定与目录矛盾的行，供开发者核对。
+目录仅包含商店成功上报的应用。每个商店账号可含 iOS、Android 两个平台目录，平台目录 ID 是内部查询标识。中心后台按商店账号分组展示；账号与凭据仍在安装配置区域创建，目录区域不提供新建、编辑、绑定或解绑。
 
-`screenshotEnabled` 和 `screenshotResolutionStatus` 通过执行时相同的截图解析器计算，单独反映每个应用的截图路由。成功为 `true` / `resolved`；它表示路由可解析，不代表节点在线或立即执行。账号的截图节点已配置时，单应用 DELETE 后仍会返回 `false` / `screenshot_app_not_found`。其他账号拥有、归属冲突、解绑抑制或不可用状态均为 false，并保留安全状态码，不根据账号级截图设置推测。
+`storeAppId` 可空。`enabled` 是应用转发开关，默认 true；关闭返回 `503 app_forwarding_disabled`，同时阻止此应用的新商店和截图请求。目录刷新、失败重试、重连和中心重启不会重置开关，其他应用不受影响。已创建的异步任务保留原执行节点。
 
-归属判定先于可用性检查。两个目录含相同平台和包名时返回 `409 account_ambiguous`，即使其中一个账号或商店节点停用也不会静默改属。显式 PUT 只能选择目录已验证的精确成员，未知包名或跨平台返回 `422 account_membership_unverified`。零候选返回 `404 app_not_found`；账号停用返回 `503 account_disabled`，同时阻止商店和截图。仅商店节点停用会阻止商店执行，但账号及截图节点可用时仍能截图。旧商店 DELETE 抑制自动发现，须显式验证绑定后才恢复。已创建的商店异步任务及截图任务保留原节点快照。
+`resolutionStatus` 为 `resolved` 或 `account_ambiguous`、`identity_changed`、`account_disabled`、`app_forwarding_disabled` 等安全状态码。`screenshotEnabled` / `screenshotResolutionStatus` 通过截图执行解析器计算，表示路由可解析，不代表在线或立即执行。
+
+应用归属仅来自成功商店目录，无人工绑定覆盖或旧版本临时信任。精确平台＋包名零候选返回 `404 app_not_found`；多个候选返回 `409 account_ambiguous`，停用其中一方也不会改属。账号停用阻止商店和截图；仅商店节点停用时，账号截图节点可用仍能截图。失败保留最后成功目录，没有成功目录时不能路由。兼容 PUT 仅校验请求账号是否为唯一目录归属，不改写归属、解决冲突或重新开启应用；未知或跨平台返回 `422 account_membership_unverified`。
 
 ### 管理员与开发后台
 
-管理员 GET／POST `/v1/accounts`、PATCH `/v1/accounts/{accountId}`、GET `/v1/accounts/{accountId}/apps`、POST `/v1/accounts/{accountId}/refresh` 沿用管理员 Bearer 鉴权。开发后台有相同后缀的 HTTPS session 镜像 `/connector-setup/api/accounts`；内部 PUT `/connector-setup/api/apps/{platform}/{identifier}/account` 复用同一绑定校验，仅在已验证应用行操作，不提供任意包名录入。
+应用开关：管理员 `PUT /v1/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding`，JSON `{"enabled":false}` 或 `{"enabled":true}`，成功 204。后台 HTTPS session 镜像为 `/connector-setup/api/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding`。平台目录必须仍包含该应用，否则返回 `409 app_catalog_changed`，请重新读取。启用不会绕过重复归属、账号停用或身份变化校验。业务和接入 Token 无权修改应用开关。已通过转发校验的请求继续处理；关闭后新进入的请求被阻止。旧商店及截图 DELETE 均返回 `410 manual_binding_removed`，不修改目录或开关。
+
+管理员 GET／POST `/v1/accounts`、PATCH `/v1/accounts/{accountId}`、GET `/v1/accounts/{accountId}/apps`、POST `/v1/accounts/{accountId}/refresh` 保留作技术配置接口，沿用管理员鉴权及 HTTPS session 镜像。目录页面只读取缓存和操作应用开关；创建账号和上传两平台凭据仍在上方合并后的「账号与节点配置」卡片进行。
 
 POST 必填 `name`、`platform`、`storeConnectorId`，可选 `screenshotConnectorId`，返回 201。名称非空且至多 160 UTF-8 字节。PATCH 可传 `name`、`enabled`、`storeConnectorId`、`screenshotConnectorId`、`acceptIdentityChange`，返回 200。省略节点字段保留原值；截图节点传 null 清空；平台不可修改。截图节点可供多个账号共用。管理员账号对象在 PublicAccount 上增加 `storeConnectorId`、可空 `screenshotConnectorId`、可空 `migrationError`；GET 列表另含 `migrationIssues:[{platform,bundleIdentifier,code}]`。
 
@@ -166,9 +170,9 @@ POST 必填 `name`、`platform`、`storeConnectorId`，可选 `screenshotConnect
 
 ### 节点升级与目录发现
 
-请在已有商店节点下载「仅升级程序」包并安装，保留本机配置、Apple 私钥和 Google 服务账号 JSON。升级后连接认证成功、每小时或管理员刷新会独立读取完整目录，不占用商店业务锁；同平台最小刷新间隔 60 秒并合并。旧节点业务兼容，但无法上报目录；仅迁移已有绑定能在首次目录成功前临时沿用，不能创建未经验证的新绑定。截图节点协议不因账号目录改变，仍使用现有 arm64 包。
+请在已有商店节点下载「仅升级程序」包并安装，保留本机配置、Apple 私钥和 Google 服务账号 JSON。升级后连接认证成功、每小时或管理员刷新会独立读取完整目录，不占用商店业务锁；同平台最小刷新间隔 60 秒并合并。旧节点无法上报目录；需要升级后成功上报目录才可自动归属应用，旧映射不再参与路由。截图节点协议不因账号目录改变，仍使用现有 arm64 包。
 
-Apple 目录来自 [App Store Connect GET /v1/apps](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps)。Google 目录来自 [Play Developer Reporting apps.search](https://developers.google.com/play/developer/reporting/reference/rest/v1beta1/apps/search)，需要启用 Google Play Developer Reporting API 并授予服务账号对应 Play 应用的访问权限，OAuth scope 为 `https://www.googleapis.com/auth/playdeveloperreporting`。Reporting 与 Publisher 使用独立 token 缓存，原 Publisher scope 和商店操作不变。Reporting 未启用或失败不影响已经验证／迁移绑定的正常商店业务。中心只接收指纹和目录，不持有商店凭据。
+Apple 目录来自 [App Store Connect GET /v1/apps](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps)。Google 目录来自 [Play Developer Reporting apps.search](https://developers.google.com/play/developer/reporting/reference/rest/v1beta1/apps/search)，需要启用 Google Play Developer Reporting API 并授予服务账号对应 Play 应用的访问权限，OAuth scope 为 `https://www.googleapis.com/auth/playdeveloperreporting`。Reporting 与 Publisher 使用独立 token 缓存，原 Publisher scope 和商店操作不变。Reporting 失败保留上次成功目录；从未成功上报的 Android 应用无法路由。中心只接收指纹和目录，不持有商店凭据。
 
 ## 列出节点和绑定应用
 
@@ -196,9 +200,9 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 应用管理页可以显示 `name`，保存 `connectorId`，并用 `connected` 标注 WSS 在线状态。WSS 未连接时，中心仍可尝试通过节点已登记的 HTTP 入口执行商店请求。
 
-### 绑定或更换应用节点
+### 兼容接口：校验自动归属的节点
 
-应用管理后端核验当前用户对应用的操作权限后，用同一枚接入 Token 发起绑定。iOS 路径传 Bundle ID，Android 路径传包名。
+应用已通过商店目录自动归属，无需调用此 PUT。已有调用方可用同一枚接入 Token 校验当前路由。iOS 路径传 Bundle ID，Android 路径传包名。
 
 ```http
 PUT /v1/apps/ios/com.example.reader/connector
@@ -208,9 +212,9 @@ Content-Type: application/json
 {"connectorId":"636b5d86-4e1b-4f88-aeb9-a1abdf0cdd33"}
 ```
 
-成功返回 `200` 和绑定后的节点对象，其中包含 `connectorId`、`name`、`enabled`、`connected` 和 `appCount`。
+校验成功返回 `200` 和自动选择的节点对象，其中包含 `connectorId`、`name`、`enabled`、`connected` 和 `appCount`。
 
-绑定键是 `platform + bundleIdentifier`。对同一个应用再次 PUT 会替换原绑定，多个应用可绑定同一个节点。绑定或换绑的目标须为已启用的商店节点，且对应平台账号的成功目录必须包含此应用；否则返回 `422 account_membership_unverified`。路径、`connectorId` 字段和鉴权沿用原契约。
+归属键是 `platform + bundleIdentifier`，由商店目录自动确定。此兼容 PUT 仅确认目录唯一归属对应的节点，不再替换归属。目标须为已启用商店节点并包含精确应用；未知成员返回 `422 account_membership_unverified`，重复目录返回 `409 account_ambiguous`，关闭应用返回 `503 app_forwarding_disabled`。路径、`connectorId` 和鉴权保留。
 
 | HTTP | 错误码 | 触发条件 |
 |---|---|---|
@@ -221,7 +225,7 @@ Content-Type: application/json
 | 422 | `invalid_app_identifier` | 应用标识不合法 |
 | 422 | `invalid_connector_kind` | 目标节点不是商店节点 |
 
-绑定成功后，商店业务仍使用同一枚接入 Token，中心根据平台和应用标识选择节点。
+商店业务使用同一枚接入 Token，中心根据平台和应用标识在目录中自动选择节点。
 
 ```http
 GET /v1/store-management/apps/ios/com.example.reader/store-listings
@@ -238,7 +242,7 @@ Authorization: Bearer INTEGRATION_TOKEN
 | `/v1/connectors/{connectorId}` | 查询指定节点详情 |
 | `/v1/apps/{platform}/{bundleIdentifier}/connector` | 查询应用当前绑定的节点 |
 
-查应用绑定时，未绑定返回 `404 app_not_found`，绑定的节点已停用返回 `503 connector_disabled`。使用接入 Token 的后台可根据 PUT 成功响应记录所选节点。
+查应用绑定时，未绑定返回 `404 app_not_found`，绑定的节点已停用返回 `503 connector_disabled`。接入后台无需选择或保存节点，直接传平台和包名。
 
 ## 1. 查询语言
 
@@ -896,9 +900,9 @@ Get-Content -LiteralPath $logFile.FullName -Tail 50 -Wait
 | 方法 | 路径 | 用途 |
 |---|---|---|
 | GET | /v1/screenshot-connectors | 列出全部启用的截图节点 |
-| PUT | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 绑定或更换截图节点 |
+| PUT | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 兼容初始化或校验账号截图节点 |
 | GET | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 查询当前截图绑定 |
-| DELETE | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 解除截图绑定 |
+| DELETE | /v1/apps/{platform}/{bundleIdentifier}/screenshot-connector | 已停用，返回410 |
 | POST | /v1/screenshot-jobs | 按平台、包名触发截图 |
 | GET | /v1/screenshot-jobs/{jobId} | 可选：查询任务状态与结果 |
 
@@ -917,7 +921,7 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 只列启用的 Screenshot Connector，不混入商店节点或返回节点凭据。`connected` 表示 WSS 在线，不是商店权限或开发环境检查；离线节点也会列出，可提前配置，任务等待它上线领取。`appCount` 为当前可解析到该截图节点的应用数，包含唯一目录成员，排除归属冲突、停用账号和单应用截图抑制；商店节点停用不影响这个截图计数。
 
-### 2. 绑定、查询和解除截图节点
+### 2. 兼容配置与查询截图节点
 
 平台必须为 `ios` 或 `android`；包名为 iOS Bundle ID / Android package，大小写精确匹配。截图和商店使用同一应用账号归属，但解析账号的不同节点，截图路由不受商店节点停用影响。
 
@@ -935,7 +939,7 @@ Content-Type: application/json
 {"platform":"ios","bundleIdentifier":"com.cfs.amberia","connector":{"connectorId":"11111111-1111-4111-8111-111111111111","name":"截图 Mac","kind":"screenshot","enabled":true,"connected":true,"appCount":1,"baseUrl":null,"logsAvailable":false}}
 ```
 
-`GET` 同一路径通过相同的截图执行解析器返回当前路由；停用截图节点返回 `503 screenshot_connector_disabled`，账号停用返回 `503 account_disabled`，重复归属返回 `409 account_ambiguous`。`DELETE` 返回 204，重复解除也返回 204，只停用这个应用的截图路由，不清空账号的截图节点。PUT 必须先验证应用的账号成员资格，并指向启用的截图节点；账号未配置截图节点时可初始化，已配置不同节点则返回 `409 account_screenshot_conflict`，请修改账号配置；多个旧截图节点冲突返回 `409 legacy_screenshot_conflict`，不能任选一个。设置保存到中心注册表，重启保留。更换或解除只影响之后提交的任务；既有任务保留创建时的节点，不迁移或重放。
+`GET` 同一路径通过截图执行解析器返回当前路由；应用关闭返回 `503 app_forwarding_disabled`，截图节点停用返回 `503 screenshot_connector_disabled`，账号停用返回 `503 account_disabled`，重复归属返回 `409 account_ambiguous`。旧 `DELETE` 返回 `410 manual_binding_removed`，请使用管理员应用转发开关。兼容 PUT 只可初始化空账号截图节点或匹配现有节点，不能更换账号截图节点、解决归属冲突或开启应用；不同截图节点返回 `409 account_screenshot_conflict`，管理员通过账号技术配置修改。已有任务保留创建时的执行节点。
 
 ### 3. 按包名触发截图
 
@@ -1067,7 +1071,7 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 Endpoint 是已包含 Bucket 的完整主机名或已绑定的 CNAME，中心不会再次拼接 Bucket。开启 OSS 时所有必需字段须完整；更换 AccessKey ID 须同时提供对应 Secret；如未提供新的 STS Token，会清除旧 STS Token，以便切换到长期凭据。图片访问域名只负责生成外部访问 URL，访问权限仍由 OSS／CDN 自身配置决定。
 
-管理员可在后台「截图 Connector 部署」创建截图节点；管理 API 为 POST /v1/connectors，正文 `{"name":"截图 Mac","kind":"screenshot"}`，使用管理员 Token。HTTPS GET /v1/connectors/{connectorId}/screenshot-installer 下载该节点的部署 ZIP，属于程序部署包，不是图片产物。安装、后台运行和日志说明见 [截图 Connector 部署说明](screenshot-connector.md)。多目标和 OSS 直传需要 arm64 截图节点程序；保留原 connector.json 后运行安装脚本，不需要重建节点或绑定。账号目录本身不改变截图节点协议；商店节点需要升级以发现新应用目录，迁移旧绑定保留临时信任。
+管理员可在后台「截图 Connector 部署」创建截图节点；管理 API 为 POST /v1/connectors，正文 `{"name":"截图 Mac","kind":"screenshot"}`，使用管理员 Token。HTTPS GET /v1/connectors/{connectorId}/screenshot-installer 下载该节点的部署 ZIP，属于程序部署包，不是图片产物。安装、后台运行和日志说明见 [截图 Connector 部署说明](screenshot-connector.md)。多目标和 OSS 直传需要 arm64 截图节点程序；保留原 connector.json 后运行安装脚本，不需要重建节点或绑定。账号目录本身不改变截图节点协议；商店节点需要升级并成功上报应用目录；旧映射不再决定归属。
 
 ### 6. Studio 结果回传（capture-v1）
 

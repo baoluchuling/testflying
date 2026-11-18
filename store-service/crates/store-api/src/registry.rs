@@ -354,20 +354,9 @@ impl Registry {
         self.get(id)
     }
 
-    pub fn unbind(&self, platform: Platform, identifier: &str) -> Result<()> {
+    pub fn unbind(&self, _platform: Platform, identifier: &str) -> Result<()> {
         validate_identifier(identifier)?;
-        let mut db = self.db.lock().unwrap();
-        let tx = db
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(database_error)?;
-        tx.execute("INSERT INTO account_bindings(platform,bundle_identifier,suppressed) VALUES(?1,?2,1) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET suppressed=1",params![platform.to_string(),identifier]).map_err(database_error)?;
-        tx.execute(
-            "DELETE FROM app_bindings WHERE platform=?1 AND bundle_identifier=?2",
-            params![platform.to_string(), identifier],
-        )
-        .map_err(database_error)?;
-        tx.commit().map_err(database_error)?;
-        Ok(())
+        Err(StoreError::new(410, "manual_binding_removed", "Applications follow merchant catalogs; use the administrator application forwarding switch"))
     }
 
     pub fn resolve(&self, platform: Platform, identifier: &str) -> Result<Connector> {

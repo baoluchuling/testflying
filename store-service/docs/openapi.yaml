@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Unified Center API - Stores, Accounts, Nodes and Screenshots
-  version: '2026-11-17'
+  version: '2026-11-18'
   description: >-
     Store calls are real-time without drafts or automatic mutation retries.
     Screenshot jobs are asynchronous, routed by exact platform/package bindings and retained for seven days.
@@ -85,17 +85,18 @@ components:
             migrationError: {type: [string, 'null']}
     AccountApp:
       type: object
-      required: [platform, bundleIdentifier, name, storeAppId, accountId, resolutionStatus, screenshotEnabled, screenshotResolutionStatus]
+      required: [platform, bundleIdentifier, name, storeAppId, accountId, enabled, resolutionStatus, screenshotEnabled, screenshotResolutionStatus]
       properties:
         platform: {type: string, enum: [ios, android]}
         bundleIdentifier: {type: string}
         name: {type: string}
         storeAppId: {type: [string, 'null']}
         accountId: {type: string, format: uuid}
-        resolutionStatus: {type: string, description: 'Account membership/ownership only: resolved, provisional, bound_elsewhere or a safe resolver error such as account_ambiguous, account_membership_unverified, identity_changed, account_disabled or app_not_found.'}
-        screenshotEnabled: {type: boolean, description: 'Computed with the execution screenshot resolver; true only when owned by this account and the route resolves. Does not mean online or immediate execution. Per-app DELETE returns false without clearing the account screenshot node.'}
+        enabled: {type: boolean, description: 'Application forwarding switch, defaults true. False blocks new store and screenshot requests; persisted across catalog refreshes.'}
+        resolutionStatus: {type: string, description: 'Directory-only ownership: resolved, account_ambiguous, identity_changed, account_disabled, app_forwarding_disabled or app_not_found. Historical manual bindings cannot override merchant catalogs.'}
+        screenshotEnabled: {type: boolean, description: 'Computed with the execution screenshot resolver; true only when ownership and route resolve. Does not mean online or immediate execution.'}
         screenshotResolutionStatus: {type: string, description: 'resolved on success, otherwise safe screenshot or ownership error. Other-account, ambiguous, suppressed and unavailable routes are false; account settings alone do not determine this field.'}
-      example: {platform: ios, bundleIdentifier: com.example.app, name: Example, storeAppId: '123456789', accountId: 7da6a0fb-16e7-45e5-9782-1f5b47697b73, resolutionStatus: resolved, screenshotEnabled: false, screenshotResolutionStatus: screenshot_app_not_found}
+      example: {platform: ios, bundleIdentifier: com.example.app, name: Example, storeAppId: '123456789', accountId: 7da6a0fb-16e7-45e5-9782-1f5b47697b73, enabled: true, resolutionStatus: resolved, screenshotEnabled: false, screenshotResolutionStatus: screenshot_app_not_found}
     PublicAccountList:
       type: object
       required: [accounts]
@@ -442,14 +443,14 @@ paths:
     parameters: [{$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}]
     get:
       summary: Resolve exact application ownership
-      description: 'Zero candidates returns 404 app_not_found; duplicates return 409 account_ambiguous, including disabled accounts or merchant nodes. Explicit migrated binding can remain provisional until the first successful catalog. Disabled account returns 503 account_disabled.'
+      description: 'Uses only successful merchant catalogs. Zero candidates returns 404 app_not_found; duplicates return 409 account_ambiguous, including disabled accounts or merchant nodes. No manual override or provisional fallback. Disabled app returns 503 app_forwarding_disabled; disabled account returns 503 account_disabled.'
       security: [{integrationToken: []}, {clientToken: []}]
       responses:
         '200': {description: Selected account, content: {application/json: {schema: {$ref: '#/components/schemas/PublicAccountResponse'}}}}
         default: {$ref: '#/components/responses/Error'}
     put:
-      summary: Explicitly select a verified account member
-      description: Exact platform and identifier must belong to the selected successful directory; unknown or cross-platform selection returns 422 account_membership_unverified. Business query tokens cannot bind. Rebinding affects new jobs only.
+      summary: Legacy validation of automatically discovered ownership
+      description: Exact platform and identifier must belong to the unique successful directory; unknown or cross-platform selection returns 422 account_membership_unverified, duplicates return 409 account_ambiguous. Does not write ownership or re-enable app forwarding. Business query tokens cannot call this compatibility PUT.
       security: [{integrationToken: []}, {adminToken: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountBindingInput'}}}}
       responses:
@@ -486,6 +487,29 @@ paths:
       responses:
         '200': {description: App rows, content: {application/json: {schema: {$ref: '#/components/schemas/AccountAppList'}}}}
         default: {$ref: '#/components/responses/Error'}
+  /v1/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding:
+    parameters: [{$ref: '#/components/parameters/accountId'}, {$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}]
+    put:
+      summary: Enable or disable new store and screenshot requests for a discovered app
+      description: Administrator only. Defaults enabled; persists across catalogs and restarts. Validates the expected platform directory still contains the app, otherwise 409 app_catalog_changed. Enabling cannot bypass ownership conflicts or identity barriers. Existing jobs keep their assigned node.
+      security: [{adminToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [enabled], properties: {enabled: {type: boolean}}}
+      responses: {'204': {description: Forwarding switch saved}, default: {$ref: '#/components/responses/Error'}}
+  /connector-setup/api/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding:
+    parameters: [{$ref: '#/components/parameters/accountId'}, {$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}, {$ref: '#/components/parameters/setupHeader'}]
+    put:
+      summary: HTTPS developer session application forwarding switch
+      security: [{setupSession: []}, {adminToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, additionalProperties: false, required: [enabled], properties: {enabled: {type: boolean}}}
+      responses: {'204': {description: Forwarding switch saved}, default: {$ref: '#/components/responses/Error'}}
   /v1/accounts/{accountId}/refresh:
     parameters: [{$ref: '#/components/parameters/accountId'}]
     post:
@@ -612,10 +636,10 @@ paths:
       security: [{integrationToken: []}, {adminToken: []}]
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
     delete:
-      summary: Remove a screenshot app binding without canceling existing jobs
-      description: HTTPS only; idempotent per-app screenshot suppression. Preserves the account screenshotConnectorId and other apps. Store binding and existing job snapshots are unaffected.
+      summary: Obsolete manual screenshot unbinding
+      description: Returns 410 manual_binding_removed. Use the administrator application forwarding switch; ownership is exclusively determined by merchant catalogs.
       security: [{integrationToken: []}, {adminToken: []}]
-      responses: {'204': {description: Screenshot binding removed or already absent}, default: {$ref: '#/components/responses/Error'}}
+      responses: {'410': {description: Manual unbinding removed}, default: {$ref: '#/components/responses/Error'}}
   /v1/screenshot-jobs:
     post:
       summary: Trigger screenshot targets and receive a center-generated jobId
@@ -850,16 +874,16 @@ paths:
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
     put:
       security: [{integrationToken: []}, {adminToken: []}]
-      summary: Set or replace exact application mapping, many applications to one Connector
-      description: Preserves original request fields and authentication. The platform account attached to the selected enabled store node must contain the exact identifier in its verified directory; otherwise 422 account_membership_unverified. Existing jobs retain their assigned node.
+      summary: Compatibility validation of a catalog-selected Connector
+      description: Compatibility validation only. The selected node must be the unique catalog owner; cannot override duplicate catalogs or re-enable an app. Unknown membership returns 422, duplicate ownership returns 409. Existing jobs retain their assigned node.
       requestBody:
         required: true
         content: {application/json: {schema: {type: object, required: [connectorId], additionalProperties: false, properties: {connectorId: {type: string, format: uuid}}}}}
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
     delete:
       security: [{adminToken: []}]
-      description: Suppress automatic rediscovery for this application until a later verified explicit binding.
-      responses: {'204': {description: Mapping removed}, default: {$ref: '#/components/responses/Error'}}
+      description: Returns 410 manual_binding_removed. Does not change merchant directory ownership or the forwarding switch. Use the administrator forwarding endpoint.
+      responses: {'410': {description: Manual unbinding removed}, default: {$ref: '#/components/responses/Error'}}
   /v1/store-management/apps/{platform}/{bundleIdentifier}/sync-jobs/{jobId}:
     get:
       summary: Read the actual result of an admitted image sync job

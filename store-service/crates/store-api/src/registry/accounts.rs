@@ -187,34 +187,16 @@ fn member(db: &Connection, id: &str, identifier: &str) -> Result<bool> {
     .map_err(database_error)
 }
 
+fn app_enabled(db: &Connection, platform: Platform, identifier: &str) -> Result<bool> {
+    db.query_row("SELECT NOT COALESCE((SELECT suppressed FROM account_bindings WHERE platform=?1 AND bundle_identifier=?2),0)", params![platform.to_string(),identifier], |row| row.get(0)).map_err(database_error)
+}
+
 pub(crate) fn resolve_account(
     db: &Connection,
     platform: Platform,
     identifier: &str,
 ) -> Result<Account> {
     validate_identifier(identifier)?;
-    let binding: Option<(Option<String>,bool,bool)> = db.query_row("SELECT account_id,provisional,suppressed FROM account_bindings WHERE platform=?1 AND bundle_identifier=?2",params![platform.to_string(),identifier],|r| Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(database_error)?;
-    if let Some((id, provisional, suppressed)) = binding {
-        if suppressed {
-            return Err(StoreError::new(
-                404,
-                "app_not_found",
-                "Application binding is suppressed",
-            ));
-        }
-        if let Some(id) = id {
-            let value = account(db, &id)?;
-            usable(&value)?;
-            if member(db, &id, identifier)? || (provisional && value.last_catalog_at.is_none()) {
-                return Ok(value);
-            }
-            return Err(StoreError::new(
-                409,
-                "account_membership_unverified",
-                "The bound account directory does not contain this application",
-            ));
-        }
-    }
     let ids: Vec<String> = {
         // Availability cannot choose ownership: disabling one matching account or
         // merchant node must never make another account the implicit destination.
@@ -227,6 +209,13 @@ pub(crate) fn resolve_account(
     };
     match ids.as_slice() {
         [id] => {
+            if !app_enabled(db, platform, identifier)? {
+                return Err(StoreError::new(
+                    503,
+                    "app_forwarding_disabled",
+                    "Application forwarding is disabled",
+                ));
+            }
             let value = account(db, id)?;
             usable(&value)?;
             Ok(value)
@@ -239,7 +228,7 @@ pub(crate) fn resolve_account(
         _ => Err(StoreError::new(
             409,
             "account_ambiguous",
-            "Multiple accounts contain this application; select an account explicitly",
+            "Multiple account catalogs contain this application; correct the merchant catalogs",
         )),
     }
 }
@@ -250,14 +239,6 @@ pub(crate) fn resolve_screenshot(
     identifier: &str,
 ) -> Result<String> {
     let value = resolve_account(db, platform, identifier)?;
-    let disabled: bool=db.query_row("SELECT COALESCE((SELECT screenshot_disabled FROM account_bindings WHERE platform=?1 AND bundle_identifier=?2),0)",params![platform.to_string(),identifier],|r|r.get(0)).map_err(database_error)?;
-    if disabled {
-        return Err(StoreError::new(
-            404,
-            "screenshot_app_not_found",
-            "Screenshots are disabled for this application",
-        ));
-    }
     let id = value.screenshot_connector_id.ok_or_else(|| {
         StoreError::new(
             if value.migration_error.is_some() {
@@ -287,17 +268,14 @@ pub(super) fn app_count(db: &Connection, id: &str, screenshot: bool) -> Result<u
     db.query_row("WITH candidates AS (
       SELECT a.id,a.platform,p.bundle_identifier FROM accounts a JOIN account_apps p ON p.account_id=a.id),
       routes AS (
-      SELECT b.platform,b.bundle_identifier,b.account_id FROM account_bindings b JOIN accounts a ON a.id=b.account_id
-      WHERE b.suppressed=0 AND ((b.provisional=1 AND a.last_catalog_at IS NULL) OR EXISTS(SELECT 1 FROM account_apps p WHERE p.account_id=a.id AND p.bundle_identifier=b.bundle_identifier))
-      UNION ALL
-      SELECT c.platform,c.bundle_identifier,MIN(c.id) FROM candidates c
-      WHERE NOT EXISTS(SELECT 1 FROM account_bindings b WHERE b.platform=c.platform AND b.bundle_identifier=c.bundle_identifier AND (b.suppressed=1 OR b.account_id IS NOT NULL))
+      SELECT c.platform,c.bundle_identifier,MIN(c.id) AS account_id FROM candidates c
       GROUP BY c.platform,c.bundle_identifier HAVING count(*)=1)
       SELECT count(*) FROM routes r JOIN accounts a ON a.id=r.account_id
-      WHERE a.enabled=1 AND a.catalog_status!='identity_changed' AND ((?2=0 AND a.store_connector_id=?1
+      WHERE a.enabled=1 AND a.catalog_status!='identity_changed'
+      AND NOT EXISTS(SELECT 1 FROM account_bindings b WHERE b.platform=r.platform AND b.bundle_identifier=r.bundle_identifier AND b.suppressed=1)
+      AND ((?2=0 AND a.store_connector_id=?1
       AND EXISTS(SELECT 1 FROM connectors c WHERE c.id=?1 AND c.enabled=1 AND c.mode!='screenshot')) OR (?2=1 AND a.screenshot_connector_id=?1
-      AND EXISTS(SELECT 1 FROM connectors c WHERE c.id=?1 AND c.enabled=1 AND c.mode='screenshot')
-      AND NOT EXISTS(SELECT 1 FROM account_bindings b WHERE b.platform=r.platform AND b.bundle_identifier=r.bundle_identifier AND b.screenshot_disabled=1)))",params![id,screenshot],|r|r.get::<_,i64>(0)).map(|count|count as u64).map_err(database_error)
+      AND EXISTS(SELECT 1 FROM connectors c WHERE c.id=?1 AND c.enabled=1 AND c.mode='screenshot')))",params![id,screenshot],|r|r.get::<_,i64>(0)).map(|count|count as u64).map_err(database_error)
 }
 
 impl Registry {
@@ -514,7 +492,6 @@ impl Registry {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
         let value = account(&tx, id)?;
-        usable(&value)?;
         if value.platform != platform || !member(&tx, id, identifier)? {
             return Err(StoreError::new(
                 422,
@@ -522,8 +499,16 @@ impl Registry {
                 "Select a verified account containing this platform and application",
             ));
         }
-        tx.execute("INSERT INTO account_bindings(platform,bundle_identifier,account_id) VALUES(?1,?2,?3) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET account_id=excluded.account_id,provisional=0,suppressed=0",params![platform.to_string(),identifier,id]).map_err(database_error)?;
-        tx.execute("INSERT INTO app_bindings(platform,bundle_identifier,connector_id) VALUES(?1,?2,?3) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET connector_id=excluded.connector_id",params![platform.to_string(),identifier,value.store_connector_id]).map_err(database_error)?;
+        // Legacy binding requests may confirm ownership, but cannot pin a route,
+        // resolve a catalog conflict, or re-enable a disabled application.
+        let selected = resolve_account(&tx, platform, identifier)?;
+        if selected.id != id {
+            return Err(StoreError::new(
+                409,
+                "app_catalog_changed",
+                "Application ownership has changed",
+            ));
+        }
         tx.commit().map_err(database_error)?;
         Ok(value)
     }
@@ -532,7 +517,7 @@ impl Registry {
         let db = self.db.lock().unwrap();
         let value = account(&db, id)?;
         let apps: Vec<(String, String, Option<String>)> = {
-            let mut stmt=db.prepare("SELECT bundle_identifier,name,store_app_id FROM account_apps WHERE account_id=?1 UNION SELECT bundle_identifier,bundle_identifier,NULL FROM account_bindings WHERE account_id=?1 AND bundle_identifier NOT IN (SELECT bundle_identifier FROM account_apps WHERE account_id=?1) ORDER BY bundle_identifier").map_err(database_error)?;
+            let mut stmt=db.prepare("SELECT bundle_identifier,name,store_app_id FROM account_apps WHERE account_id=?1 ORDER BY bundle_identifier").map_err(database_error)?;
             let rows = stmt
                 .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
                 .map_err(database_error)?;
@@ -540,10 +525,11 @@ impl Registry {
                 .map_err(database_error)?
         };
         apps.into_iter().map(|(identifier,name,store_app_id)| {
-            let resolution=match resolve_account(&db,value.platform,&identifier) {Ok(selected) if selected.id==id=>if member(&db,id,&identifier)? {"resolved".to_owned()} else {"provisional".to_owned()},Ok(_)=>"bound_elsewhere".into(),Err(e)=>e.code};
+            let enabled = app_enabled(&db, value.platform, &identifier)?;
+            let resolution=match resolve_account(&db,value.platform,&identifier) {Ok(_)=>"resolved".to_owned(),Err(e)=>e.code};
             // Use execution's resolver rather than inferring per-app availability
             // from the account setting (legacy DELETE can suppress one app).
-            let screenshot_resolution = if resolution == "resolved" || resolution == "provisional" {
+            let screenshot_resolution = if resolution == "resolved" {
                 match resolve_screenshot(&db, value.platform, &identifier) {
                     Ok(_) => "resolved".to_owned(),
                     Err(error) => error.code,
@@ -551,8 +537,32 @@ impl Registry {
             } else {
                 resolution.clone()
             };
-            Ok(json!({"platform":value.platform,"bundleIdentifier":identifier,"name":name,"storeAppId":store_app_id,"accountId":id,"resolutionStatus":resolution,"screenshotEnabled":screenshot_resolution=="resolved","screenshotResolutionStatus":screenshot_resolution}))
+            Ok(json!({"platform":value.platform,"bundleIdentifier":identifier,"name":name,"storeAppId":store_app_id,"accountId":id,"enabled":enabled,"resolutionStatus":resolution,"screenshotEnabled":screenshot_resolution=="resolved","screenshotResolutionStatus":screenshot_resolution}))
         }).collect()
+    }
+
+    pub fn set_app_enabled(
+        &self,
+        id: &str,
+        platform: Platform,
+        identifier: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        validate_identifier(identifier)?;
+        let mut db = self.db.lock().unwrap();
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let value = account(&tx, id)?;
+        if value.platform != platform || !member(&tx, id, identifier)? {
+            return Err(StoreError::new(
+                409,
+                "app_catalog_changed",
+                "Reload the account catalog before changing application forwarding",
+            ));
+        }
+        tx.execute("INSERT INTO account_bindings(platform,bundle_identifier,suppressed) VALUES(?1,?2,?3) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET suppressed=excluded.suppressed",params![platform.to_string(),identifier,!enabled]).map_err(database_error)?;
+        tx.commit().map_err(database_error)
     }
 
     pub fn account_migration_issues(&self) -> Result<Vec<Value>> {

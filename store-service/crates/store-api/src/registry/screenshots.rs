@@ -548,20 +548,9 @@ impl Registry {
             super::accounts::resolve_screenshot(&self.db.lock().unwrap(), platform, identifier)?;
         self.get(&id)
     }
-    pub(crate) fn unbind_screenshot(&self, platform: Platform, identifier: &str) -> Result<()> {
+    pub(crate) fn unbind_screenshot(&self, _platform: Platform, identifier: &str) -> Result<()> {
         validate_identifier(identifier)?;
-        let mut db = self.db.lock().unwrap();
-        let tx = db
-            .transaction_with_behavior(TransactionBehavior::Immediate)
-            .map_err(database_error)?;
-        tx.execute("INSERT INTO account_bindings(platform,bundle_identifier,screenshot_disabled) VALUES(?1,?2,1) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET screenshot_disabled=1",params![platform.to_string(),identifier]).map_err(database_error)?;
-        tx.execute(
-            "DELETE FROM screenshot_app_bindings WHERE platform=?1 AND bundle_identifier=?2",
-            params![platform.to_string(), identifier],
-        )
-        .map_err(database_error)?;
-        tx.commit().map_err(database_error)?;
-        Ok(())
+        Err(StoreError::new(410, "manual_binding_removed", "Applications follow merchant catalogs; use the administrator application forwarding switch"))
     }
     #[cfg(test)]
     pub(crate) fn enqueue_screenshot(

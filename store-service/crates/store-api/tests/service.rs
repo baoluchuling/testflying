@@ -146,13 +146,19 @@ fn registry_persists_many_apps_exact_platform_and_rotated_identity() {
             .code,
         "connector_disabled"
     );
-    registry.unbind(Platform::Ios, "com.example.app").unwrap();
+    assert_eq!(
+        registry
+            .unbind(Platform::Ios, "com.example.app")
+            .unwrap_err()
+            .status,
+        410
+    );
     assert_eq!(
         registry
             .resolve(Platform::Ios, "com.example.app")
             .unwrap_err()
             .code,
-        "app_not_found"
+        "connector_disabled"
     );
 }
 
@@ -255,7 +261,7 @@ async fn admin_api_provisions_authenticates_and_hides_tokens() {
     assert!(state.registry.authenticate(id, token).is_err());
     assert_eq!(
         call(app, "DELETE", path, ADMIN, Value::Null).await.0,
-        StatusCode::NO_CONTENT
+        StatusCode::GONE
     );
 }
 

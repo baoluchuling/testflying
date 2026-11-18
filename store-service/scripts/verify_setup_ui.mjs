@@ -59,8 +59,7 @@ const screenshotSettingsFixture = {
 };
 const screenshotSettingsWrites = [];
 const accountFixtures = [], accountWrites = [];
-const accountDirectories = new Map(), accountBindings = new Map();
-let failNextCatalogRefresh = false;
+const accountDirectories = new Map(), appForwarding = new Map();
 let heldSettings;
 let settingsStarted;
 let releaseSettings;
@@ -127,54 +126,31 @@ if (!production) {
         const suffix = url.pathname.slice((setupApi + "accounts").length).split("/").filter(Boolean);
         const account = accountFixtures.find((item) => item.id === suffix[0]);
         let input;
-        if (["POST", "PATCH"].includes(req.method)) {
-          let body = ""; for await (const part of req) body += part;
-          input = JSON.parse(body); accountWrites.push({ method: req.method, suffix, input });
-        }
-        if (suffix.length === 0 && req.method === "POST") {
-          assert(nodes.some((node) => node.connectorId === input.storeConnectorId && node.kind === "store"));
-          const value = { id: randomUUID(), ...input, enabled: true, screenshotConnectorId: input.screenshotConnectorId ?? null, catalogStatus: "awaiting_catalog", catalogError: null, lastCatalogAt: null, migrationError: null };
-          accountFixtures.push(value); res.writeHead(201).end(JSON.stringify({ account: value })); return;
-        }
-        if (suffix.length === 0) { res.end(JSON.stringify({ accounts: accountFixtures, migrationIssues: [] })); return; }
+        if (suffix.length === 0 && req.method === "GET") { res.end(JSON.stringify({ accounts: accountFixtures, migrationIssues: [] })); return; }
         assert(account);
-        if (suffix[1] === "refresh") {
-          if (failNextCatalogRefresh) {
-            failNextCatalogRefresh = false;
-            res.writeHead(503).end(JSON.stringify({ error: { code: "catalog_offline", message: "<img src=x onerror=alert(1)> fixture-provider-secret" } })); return;
-          }
-          account.catalogStatus = "ready"; account.catalogError = null; account.lastCatalogAt = 1800000000;
-          accountDirectories.set(account.id, ["com.example.account-ui", "com.example.suppressed"]);
-          res.writeHead(202).end(JSON.stringify({ requestId: randomUUID(), status: "accepted" })); return;
+        if (suffix.length === 5 && suffix[1] === "apps" && suffix[4] === "forwarding" && req.method === "PUT") {
+          let body = ""; for await (const part of req) body += part;
+          input = JSON.parse(body);
+          assert.deepEqual(Object.keys(input), ["enabled"]);
+          assert.equal(typeof input.enabled, "boolean");
+          const platform = decodeURIComponent(suffix[2]), identifier = decodeURIComponent(suffix[3]);
+          assert.equal(account.platform, platform);
+          assert(accountDirectories.get(account.id)?.includes(identifier));
+          appForwarding.set(`${platform}/${identifier}`, input.enabled);
+          accountWrites.push({method: req.method, input, identifier});
+          res.writeHead(204).end(); return;
         }
-        if (suffix[1] === "apps") {
+        if (suffix.length === 2 && suffix[1] === "apps" && req.method === "GET") {
           const apps = (accountDirectories.get(account.id) || []).map((bundleIdentifier) => {
             const candidates = accountFixtures.filter((candidate) => candidate.platform === account.platform && accountDirectories.get(candidate.id)?.includes(bundleIdentifier));
-            const owner = accountBindings.get(`${account.platform}/${bundleIdentifier}`);
-            const resolutionStatus = owner ? (owner === account.id ? "resolved" : "bound_elsewhere") : candidates.length > 1 ? "account_ambiguous" : "resolved";
-            const screenshotResolutionStatus = resolutionStatus !== "resolved" ? resolutionStatus : !account.enabled ? "account_disabled" : bundleIdentifier.endsWith("suppressed") || !account.screenshotConnectorId ? "screenshot_app_not_found" : "resolved";
-            return { platform: account.platform, bundleIdentifier, name: "Fixture application", storeAppId: "fixture-store-id", accountId: account.id, resolutionStatus, screenshotEnabled: screenshotResolutionStatus === "resolved", screenshotResolutionStatus };
+            const enabled = appForwarding.get(`${account.platform}/${bundleIdentifier}`) ?? true;
+            const resolutionStatus = candidates.length > 1 ? "account_ambiguous" : !enabled ? "app_forwarding_disabled" : !account.enabled ? "account_disabled" : account.catalogStatus === "identity_changed" ? "identity_changed" : "resolved";
+            const screenshotResolutionStatus = resolutionStatus !== "resolved" ? resolutionStatus : !account.screenshotConnectorId ? "screenshot_app_not_found" : "resolved";
+            return { platform: account.platform, bundleIdentifier, name: "Fixture application", storeAppId: "fixture-store-id", accountId: account.id, enabled, resolutionStatus, screenshotEnabled: screenshotResolutionStatus === "resolved", screenshotResolutionStatus };
           });
-          if (accountDirectories.has(account.id)) apps.push({ platform: account.platform, bundleIdentifier: "com.example.unverified", name: "Legacy mismatch", storeAppId: null, accountId: account.id, resolutionStatus: "account_membership_unverified", screenshotEnabled: false, screenshotResolutionStatus: "account_membership_unverified" });
           res.end(JSON.stringify({ apps })); return;
         }
-        if (req.method === "PATCH") {
-          if (input.acceptIdentityChange) { account.catalogStatus = "awaiting_catalog"; accountDirectories.delete(account.id); }
-          else Object.assign(account, input);
-          res.end(JSON.stringify({ account })); return;
-        }
-        res.writeHead(405).end("{}"); return;
-      }
-      if (/^apps\/[^/]+\/[^/]+\/account$/.test(url.pathname.slice(setupApi.length)) && req.method === "PUT") {
-        let body = ""; for await (const part of req) body += part;
-        const input = JSON.parse(body);
-        assert.deepEqual(Object.keys(input), ["accountId"]);
-        const [platform, identifier] = url.pathname.slice(setupApi.length).split("/").slice(1, 3).map(decodeURIComponent);
-        const account = accountFixtures.find((item) => item.id === input.accountId);
-        assert(account && account.platform === platform && accountDirectories.get(account.id)?.includes(identifier));
-        accountBindings.set(`${platform}/${identifier}`, account.id);
-        accountWrites.push({ method: "PUT", input, identifier });
-        res.end(JSON.stringify({ account })); return;
+        throw new Error("Unexpected account mutation or route");
       }
       if (url.pathname === setupApi + "screenshot-settings") {
         assert(["GET", "PUT"].includes(req.method));
@@ -674,82 +650,51 @@ try {
     assert.equal(nodeConfig.kind, "screenshot");
     assert.deepEqual(Object.keys(deployment.files).sort(),
       ["README.md", "connector.json", "install.sh", "run.sh", "screenshot-connector", "testflying-prod-ca.crt"]);
-    await page.locator("#accountsWorkspace summary").click();
     await page.locator("#accountsReload:enabled").waitFor();
     const firstStore = nodes.find((node) => node.kind === "store");
     const secondStore = { connectorId: randomUUID(), kind: "store", name: "Second account store", enabled: true, connected: false };
     nodes.push(secondStore);
-    await page.locator("#accountsReload").click();
-    await page.locator(`#accountStoreNode option[value="${secondStore.connectorId}"]`).waitFor({ state: "attached" });
-    await page.locator("#accountSave:enabled").waitFor();
-    await page.locator("#managedAccountName").fill("Fixture account A");
-    await page.locator("#accountStoreNode").selectOption(firstStore.connectorId);
-    await page.locator("#accountScreenshotNode").selectOption(screenshotNode.connectorId);
-    await page.locator("#accountSave").click();
-    await page.getByText("账号已保存。目录更新由商店节点上报，刷新后可查看应用。", { exact: true }).waitFor();
-    const firstAccount = accountFixtures[0];
-    assert.equal(await page.locator("#managedAccount").inputValue(), firstAccount.id);
-    assert.equal(await page.locator("#managedAccountPlatform").isDisabled(), true);
-    failNextCatalogRefresh = true;
-    await page.locator("#accountCatalogRefresh").click();
-    await page.getByText("商店节点未连接，无法请求刷新目录", { exact: true }).waitFor();
-    assert.equal(await page.locator("#accountsWorkspace img").count(), 0);
-    assert.equal((await page.locator("#accountsWorkspace").textContent()).includes("fixture-provider-secret"), false);
-    await page.locator("#accountCatalogRefresh").click();
-    await page.getByText("已请求刷新目录；节点完成后请点击「重新读取账号与目录」。", { exact: true }).waitFor();
-    await page.locator("#accountsReload").click();
-    await page.locator("#accountApps li").first().waitFor();
-    await page.locator("#accountSave:enabled").waitFor();
-    assert.match(await page.locator("#accountMetadata").textContent(), /目录：ready/);
-    assert.equal((await page.locator("#accountMetadata").textContent()).includes(await page.evaluate(() => new Date(1800000000 * 1000).toLocaleString())), true);
-    const suppressedRow = page.locator("#accountApps li").filter({ hasText: "com.example.suppressed" });
-    assert.match(await suppressedRow.textContent(), /截图路由：不可用 · screenshot_app_not_found/);
-    assert.equal(await page.locator("#accountApps li").filter({ hasText: "com.example.unverified" }).locator("button").count(), 0);
-    firstStore.enabled = false;
+    const account = (platform, node) => ({ id: randomUUID(), name: node.name, platform, enabled: true, storeConnectorId: node.connectorId, screenshotConnectorId: screenshotNode.connectorId, catalogStatus: "ready", catalogError: null, lastCatalogAt: 1800000000, migrationError: null });
+    const firstAccount = account("ios", firstStore), androidAccount = account("android", firstStore), secondAccount = account("ios", secondStore);
+    accountFixtures.push(firstAccount, androidAccount, secondAccount);
+    accountDirectories.set(firstAccount.id, ["com.example.account-ui", "com.example.peer"]);
+    accountDirectories.set(androidAccount.id, ["com.example.android"]);
+    accountDirectories.set(secondAccount.id, ["com.example.second"]);
     await page.locator("#accountsReload").click();
     await page.getByText("账号目录已读取。", { exact: true }).waitFor();
-    await page.locator("#managedAccountName").fill("Fixture account renamed");
-    await page.locator("#accountSave").click();
-    await page.getByText("账号已保存。目录更新由商店节点上报，刷新后可查看应用。", { exact: true }).waitFor();
-    const renamed = accountWrites.findLast((write) => write.method === "PATCH").input;
-    assert.deepEqual(renamed, { name: "Fixture account renamed", enabled: true });
-    firstStore.enabled = true;
-    await page.locator("#managedAccount").selectOption("");
-    await page.locator("#accountSave:enabled").waitFor();
-    await page.locator("#managedAccountName").fill("Fixture account B");
-    await page.locator("#accountStoreNode").selectOption(secondStore.connectorId);
-    await page.locator("#accountScreenshotNode").selectOption(screenshotNode.connectorId);
-    await page.locator("#accountSave").click();
-    await page.getByText("账号已保存。目录更新由商店节点上报，刷新后可查看应用。", { exact: true }).waitFor();
-    const secondAccount = accountFixtures[1];
-    assert.equal(firstAccount.screenshotConnectorId, secondAccount.screenshotConnectorId);
-    await page.locator("#accountCatalogRefresh").click();
-    await page.getByText("已请求刷新目录；节点完成后请点击「重新读取账号与目录」。", { exact: true }).waitFor();
+    assert.equal(await page.locator("#accountsWorkspace").evaluate((element) => element.open), true);
+    assert.equal(await page.locator("#accountGroups > section").count(), 2);
+    const firstGroup = page.locator(`#accountGroups > section[data-store-connector-id="${firstStore.connectorId}"]`);
+    assert.equal(await firstGroup.locator(":scope > section").count(), 2);
+    assert.match(await firstGroup.textContent(), /iOS 目录/);
+    assert.match(await firstGroup.textContent(), /Android 目录/);
+    assert.equal((await firstGroup.textContent()).includes(await page.evaluate(() => new Date(1800000000 * 1000).toLocaleString())), true);
+    assert.equal(await page.locator("#managedAccountForm, #managedAccount, #accountSave").count(), 0);
+    assert.equal(await page.getByRole("button", {name:"绑定到此账号", exact:true}).count(), 0);
+    assert.equal(await page.locator("#accountsWorkspace form").count(), 0);
+    assert.equal(await page.locator("#accountSection").evaluate((element) => element.closest(".card") === document.getElementById("connector").closest(".card")), true);
+    assert.equal(await page.locator("#setupForm .number").count(), 0);
+    const ownedRow = () => firstGroup.locator(`li[data-identifier="com.example.account-ui"]`);
+    assert.equal(await ownedRow().locator('input[type="checkbox"]').isChecked(), true);
+    await ownedRow().locator("input").uncheck();
+    await page.getByText("应用已关闭转发，已创建任务继续执行。", { exact: true }).waitFor();
+    assert.equal(appForwarding.get("ios/com.example.account-ui"), false);
+    assert.equal(await ownedRow().locator("input").isChecked(), false);
+    assert.match(await ownedRow().textContent(), /app_forwarding_disabled/);
     await page.locator("#accountsReload").click();
-    const ownedRow = page.locator("#accountApps li").filter({ hasText: "com.example.account-ui" });
-    await page.waitForFunction(() => document.getElementById("accountApps").textContent.includes("account_ambiguous"));
-    await ownedRow.getByRole("button", { name: "绑定到此账号", exact: true }).click();
-    await page.getByText("应用已绑定到此账号。", { exact: true }).waitFor();
-    assert.equal(accountBindings.get("ios/com.example.account-ui"), secondAccount.id);
-    await page.locator("#managedAccount").selectOption(firstAccount.id);
-    await page.waitForFunction(() => document.getElementById("accountApps").textContent.includes("bound_elsewhere"));
-    await page.locator("#accountSave:enabled").waitFor();
-    await ownedRow.getByRole("button", { name: "绑定到此账号", exact: true }).click();
-    await page.getByText("应用已绑定到此账号。", { exact: true }).waitFor();
-    assert.equal(accountBindings.get("ios/com.example.account-ui"), firstAccount.id);
-    firstAccount.catalogStatus = "identity_changed";
+    await page.getByText("账号目录已读取。", { exact: true }).waitFor();
+    assert.equal(await ownedRow().locator("input").isChecked(), false);
+    assert.equal(await firstGroup.locator('li[data-identifier="com.example.peer"] input').isChecked(), true);
+    await ownedRow().locator("input").check();
+    await page.getByText("应用已开启转发。", { exact: true }).waitFor();
+    assert.equal(appForwarding.get("ios/com.example.account-ui"), true);
+    assert.deepEqual(accountWrites.map((write) => write.input), [{enabled:false},{enabled:true}]);
+    secondAccount.catalogStatus = "failed"; secondAccount.catalogError = "catalog_discovery_failed";
     await page.locator("#accountsReload").click();
-    await page.locator("#accountAcceptIdentity").waitFor();
-    await page.locator("#accountAcceptIdentity:enabled").waitFor();
-    await page.locator("#accountAcceptIdentity").click();
-    await page.getByText("已接受新身份，旧目录不再用于绑定。请刷新目录。", { exact: true }).waitFor();
-    assert.equal(await page.locator("#accountApps li").count(), 0);
-    checks.push("loopback accounts create/edit, shared screenshot node, Unix-second timestamp, safe offline error, refresh, per-app screenshot suppression, verified ambiguity binding and identity acceptance");
-    await page.locator("#accountCatalogRefresh").click();
-    await page.getByText("已请求刷新目录；节点完成后请点击「重新读取账号与目录」。", { exact: true }).waitFor();
-    await page.locator("#accountsReload").click();
-    await page.locator("#accountApps li").first().waitFor();
-    await page.locator("#accountSave:enabled").waitFor();
+    await page.getByText("账号目录已读取。", { exact: true }).waitFor();
+    assert.match(await page.locator("#accountGroups").textContent(), /catalog_discovery_failed/);
+    assert.equal(await page.locator('#accountGroups li[data-identifier="com.example.second"]').count(), 1);
+    checks.push("merged installer card; read-only accounts grouped across iOS/Android; discovered apps default on, toggles persist and affect both routes, peers unaffected, no create/edit/bind/unbind controls");
     await page.locator("#accountsWorkspace").screenshot({ path: path.join(tmp, "setup-preview.png") });
     await page.locator("#accountsWorkspace summary").click();
     await page.locator("#screenshotSettingsWorkspace summary").click();
@@ -770,7 +715,7 @@ try {
     await assertSettingsSecretsEmpty();
     assert.equal(await page.locator("#screenshotWorkspace").isVisible(), false);
     assert.equal(await page.locator("#accountsWorkspace").isVisible(), false);
-    assert.equal(await page.locator("#accountApps li").count(), 0);
+    assert.equal(await page.locator("#accountGroups li").count(), 0);
     assert.equal(await page.locator("#screenshotNode").inputValue(), "");
     checks.push("unlocked admin can provision a screenshot node and download its macOS deployment ZIP");
     checks.push("locking aborts an in-flight screenshot settings refresh and prevents a late response from restoring the form");

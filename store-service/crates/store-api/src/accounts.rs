@@ -6,7 +6,28 @@ pub(super) fn management_routes(path: &str) -> Router<Arc<ApiState>> {
         .route(path, get(list).post(create))
         .route(&format!("{path}/{{id}}"), axum::routing::patch(update))
         .route(&format!("{path}/{{id}}/apps"), get(apps))
+        .route(
+            &format!("{path}/{{id}}/apps/{{platform}}/{{identifier}}/forwarding"),
+            axum::routing::put(forwarding),
+        )
         .route(&format!("{path}/{{id}}/refresh"), post(refresh))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ForwardingInput {
+    enabled: bool,
+}
+
+async fn forwarding(
+    State(state): State<Arc<ApiState>>,
+    Path((id, platform, identifier)): Path<(String, Platform, String)>,
+    Json(input): Json<ForwardingInput>,
+) -> Result<StatusCode> {
+    state
+        .registry
+        .set_app_enabled(&id, platform, &identifier, input.enabled)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn public_view(account: Account) -> Value {

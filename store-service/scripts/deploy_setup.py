@@ -90,6 +90,9 @@ out={'legacyStoreBindings':store,'legacyScreenshotBindings':shot,
  'integrationsSha256':digest(rows('integrations','id,name','1')),
  'integrationGrantsSha256':digest(rows('integration_connectors','integration_id,connector_id','1,2')),
  'screenshotSettingsSha256':digest(rows('screenshot_settings','id,encrypted','1')),
+ 'accountApps':rows('account_apps','account_id,bundle_identifier','1,2'),
+ 'accountStates':rows('accounts','id,platform,catalog_status','1'),
+ 'applicationSwitches':rows('account_bindings','platform,bundle_identifier,suppressed','1,2'),
  'accounts':accounts,'migrationMarkers':rows('account_migrations','name','1'),
  'migrationIssues':rows('account_migration_issues','platform,bundle_identifier,code','1,2')}
 db.rollback();db.close()
@@ -135,7 +138,7 @@ print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdig
  'screenshotConnectorSha256':hashlib.sha256(open(worker,'rb').read()).hexdigest() if os.path.isfile(worker) else None,
  'binaries':hashes,'available':int(subprocess.check_output(['df','--output=avail','-B1','/opt']).decode().splitlines()[-1])}))
 """))
-    routing_before = routing_snapshot() if replace_connectors else None
+    routing_before = routing_snapshot() if documents_only else None
     if snapshot["available"] <= 21474836480:
         raise RuntimeError("Server free-space reserve is insufficient")
     replacements = {}
@@ -296,38 +299,31 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
         routing_excluded = []
         if routing_before is not None:
             node_states = {row[0]: row[1:] for row in routing_before["connectors"]}
-            store_rows = routing_before["legacyStoreBindings"]
-            screenshot_rows = {(row[0], row[1]): row[2] for row in routing_before["legacyScreenshotBindings"]}
-            for platform, identifier, store_id in store_rows:
-                # Every consistent legacy account group must retain its original
-                # account/store relation and per-app screenshot suppression.
-                group_shots = {screenshot_rows[(p, app)] for p, app, node_id in store_rows
-                               if p == platform and node_id == store_id and (p, app) in screenshot_rows}
-                if (store_id not in node_states or node_states[store_id][0] == "screenshot"
-                        or not node_states[store_id][1] or len(group_shots) > 1
-                        or any(node_states.get(node_id, [None])[0] != "screenshot" for node_id in group_shots)):
-                    routing_excluded.append({"platform": platform, "bundleIdentifier": identifier,
-                                             "reason": "legacy_relation_unavailable_or_conflicting"})
-                    continue
-                app_path = "/v1/apps/" + urllib.parse.quote(platform, safe="") + "/" + urllib.parse.quote(identifier, safe="")
-                status, body = request(app_path + "/connector", snapshot["admin"])
-                if status != 200 or json.loads(body)["connectorId"] != store_id:
-                    routing_excluded.append({"platform": platform, "bundleIdentifier": identifier,
-                                             "reason": "pre_rollout_store_route_not_consistent"})
-                    continue
-                screenshot_id = screenshot_rows.get((platform, identifier))
-                if screenshot_id is not None and not node_states[screenshot_id][1]:
-                    routing_excluded.append({"platform": platform, "bundleIdentifier": identifier,
-                                             "reason": "legacy_screenshot_node_disabled"})
-                    continue
-                status, body = request(app_path + "/screenshot-connector", snapshot["admin"])
-                check(status == (200 if screenshot_id else 404)
-                      and (not screenshot_id or json.loads(body)["connector"]["connectorId"] == screenshot_id),
-                      "consistent cached screenshot route before rollout " + platform + "/" + identifier)
+            account_rows = {row[0]: row for row in routing_before["accounts"]}
+            states = {row[0]: row[2] for row in routing_before["accountStates"]}
+            switches = {(p, app): off for p, app, off in routing_before["applicationSwitches"]}
+            candidates = {}
+            for account_id, identifier in routing_before["accountApps"]:
+                account = account_rows[account_id]
+                candidates.setdefault((account[2], identifier), []).append(account)
+            keys = set(candidates) | {(p, app) for p, app, _ in routing_before["legacyStoreBindings"]}
+            for platform, identifier in sorted(keys):
+                owners = candidates.get((platform, identifier), [])
+                account = owners[0] if len(owners) == 1 else None
+                error = ("app_not_found" if not owners else "account_ambiguous" if len(owners) > 1 else
+                         "app_forwarding_disabled" if switches.get((platform, identifier), False) else
+                         "account_disabled" if not account[5] else
+                         "identity_changed" if states[account[0]] == "identity_changed" else None)
+                status = 503 if error in ("app_forwarding_disabled", "account_disabled") else 409 if error in ("account_ambiguous", "identity_changed") else 404 if error else 200
+                store_id, screenshot_id = (account[3], account[4]) if account else (None, None)
+                store_error = error or ("connector_disabled" if not node_states.get(store_id, [None, False])[1] else None)
+                shot_error = error or (("legacy_screenshot_conflict" if account and account[6] else "screenshot_app_not_found") if not screenshot_id else
+                                      "screenshot_connector_disabled" if not node_states.get(screenshot_id, [None, False])[1] else None)
                 routing_baseline.append({"platform": platform, "bundleIdentifier": identifier,
-                                         "appPath": app_path, "storeConnectorId": store_id,
-                                         "screenshotConnectorId": screenshot_id,
-                                         "accountScreenshotConnectorId": next(iter(group_shots), None)})
+                    "appPath": "/v1/apps/" + urllib.parse.quote(platform, safe="") + "/" + urllib.parse.quote(identifier, safe=""),
+                    "accountId": account[0] if account else None, "ownershipStatus": status, "ownershipError": error,
+                    "storeConnectorId": store_id, "storeError": store_error,
+                    "screenshotConnectorId": screenshot_id, "screenshotError": shot_error})
         management = "/v1/integrations"
         existing_token = None
         if integrations_only:
@@ -399,7 +395,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             for scheme in ("http", "https"):
                 status, body = request(docs, snapshot["token"], scheme=scheme)
                 catalog = json.loads(body)
-                check(status == 200 and catalog["contractVersion"] == "2026-11-17",
+                check(status == 200 and catalog["contractVersion"] == "2026-11-18",
                       scheme + " business-token documentation available")
                 endpoints = catalog["endpoints"]
                 check(len(endpoints) == 23
@@ -459,7 +455,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                 routing_after = routing_snapshot()
                 for key in ("legacyStoreBindings", "legacyScreenshotBindings", "forwarding",
                             "connectorIdentitySha256", "integrationsSha256",
-                            "integrationGrantsSha256", "screenshotSettingsSha256"):
+                            "integrationGrantsSha256", "screenshotSettingsSha256", "applicationSwitches"):
                     check(routing_after[key] == routing_before[key], "read-only migration preserves " + key)
                 check(all(row in routing_after["accounts"] for row in routing_before["accounts"]),
                       "preexisting account IDs, names, node relations and enabled states preserved")
@@ -480,28 +476,31 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                 for account_id in account_by_id:
                     status, content = request("/v1/store-management/accounts/" + urllib.parse.quote(account_id, safe="") + "/apps", snapshot["token"])
                     rows = json.loads(content).get("apps", [])
-                    check(status == 200 and all(set(row) == {"platform", "bundleIdentifier", "name", "storeAppId", "accountId", "resolutionStatus", "screenshotEnabled", "screenshotResolutionStatus"}
-                                                and isinstance(row["screenshotEnabled"], bool)
+                    check(status == 200 and all(set(row) == {"platform", "bundleIdentifier", "name", "storeAppId", "accountId", "enabled", "resolutionStatus", "screenshotEnabled", "screenshotResolutionStatus"}
+                                                and isinstance(row["enabled"], bool) and isinstance(row["screenshotEnabled"], bool)
                                                 and isinstance(row["screenshotResolutionStatus"], str) for row in rows),
                           "cached account app schema includes separate screenshot resolution " + account_id)
                 verified_routes = []
                 for route in routing_baseline:
                     status, content = request(route["appPath"] + "/account", snapshot["token"])
-                    resolved = json.loads(content).get("account", {})
-                    account = account_by_id.get(resolved.get("id"), {})
-                    check(status == 200 and account.get("platform") == route["platform"]
-                          and account.get("storeConnectorId") == route["storeConnectorId"]
-                          and account.get("screenshotConnectorId") == route["accountScreenshotConnectorId"],
-                          "cached app ownership retains original account nodes " + route["appPath"])
-                    status, content = request(route["appPath"] + "/connector", snapshot["admin"])
-                    check(status == 200 and json.loads(content)["connectorId"] == route["storeConnectorId"],
-                          "legacy store binding retains original node " + route["appPath"])
-                    status, content = request(route["appPath"] + "/screenshot-connector", snapshot["admin"])
-                    screenshot_id = route["screenshotConnectorId"]
-                    check(status == (200 if screenshot_id else 404)
-                          and (not screenshot_id or json.loads(content)["connector"]["connectorId"] == screenshot_id),
-                          "legacy screenshot binding or per-app suppression retained " + route["appPath"])
-                    verified_routes.append({key: value for key, value in route.items() if key != "appPath"} | {"accountId": resolved["id"]})
+                    resolved_body = json.loads(content)
+                    check(status == route["ownershipStatus"] and
+                          (resolved_body.get("error", {}).get("code") == route["ownershipError"] if route["ownershipError"]
+                           else resolved_body.get("account", {}).get("id") == route["accountId"]),
+                          "directory-only ownership and application switch " + route["appPath"])
+                    for suffix, error_key, id_key in [("/connector", "storeError", "storeConnectorId"),
+                                                      ("/screenshot-connector", "screenshotError", "screenshotConnectorId")]:
+                        status, content = request(route["appPath"] + suffix, snapshot["admin"])
+                        body = json.loads(content)
+                        error = route[error_key]
+                        expected_status = (503 if error in ("app_forwarding_disabled", "account_disabled", "connector_disabled", "screenshot_connector_disabled")
+                                           else 409 if error in ("account_ambiguous", "identity_changed", "legacy_screenshot_conflict")
+                                           else 404 if error else 200)
+                        actual_id = body.get("connectorId") if suffix == "/connector" else body.get("connector", {}).get("connectorId")
+                        check(status == expected_status and
+                              (body.get("error", {}).get("code") == error if error else actual_id == route[id_key]),
+                              "exact catalog route or expected blocked result " + route["appPath"] + suffix)
+                    verified_routes.append({key: value for key, value in route.items() if key != "appPath"})
                 account_migration = {
                     "verificationMode": "read-only cached GET and SQLite query-only transaction",
                     "providerCalls": 0, "refreshRequests": 0, "accountsCreatedByChecks": 0, "bindingsWrittenByChecks": 0,
@@ -524,7 +523,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                       "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
                       "actualStoreAccountsUsed": False,
-                      "apiDocumentation": {"contractVersion": "2026-11-17", "coreEndpoints": 23, "uploadHelpers": 2, "formats": ["json", "markdown", "openapi"],
+                      "apiDocumentation": {"contractVersion": "2026-11-18", "coreEndpoints": 23, "uploadHelpers": 2, "formats": ["json", "markdown", "openapi"],
                                            "existingIntegrationTokenVerified": bool(existing_token)},
                       "cleanup": "See the supervisor cleanup report for this runId"}
             if account_migration is not None:

@@ -469,11 +469,22 @@ async fn screenshot_discovery_and_app_bindings_route_precisely_without_touching_
         send(&app, "DELETE", ios, &token, Value::Null)
             .await
             .status(),
+        410
+    );
+    let forwarding = format!(
+        "/v1/accounts/{}/apps/ios/{}/forwarding",
+        account.id,
+        payload["bundleIdentifier"].as_str().unwrap()
+    );
+    assert_eq!(
+        send(&app, "PUT", &forwarding, ADMIN, json!({"enabled":false}))
+            .await
+            .status(),
         204
     );
     assert_eq!(
         send(&app, "GET", ios, &token, Value::Null).await.status(),
-        404
+        503
     );
     assert_eq!(
         send(
@@ -485,7 +496,25 @@ async fn screenshot_discovery_and_app_bindings_route_precisely_without_touching_
         )
         .await
         .status(),
-        404
+        503
+    );
+    let prior = value(
+        send(
+            &app,
+            "GET",
+            &format!("/v1/screenshot-jobs/{}", first["jobId"].as_str().unwrap()),
+            &token,
+            Value::Null,
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(prior["connectorId"], mac_a);
+    assert_eq!(
+        send(&app, "PUT", &forwarding, ADMIN, json!({"enabled":true}))
+            .await
+            .status(),
+        204
     );
     assert_eq!(
         send(

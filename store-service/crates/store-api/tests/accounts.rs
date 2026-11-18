@@ -69,7 +69,13 @@ fn precise_candidates_verified_binding_suppression_and_disabled_accounts() {
         r.account_apps(&account.id).unwrap()[0]["resolutionStatus"],
         "account_ambiguous"
     );
-    r.bind_account(Platform::Ios, APP, &account.id).unwrap();
+    assert_eq!(
+        r.bind_account(Platform::Ios, APP, &account.id)
+            .unwrap_err()
+            .code,
+        "account_ambiguous"
+    );
+    support::catalog(&r, &b.connector_id, Platform::Ios, &[]);
     assert_eq!(
         r.resolve(Platform::Ios, APP).unwrap().connector_id,
         a.connector_id
@@ -86,13 +92,17 @@ fn precise_candidates_verified_binding_suppression_and_disabled_accounts() {
             .status,
         422
     );
-    r.unbind(Platform::Ios, APP).unwrap();
+    r.set_app_enabled(&account.id, Platform::Ios, APP, false)
+        .unwrap();
     support::catalog(&r, &a.connector_id, Platform::Ios, &[APP]);
     assert_eq!(
         r.resolve(Platform::Ios, APP).unwrap_err().code,
-        "app_not_found"
+        "app_forwarding_disabled"
     );
-    r.bind(Platform::Ios, APP, &a.connector_id).unwrap();
+    assert!(r.bind(Platform::Ios, APP, &a.connector_id).is_err());
+    assert_eq!(r.account_apps(&account.id).unwrap()[0]["enabled"], false);
+    r.set_app_enabled(&account.id, Platform::Ios, APP, true)
+        .unwrap();
     r.patch_account(&account.id, patch(json!({"enabled":false})))
         .unwrap();
     assert_eq!(
@@ -216,7 +226,65 @@ fn full_reports_retain_last_good_on_failure_and_require_identity_acceptance() {
 }
 
 #[test]
-fn disabled_candidates_remain_ambiguous_until_explicit_verified_selection() {
+fn app_forwarding_persists_across_catalogs_and_restart_without_manual_ownership() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("registry.sqlite");
+    let r = Registry::open(&path, KEY).unwrap();
+    let n = node(&r, "Both platforms");
+    for platform in [Platform::Ios, Platform::Android] {
+        support::catalog(&r, &n.connector_id, platform, &[APP, "com.example.peer"]);
+    }
+    let a = r.resolve_account(Platform::Ios, APP).unwrap();
+    assert_eq!(r.account_apps(&a.id).unwrap()[0]["enabled"], true);
+    r.set_app_enabled(&a.id, Platform::Ios, APP, false).unwrap();
+    support::catalog(
+        &r,
+        &n.connector_id,
+        Platform::Ios,
+        &[APP, "com.example.peer"],
+    );
+    let mut failed = report(Platform::Ios, CatalogStatus::Failed, None);
+    failed.error_code = Some("catalog_discovery_failed".into());
+    r.ingest_catalog(&n.connector_id, &r.token(&n), true, &failed)
+        .unwrap();
+    drop(r);
+    let r = Registry::open(&path, KEY).unwrap();
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap_err().code,
+        "app_forwarding_disabled"
+    );
+    assert!(r.resolve(Platform::Android, APP).is_ok());
+    assert!(r.resolve(Platform::Ios, "com.example.peer").is_ok());
+    assert_eq!(r.get(&n.connector_id).unwrap().app_count, 3);
+    assert_eq!(
+        r.set_app_enabled(&a.id, Platform::Android, APP, false)
+            .unwrap_err()
+            .code,
+        "app_catalog_changed"
+    );
+    assert_eq!(
+        r.set_app_enabled(&a.id, Platform::Ios, "com.example.unknown", false)
+            .unwrap_err()
+            .code,
+        "app_catalog_changed"
+    );
+    r.set_app_enabled(&a.id, Platform::Ios, APP, true).unwrap();
+    assert!(r.resolve(Platform::Ios, APP).is_ok());
+    support::catalog(&r, &n.connector_id, Platform::Ios, &[]);
+    assert_eq!(
+        r.set_app_enabled(&a.id, Platform::Ios, APP, false)
+            .unwrap_err()
+            .code,
+        "app_catalog_changed"
+    );
+    assert_eq!(
+        r.resolve(Platform::Ios, APP).unwrap_err().code,
+        "app_not_found"
+    );
+}
+
+#[test]
+fn disabled_candidates_remain_ambiguous_until_catalog_corrected() {
     for disable_account in [true, false] {
         let r = registry();
         let a = node(&r, "First owner");
@@ -257,13 +325,34 @@ fn disabled_candidates_remain_ambiguous_until_explicit_verified_selection() {
         let error = r.resolve(Platform::Ios, APP).unwrap_err();
         assert_eq!(error.status, 409);
         assert_eq!(error.code, "account_ambiguous");
+        assert_eq!(
+            r.bind_account(Platform::Ios, APP, &first.id)
+                .unwrap_err()
+                .code,
+            "account_ambiguous"
+        );
+        assert_eq!(
+            r.bind_account(Platform::Android, APP, &first.id)
+                .unwrap_err()
+                .code,
+            "account_membership_unverified"
+        );
         assert_eq!(r.get(&a.connector_id).unwrap().app_count, 0);
         assert_eq!(r.get(&b.connector_id).unwrap().app_count, 0);
         assert_eq!(r.get(&mac.connector_id).unwrap().app_count, 0);
         let row = &r.account_apps(&second.id).unwrap()[0];
         assert_eq!(row["screenshotEnabled"], false);
         assert_eq!(row["screenshotResolutionStatus"], "account_ambiguous");
-        r.bind_account(Platform::Ios, APP, &second.id).unwrap();
+        assert_eq!(
+            r.bind_account(Platform::Ios, APP, &second.id)
+                .unwrap_err()
+                .code,
+            "account_ambiguous"
+        );
+        if !disable_account {
+            r.set_enabled(&a.connector_id, true).unwrap();
+        }
+        support::catalog(&r, &a.connector_id, Platform::Ios, &[]);
         assert_eq!(
             r.resolve(Platform::Ios, APP).unwrap().connector_id,
             b.connector_id
@@ -432,7 +521,11 @@ fn migration_is_one_time_preserves_settings_snapshots_and_flags_conflicts_and_or
         db.execute("INSERT INTO screenshot_jobs(id,connector_id,integration_id,profile,prompt,status,created_at,deadline) VALUES('old-shot',?1,'old-owner','','original','queued',1,2)",[&mac.connector_id]).unwrap();
         drop(r);
         let r = Registry::open(&path, KEY).unwrap();
-        let a = r.resolve_account(Platform::Ios, APP).unwrap();
+        let a = r.accounts().unwrap().remove(0);
+        assert_eq!(
+            r.resolve_account(Platform::Ios, APP).unwrap_err().code,
+            "app_not_found"
+        );
         assert_eq!(r.accounts().unwrap().len(), 1);
         assert_eq!(
             a.screenshot_connector_id,
@@ -454,10 +547,7 @@ fn migration_is_one_time_preserves_settings_snapshots_and_flags_conflicts_and_or
             r.account_migration_issues().unwrap()[0]["code"],
             "legacy_screenshot_orphan"
         );
-        assert_eq!(
-            r.account_apps(&a.id).unwrap()[0]["resolutionStatus"],
-            "provisional"
-        );
+        assert!(r.account_apps(&a.id).unwrap().is_empty());
         assert!(!r.forwarding().unwrap().android);
         assert_eq!(
             r.bind(Platform::Ios, APP, &store.connector_id)
@@ -468,7 +558,7 @@ fn migration_is_one_time_preserves_settings_snapshots_and_flags_conflicts_and_or
         let failed = report(Platform::Ios, CatalogStatus::Failed, None);
         r.ingest_catalog(&store.connector_id, &r.token(&store), true, &failed)
             .unwrap();
-        assert!(r.resolve(Platform::Ios, APP).is_ok());
+        assert!(r.resolve(Platform::Ios, APP).is_err());
         drop(r);
         let r = Registry::open(&path, KEY).unwrap();
         assert_eq!(r.accounts().unwrap()[0].id, a.id);
@@ -480,7 +570,7 @@ fn migration_is_one_time_preserves_settings_snapshots_and_flags_conflicts_and_or
         );
         assert_eq!(
             r.resolve(Platform::Ios, APP).unwrap_err().code,
-            "account_membership_unverified"
+            "app_not_found"
         );
         assert!(r.resolve(Platform::Ios, "com.example.second").is_ok());
         assert_eq!(
@@ -504,7 +594,7 @@ fn migration_is_one_time_preserves_settings_snapshots_and_flags_conflicts_and_or
             r.resolve(Platform::Ios, "com.example.second")
                 .unwrap_err()
                 .code,
-            "account_membership_unverified"
+            "app_not_found"
         );
         support::catalog(
             &r,
@@ -604,6 +694,11 @@ async fn all_account_routes_keep_admin_query_binding_and_session_boundaries() {
                 format!("{prefix}/{}/refresh", account.id),
                 json!({}),
             ),
+            (
+                "PUT",
+                format!("{prefix}/{}/apps/ios/{APP}/forwarding", account.id),
+                json!({"enabled":false}),
+            ),
         ] {
             assert_eq!(
                 call(&app, method, &path, CLIENT, body).await.0,
@@ -655,10 +750,38 @@ async fn all_account_routes_keep_admin_query_binding_and_session_boundaries() {
         assert!(!body.to_string().contains(&b.connector_id));
     }
     let bind = json!({"accountId":account.id});
+    for prefix in ["/v1/accounts", "/connector-setup/api/accounts"] {
+        let forwarding = format!("{prefix}/{}/apps/ios/{APP}/forwarding", account.id);
+        assert_eq!(
+            call(
+                &app,
+                "PUT",
+                &forwarding,
+                &integration,
+                json!({"enabled":false})
+            )
+            .await
+            .0,
+            401
+        );
+        assert_eq!(
+            call(&app, "PUT", &forwarding, ADMIN, json!({"enabled":"false"}))
+                .await
+                .0,
+            422
+        );
+    }
     assert_eq!(
         call(&app, "PUT", &binding, CLIENT, bind.clone()).await.0,
         401
     );
+    assert_eq!(
+        call(&app, "PUT", &binding, &integration, bind.clone())
+            .await
+            .0,
+        409
+    );
+    support::catalog(&state.registry, &b.connector_id, Platform::Ios, &[]);
     assert_eq!(
         call(&app, "PUT", &binding, &integration, bind.clone())
             .await
@@ -706,7 +829,7 @@ async fn all_account_routes_keep_admin_query_binding_and_session_boundaries() {
 }
 
 #[tokio::test]
-async fn screenshot_delete_is_per_app_and_legacy_put_cannot_replace_account_node() {
+async fn obsolete_screenshot_delete_is_rejected_and_app_switch_controls_both_branches() {
     let state = state();
     let store = node(&state.registry, "Store");
     support::catalog(
@@ -758,18 +881,30 @@ async fn screenshot_delete_is_per_app_and_legacy_put_cannot_replace_account_node
         .0,
         409
     );
-    assert_eq!(call(&app, "DELETE", &path, ADMIN, Value::Null).await.0, 204);
-    assert_eq!(call(&app, "GET", &path, ADMIN, Value::Null).await.0, 404);
+    assert_eq!(call(&app, "DELETE", &path, ADMIN, Value::Null).await.0, 410);
+    let forwarding = format!("/v1/accounts/{}/apps/ios/{APP}/forwarding", account.id);
+    assert_eq!(
+        call(&app, "PUT", &forwarding, ADMIN, json!({"enabled":false}))
+            .await
+            .0,
+        204
+    );
+    assert_eq!(call(&app, "GET", &path, ADMIN, Value::Null).await.0, 503);
+    assert_eq!(
+        state.registry.resolve(Platform::Ios, APP).unwrap_err().code,
+        "app_forwarding_disabled"
+    );
     let rows = state.registry.account_apps(&account.id).unwrap();
     let disabled = rows
         .iter()
         .find(|row| row["bundleIdentifier"] == APP)
         .unwrap();
-    assert_eq!(disabled["resolutionStatus"], "resolved");
+    assert_eq!(disabled["resolutionStatus"], "app_forwarding_disabled");
+    assert_eq!(disabled["enabled"], false);
     assert_eq!(disabled["screenshotEnabled"], false);
     assert_eq!(
         disabled["screenshotResolutionStatus"],
-        "screenshot_app_not_found"
+        "app_forwarding_disabled"
     );
     let peer = rows
         .iter()
@@ -807,7 +942,13 @@ async fn screenshot_delete_is_per_app_and_legacy_put_cannot_replace_account_node
         )
         .await
         .0,
-        200
+        503
+    );
+    assert_eq!(
+        call(&app, "PUT", &forwarding, ADMIN, json!({"enabled":true}))
+            .await
+            .0,
+        204
     );
     assert_eq!(call(&app, "GET", &path, ADMIN, Value::Null).await.0, 200);
     assert_eq!(
@@ -817,7 +958,7 @@ async fn screenshot_delete_is_per_app_and_legacy_put_cannot_replace_account_node
 }
 
 #[tokio::test]
-async fn setup_session_can_bind_only_verified_app_rows() {
+async fn setup_session_can_toggle_only_current_catalog_rows() {
     let state = state();
     let a = node(&state.registry, "A");
     let b = node(&state.registry, "B");
@@ -856,13 +997,14 @@ async fn setup_session_can_bind_only_verified_app_rows() {
     for (identifier, scheme, marked, expected) in [
         (APP, "http", true, 403),
         (APP, "https", false, 401),
-        ("com.example.unverified", "https", true, 422),
-        (APP, "https", true, 200),
+        ("com.example.unverified", "https", true, 409),
+        (APP, "https", true, 204),
     ] {
         let mut request = Request::builder()
             .method("PUT")
             .uri(format!(
-                "/connector-setup/api/apps/ios/{identifier}/account"
+                "/connector-setup/api/accounts/{}/apps/ios/{identifier}/forwarding",
+                account.id
             ))
             .header("x-forwarded-proto", scheme)
             .header("cookie", &cookie)
@@ -874,7 +1016,7 @@ async fn setup_session_can_bind_only_verified_app_rows() {
             .clone()
             .oneshot(
                 request
-                    .body(Body::from(json!({"accountId":account.id}).to_string()))
+                    .body(Body::from(json!({"enabled":false}).to_string()))
                     .unwrap(),
             )
             .await
@@ -885,9 +1027,9 @@ async fn setup_session_can_bind_only_verified_app_rows() {
         state
             .registry
             .resolve_account(Platform::Ios, APP)
-            .unwrap()
-            .id,
-        account.id
+            .unwrap_err()
+            .code,
+        "account_ambiguous"
     );
     let other = state
         .registry
@@ -897,7 +1039,20 @@ async fn setup_session_can_bind_only_verified_app_rows() {
         .find(|value| value.store_connector_id == b.connector_id)
         .unwrap();
     let row = &state.registry.account_apps(&other.id).unwrap()[0];
-    assert_eq!(row["resolutionStatus"], "bound_elsewhere");
+    assert_eq!(row["enabled"], false);
+    assert_eq!(row["resolutionStatus"], "account_ambiguous");
     assert_eq!(row["screenshotEnabled"], false);
-    assert_eq!(row["screenshotResolutionStatus"], "bound_elsewhere");
+    assert_eq!(row["screenshotResolutionStatus"], "account_ambiguous");
+    state
+        .registry
+        .set_app_enabled(&account.id, Platform::Ios, APP, true)
+        .unwrap();
+    assert_eq!(
+        state
+            .registry
+            .resolve_account(Platform::Ios, APP)
+            .unwrap_err()
+            .code,
+        "account_ambiguous"
+    );
 }
