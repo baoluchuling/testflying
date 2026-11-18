@@ -1,5 +1,5 @@
 {
-  "runId": "97f548ec6fcd4d16b658b2b96d82c084",
+  "runId": "3d9f3c32242147f19c12f2072478702f",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -12,7 +12,7 @@
     },
     "packageSha256": "5117f4a2a645aeb307bf3b829c575ad58135cc97e75291e594532ab5b5b21b23"
   },
-  "packageTestsRunId": "97f548ec6fcd4d16b658b2b96d82c084",
+  "packageTestsRunId": "fe984e6d4bdc427981d90911c1c161b1",
   "packageTestsPassed": 7,
   "production": false,
   "checks": [
@@ -36,6 +36,7 @@
     "locking hides screenshot settings and clears all unsaved OSS and notification passwords",
     "screenshot node is available in its own deployment panel and excluded from Store Connector downloads",
     "admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it",
+    "administrator publishes complete Skill ZIPs, safely handles invalid packages, reads immutable versions and rolls back without reinstalling; long hashes fit mobile layout",
     "merged installer card; read-only accounts grouped across iOS/Android; discovered apps default on, toggles persist and affect both routes, peers unaffected, no create/edit/bind/unbind controls",
     "unlocked admin can provision a screenshot node and download its macOS deployment ZIP",
     "locking aborts an in-flight screenshot settings refresh and prevents a late response from restoring the form",
@@ -44,30 +45,31 @@
     "mobile layout has no horizontal overflow",
     "no provider credential fields or files are uploaded and CSP passes"
   ],
-  "windowsExecutableSha256": "162ed7844fe67d02b7b05a275aaed56260e714335b5bf13b94e79ceaa943a0cf",
+  "windowsExecutableSha256": "17f4960939d43b871a1f3374c13a35dd876984a5873f64feb3221fb4747fa061",
   "credentialFilesUploaded": false,
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "e4f86750-8dc7-4e27-a06e-665e0606a33e",
-    "f12f3e5f-ffda-4911-84f6-0a35d9af7904"
+    "0eabe3eb-ce8b-476d-bcce-032efe2c8fd1",
+    "d0d35b5d-3c47-4f03-894d-336d6f4a1e14"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0,
   "sourceHashes": {
     "crates/store-api/src/setup/accounts.mjs": "c1be6253f376ca0f691e0dd626e67d83c0ec78caed2795f7a59e2d6dad3f27a2",
-    "crates/store-api/src/setup/app.mjs": "d594db54ac8cc3e0293113ebf48f1f1bd01603c7c24effc6a1636d97cc0b2343",
+    "crates/store-api/src/setup/app.mjs": "f80642c2ed1b9eea8b7010fb6aeff81e55fa4b1e2daf10f8287bdfd5f3f8ac50",
     "crates/store-api/src/setup/forwarding.mjs": "04a01dacf546f66786f9cc440fae66ee77fd031d752ac5d07ce7c4efa9a6cc7b",
-    "crates/store-api/src/setup/index.html": "2b0d811e9ba257f586cab041e30881bae2c7aeaf9b5a726aecc780b47a20d322",
+    "crates/store-api/src/setup/index.html": "fc87bc06933523006728e207307e16e64e2dc892c7e95a50fbb5f50569524089",
     "crates/store-api/src/setup/integrations.mjs": "1e12510de9980e761afeb0b67e19d27d221d2ca19f416804f7b1fc1e66edd172",
     "crates/store-api/src/setup/logs.mjs": "f2e0f8ff2929fbd6fae9dddef2ad60d009324fb1aade4253285bf2dd8f6d5670",
     "crates/store-api/src/setup/packager.mjs": "71d28c5d380b145646974b340ff30f27593148d554cac0078c93832525e19484",
     "crates/store-api/src/setup/screenshot-settings.mjs": "d16cac03d9e1225abab1f25f730d9b24cfb9b2c43fda632d70a9de194bc561bb",
-    "crates/store-api/src/setup/style.css": "200c92bb937540fca4fb38724a442161c5414b766f40a254b663777355a01410",
+    "crates/store-api/src/setup/skills.mjs": "dfc23dbc4a492e0ffccc75c204ef7238b144f1ab5dfb183f58d6501669dd64b4",
+    "crates/store-api/src/setup/style.css": "6a518268433af65f47a3a530d14ff4b84407e2ffa6701ea26ab5c473ae066c86",
     "crates/store-api/src/setup/vendor/JSZIP-LICENSE.markdown": "566c953c6090b1218ca6217dd7359d45dde46581968586dc607d59a78af6a9c4",
     "crates/store-api/src/setup/vendor/jszip.min.js": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
-    "scripts/verify_setup_ui.mjs": "fa19f94cfe0251bc850dd860660374a4d28b022b009e38ca43124bbb311b367b",
+    "scripts/verify_setup_ui.mjs": "7cb7c0c49e6b5c811e12304400961200c051d7c3b0afc7d017449c6c5cf1918e",
     "scripts/verify_setup_ui.py": "fe7a011495656968f6f3a97bbef72473c8d3c1a3f3e48601534ae5fac359e118"
   },
-  "uiSourceCommit": "d63d4d7167de3a1cee7e76e855106ee73bb2d084"
+  "uiSourceCommit": "a7f644fd268275cee059fdfe090d947c0bd997bc"
 }
