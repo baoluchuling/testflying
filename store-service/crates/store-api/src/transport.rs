@@ -13,7 +13,11 @@ use tokio::sync::{mpsc, oneshot, watch};
 use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, StoreError>;
-type Pending = Arc<Mutex<HashMap<String, oneshot::Sender<Result<StoreReply>>>>>;
+struct PendingRequest {
+    sender: oneshot::Sender<Result<StoreReply>>,
+    firebase: bool,
+}
+type Pending = Arc<Mutex<HashMap<String, PendingRequest>>>;
 
 struct Connection {
     generation: Uuid,
@@ -22,6 +26,7 @@ struct Connection {
     store_versions_supported: bool,
     async_store_images_supported: bool,
     catalog_supported: bool,
+    firebase_supported: bool,
     close: watch::Sender<bool>,
     screenshot_wake: watch::Sender<()>,
     pending: Pending,
@@ -35,12 +40,59 @@ pub struct Transport {
     timeout: Duration,
 }
 
+pub(crate) struct RegistrationContext<'a> {
+    pub firebase_supported: bool,
+    pub screenshot_registry: Option<&'a Registry>,
+    pub catalog_registry: Option<(&'a Registry, &'a str)>,
+}
+
 fn disconnected() -> StoreError {
     StoreError::new(
         503,
         "connector_disconnected",
         "Connector disconnected; trigger a new request when available",
     )
+}
+
+fn firebase_upgrade_required() -> StoreError {
+    StoreError::new(
+        409,
+        "firebase_upgrade_required",
+        "Upgrade this Store Connector for Firebase discovery",
+    )
+}
+fn invalid_firebase_reply() -> StoreError {
+    StoreError::new(
+        502,
+        "firebase_invalid_response",
+        "Invalid Firebase discovery response",
+    )
+}
+fn validate_firebase_reply(
+    request: &store_protocol::firebase::FirebaseRequest,
+    mut reply: StoreReply,
+) -> Result<StoreReply> {
+    use store_protocol::firebase;
+    if reply.request_id != request.request_id
+        || !(200..=599).contains(&reply.status)
+        || serde_json::to_vec(&reply)
+            .map_err(|_| invalid_firebase_reply())?
+            .len()
+            > store_protocol::crypto::MAX_JSON_BYTES
+    {
+        return Err(invalid_firebase_reply());
+    }
+    if reply.status == 200 {
+        firebase::validate_response(&request.firebase_action, &reply.body)?;
+    } else {
+        if reply.status < 400 {
+            return Err(invalid_firebase_reply());
+        }
+        let error = firebase::public_error(reply.body["error"]["code"].as_str().unwrap_or(""));
+        reply.status = error.status;
+        reply.body = error.body();
+    }
+    Ok(reply)
 }
 
 impl Transport {
@@ -171,6 +223,101 @@ impl Transport {
             .unwrap_or(false))
     }
 
+    pub async fn dispatch_firebase(
+        &self,
+        node: &Connector,
+        token: &str,
+        mut request: store_protocol::firebase::FirebaseRequest,
+    ) -> Result<StoreReply> {
+        request.validate()?;
+        // Reserve a non-UUID namespace so even late or duplicate Firebase replies
+        // cannot pass CatalogReport's UUID identity check after pending removal.
+        let caller_request_id = std::mem::replace(
+            &mut request.request_id,
+            format!("firebase:{}", Uuid::new_v4()),
+        );
+        if node.kind != crate::registry::ConnectorKind::Store {
+            return Err(StoreError::new(
+                422,
+                "invalid_connector_kind",
+                "Firebase discovery requires a Store Connector",
+            ));
+        }
+        if !node.enabled {
+            return Err(StoreError::new(
+                409,
+                "connector_disabled",
+                "Store Connector is disabled",
+            ));
+        }
+        let supported = self
+            .connections
+            .lock()
+            .unwrap()
+            .get(&node.connector_id)
+            .map(|c| c.firebase_supported);
+        let reply = if let Some(supported) = supported {
+            if !supported {
+                return Err(firebase_upgrade_required());
+            }
+            self.websocket_request(&node.connector_id, NodeRequest::Firebase(request.clone()))
+                .await?
+        } else {
+            let base = node.base_url.as_deref().ok_or_else(disconnected)?;
+            // Probe authenticated health before sending an unknown command to an old node.
+            let mut health = self
+                .client
+                .get(format!("{base}/health"))
+                .bearer_auth(token)
+                .send()
+                .await
+                .map_err(|_| disconnected())?;
+            if health.status().as_u16() == 404 {
+                return Err(firebase_upgrade_required());
+            }
+            if !health.status().is_success() {
+                return Err(disconnected());
+            }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = health.chunk().await.map_err(|_| disconnected())? {
+                if bytes.len() + chunk.len() > 16 * 1024 {
+                    return Err(invalid_firebase_reply());
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            let health: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(|_| invalid_firebase_reply())?;
+            if health["firebaseProtocol"].as_u64() != Some(1) {
+                return Err(firebase_upgrade_required());
+            }
+            let mut response = self
+                .client
+                .post(format!("{base}/v1/diagnostics/firebase"))
+                .bearer_auth(token)
+                .json(&request)
+                .send()
+                .await
+                .map_err(|_| disconnected())?;
+            if response.status().as_u16() == 404 {
+                return Err(firebase_upgrade_required());
+            }
+            if !response.status().is_success() {
+                return Err(invalid_firebase_reply());
+            }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await.map_err(|_| disconnected())? {
+                if bytes.len() + chunk.len() > store_protocol::crypto::MAX_JSON_BYTES {
+                    return Err(invalid_firebase_reply());
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            serde_json::from_slice::<StoreReply>(&bytes).map_err(|_| invalid_firebase_reply())?
+        };
+        let mut reply = validate_firebase_reply(&request, reply)?;
+        reply.request_id = caller_request_id;
+        Ok(reply)
+    }
+
     pub async fn dispatch_logs(
         &self,
         node: &Connector,
@@ -242,7 +389,7 @@ impl Transport {
             self.connection_event(id, "connector.disconnected", "center_closed");
             let _ = connection.close.send(true);
             for (_, sender) in connection.pending.lock().unwrap().drain() {
-                let _ = sender.send(Err(disconnected()));
+                let _ = sender.sender.send(Err(disconnected()));
             }
         }
     }
@@ -445,8 +592,19 @@ impl Transport {
         let pending = {
             let connections = self.connections.lock().unwrap();
             let connection = connections.get(node_id).ok_or_else(disconnected)?;
+            // A capability snapshot taken by the caller may belong to a replaced connection.
+            // Check the actual recipient under the same lock as enqueueing the command.
+            if matches!(&request, NodeRequest::Firebase(_)) && !connection.firebase_supported {
+                return Err(firebase_upgrade_required());
+            }
             let pending = connection.pending.clone();
-            pending.lock().unwrap().insert(id.clone(), sender);
+            pending.lock().unwrap().insert(
+                id.clone(),
+                PendingRequest {
+                    sender,
+                    firebase: matches!(&request, NodeRequest::Firebase(_)),
+                },
+            );
             if connection.sender.try_send(request).is_err() {
                 pending.lock().unwrap().remove(&id);
                 return Err(disconnected());
@@ -465,15 +623,19 @@ impl Transport {
         }
     }
 
-    pub async fn serve(
+    pub(crate) async fn serve(
         self: Arc<Self>,
         id: String,
         mut socket: WebSocket,
         key: String,
-        screenshot_registry: Option<&Registry>,
-        catalog_registry: Option<(&Registry, &str)>,
+        context: RegistrationContext<'_>,
         register: impl FnOnce(Option<String>, Option<String>) -> Result<()> + Send,
     ) {
+        let RegistrationContext {
+            firebase_supported,
+            screenshot_registry,
+            catalog_registry,
+        } = context;
         let authenticated = tokio::time::timeout(Duration::from_secs(10), async {
             let mut handshake = crypto::handshake(&key, &id, false)?;
             let Some(Ok(Message::Binary(first))) = socket.next().await else {
@@ -564,6 +726,7 @@ impl Transport {
                     store_versions_supported,
                     async_store_images_supported,
                     catalog_supported,
+                    firebase_supported,
                 },
             );
         }
@@ -628,6 +791,21 @@ impl Transport {
                             let Ok(reply) = serde_json::from_slice::<StoreReply>(&plain) else {
                                 self.connection_event(&id,"connector.protocol_failed","invalid_reply_json");break;
                             };
+                            if !(200..=599).contains(&reply.status) {
+                                self.connection_event(&id,"connector.protocol_failed","invalid_reply_status");break;
+                            }
+                            // Firebase replies must reach their shape validator before catalog
+                            // ingestion. Preserve legacy catalog/business request-ID isolation.
+                            let recipient = {
+                                let mut pending = pending.lock().unwrap();
+                                if pending.get(&reply.request_id).is_some_and(|entry| entry.firebase) {
+                                    pending.remove(&reply.request_id)
+                                } else { None }
+                            };
+                            if let Some(sender) = recipient {
+                                let _ = sender.sender.send(Ok(reply));
+                                continue;
+                            }
                             // Catalogs are unsolicited reports and never consume business pending entries.
                             if let Some(body)=reply.body.get("accountAppCatalog") {
                                 let valid=serde_json::from_value::<store_protocol::catalog::CatalogReport>(body.clone()).ok().filter(|report|reply.status==200 && report.report_id==reply.request_id && reply.body.as_object().is_some_and(|v|v.len()==1));
@@ -635,10 +813,9 @@ impl Transport {
                                 if !accepted {self.connection_event(&id,"connector.catalog_rejected","invalid_or_unauthorized_catalog");}
                                 continue;
                             }
-                            if !(200..=599).contains(&reply.status) {
-                                self.connection_event(&id,"connector.protocol_failed","invalid_reply_status");break;
+                            if let Some(sender) = pending.lock().unwrap().remove(&reply.request_id) {
+                                let _ = sender.sender.send(Ok(reply));
                             }
-                            if let Some(sender) = pending.lock().unwrap().remove(&reply.request_id) {let _ = sender.send(Ok(reply));}
                         }
                         Message::Text(_)=>break,
                         Message::Ping(bytes) => {if !bounded_send(&mut write,Message::Pong(bytes)).await {break;}},
@@ -658,7 +835,7 @@ impl Transport {
         }
         drop(connections);
         for (_, sender) in pending.lock().unwrap().drain() {
-            let _ = sender.send(Err(disconnected()));
+            let _ = sender.sender.send(Err(disconnected()));
         }
     }
 }
@@ -702,6 +879,165 @@ where
         tokio::time::timeout(Duration::from_secs(5), write.send(message)).await,
         Ok(Ok(()))
     )
+}
+
+#[cfg(test)]
+mod firebase_tests {
+    use super::*;
+    use serde_json::json;
+    use store_protocol::firebase::{FirebaseAction, FirebaseRequest};
+    fn request() -> FirebaseRequest {
+        FirebaseRequest {
+            request_id: "fixture".into(),
+            firebase_action: FirebaseAction::Projects,
+        }
+    }
+    #[test]
+    fn replies_reject_secrets_mismatch_status_size_and_mask_arbitrary_errors() {
+        let req = request();
+        let good = StoreReply::from_result(req.request_id.clone(), Ok(json!({"projects":[]})));
+        assert!(validate_firebase_reply(&req, good.clone()).is_ok());
+        let mut bad = good.clone();
+        bad.request_id = "wrong".into();
+        assert!(validate_firebase_reply(&req, bad).is_err());
+        let mut bad = good.clone();
+        bad.status = 600;
+        assert!(validate_firebase_reply(&req, bad).is_err());
+        let mut bad = good.clone();
+        bad.status = 202;
+        assert!(validate_firebase_reply(&req, bad).is_err());
+        let mut bad = good.clone();
+        bad.body["privateKey"] = json!("secret");
+        assert!(validate_firebase_reply(&req, bad).is_err());
+        let mut bad = good.clone();
+        bad.body = json!({"projects":[],"padding":"x".repeat(crypto::MAX_JSON_BYTES)});
+        assert!(validate_firebase_reply(&req, bad).is_err());
+        for code in ["firebase_permission_denied", "private-upstream-error"] {
+            let bad = StoreReply {
+                request_id: req.request_id.clone(),
+                status: 403,
+                body: json!({"error":{"code":code,"message":"private-secret"},"access_token":"private-secret"}),
+            };
+            let reply = validate_firebase_reply(&req, bad).unwrap();
+            assert!(!reply.body.to_string().contains("private-secret"));
+            assert_eq!(
+                reply.status,
+                if code == "firebase_permission_denied" {
+                    403
+                } else {
+                    502
+                }
+            );
+        }
+    }
+    #[tokio::test]
+    async fn wrong_kind_disabled_and_offline_fail_before_dispatch() {
+        let registry = Registry::open(":memory:", &"44".repeat(32)).unwrap();
+        let mut node = registry
+            .create(crate::registry::ConnectorInput {
+                name: "fixture".into(),
+            })
+            .unwrap();
+        let transport = Transport::new(Duration::from_secs(1)).unwrap();
+        assert_eq!(
+            transport
+                .dispatch_firebase(&node, "fixture", request())
+                .await
+                .unwrap_err()
+                .status,
+            503
+        );
+        node.enabled = false;
+        assert_eq!(
+            transport
+                .dispatch_firebase(&node, "fixture", request())
+                .await
+                .unwrap_err()
+                .status,
+            409
+        );
+        node.kind = crate::registry::ConnectorKind::Screenshot;
+        assert_eq!(
+            transport
+                .dispatch_firebase(&node, "fixture", request())
+                .await
+                .unwrap_err()
+                .status,
+            422
+        );
+    }
+    #[tokio::test]
+    async fn replacement_connection_rechecks_capability_atomically_and_remains_usable() {
+        let transport = Arc::new(Transport::new(Duration::from_secs(2)).unwrap());
+        let insert = |supported| {
+            let (sender, receiver) = mpsc::channel(1);
+            let (close, _closed) = watch::channel(false);
+            let (screenshot_wake, _wake) = watch::channel(());
+            let pending: Pending = Arc::default();
+            transport.connections.lock().unwrap().insert(
+                "fixture".into(),
+                Connection {
+                    generation: Uuid::new_v4(),
+                    sender,
+                    logs_supported: true,
+                    store_versions_supported: true,
+                    async_store_images_supported: true,
+                    catalog_supported: true,
+                    firebase_supported: supported,
+                    close,
+                    screenshot_wake,
+                    pending: pending.clone(),
+                },
+            );
+            (receiver, pending)
+        };
+        let (_capable_requests, _) = insert(true);
+        assert!(transport.connections.lock().unwrap()["fixture"].firebase_supported);
+        // This replacement occurs after a caller took the positive capability snapshot.
+        let (mut old_requests, pending) = insert(false);
+        assert_eq!(
+            transport
+                .websocket_request("fixture", NodeRequest::Firebase(request()))
+                .await
+                .unwrap_err()
+                .code,
+            "firebase_upgrade_required"
+        );
+        assert!(old_requests.try_recv().is_err());
+        assert!(pending.lock().unwrap().is_empty());
+        assert!(transport.connected("fixture"));
+        let sending = transport.clone();
+        let business = tokio::spawn(async move {
+            sending
+                .websocket_request(
+                    "fixture",
+                    NodeRequest::Store(StoreRequest {
+                        request_id: "business".into(),
+                        platform: store_protocol::Platform::Ios,
+                        bundle_identifier: "com.example.app".into(),
+                        operation: store_protocol::Operation::SupportedLocales,
+                        payload: json!({}),
+                    }),
+                )
+                .await
+        });
+        let command = old_requests.recv().await.unwrap();
+        assert!(matches!(command, NodeRequest::Store(_)));
+        let sender = pending
+            .lock()
+            .unwrap()
+            .remove(command.request_id())
+            .unwrap();
+        sender
+            .sender
+            .send(Ok(StoreReply::from_result(
+                command.request_id().to_owned(),
+                Ok(json!({"locales":[]})),
+            )))
+            .unwrap();
+        assert_eq!(business.await.unwrap().unwrap().status, 200);
+        assert!(transport.connected("fixture"));
+    }
 }
 
 #[cfg(test)]

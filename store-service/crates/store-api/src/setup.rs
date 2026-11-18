@@ -146,6 +146,14 @@ pub(super) fn routes(state: Arc<super::ApiState>) -> Router<Arc<super::ApiState>
         )
         .route("/connector-setup/api/logs", get(super::logs::read))
         .route(
+            "/connector-setup/api/connectors/{id}/firebase/projects",
+            get(super::firebase::projects),
+        )
+        .route(
+            "/connector-setup/api/connectors/{id}/firebase/projects/{projectId}/android-apps",
+            get(super::firebase::android_apps),
+        )
+        .route(
             "/connector-setup/api/connectors/{id}/logs/latest",
             get(super::node_logs::latest),
         )

@@ -172,9 +172,44 @@ POST 必填 `name`、`platform`、`storeConnectorId`，可选 `screenshotConnect
 
 刷新返回 `202 {"requestId":"UUID","status":"accepted"}`，异步由节点上报，不代表目录已更新。离线返回 `503 catalog_offline`，旧节点返回 `409 catalog_upgrade_required`，停用账号返回 `409 account_disabled`。节点商店身份指纹变化会进入 `identity_changed`，保留旧目录但阻止错误路由；管理员显式 PATCH `{"acceptIdentityChange":true}` 后旧成员资格失效，再刷新完整目录。原始指纹与供应商报错不会返回后台。
 
+### Firebase 只读探测（节点 0.2.1 起）
+
+Firebase 查询由商店节点使用本机已有 Google 服务账号执行，中心只做认证与转发。它提供候选包名，不证明应用属于该 Google Play 账号；本轮不写入应用目录或绑定、不切换 Reporting，也不创建 Firebase 项目／应用或 Publisher edit。现有旧节点继续连接和执行已支持的商店功能，仅新增探测能力需要更新到 `0.2.1`。
+
+| 方法 | 管理员路径 | 成功返回 |
+|---|---|---|
+| GET | `/v1/connectors/{connectorId}/firebase/projects` | `200 {"projects":[{"projectId":"amberia-prod","projectNumber":"1234567890","displayName":"Amberia"}]}` |
+| GET | `/v1/connectors/{connectorId}/firebase/projects/{projectId}/android-apps` | `200 {"projectId":"amberia-prod","apps":[{"projectId":"amberia-prod","appId":"1:1234567890:android:abcdef0123456789","packageName":"com.amberia.android","displayName":"Amberia"}]}` |
+
+使用管理员 Token；业务和接入 Token 无权调用。HTTPS 后台 session 镜像为 `/connector-setup/api/connectors/{connectorId}/firebase/projects` 和 `/connector-setup/api/connectors/{connectorId}/firebase/projects/{projectId}/android-apps`，仍需 `X-Testflying-Setup: 1`。这些是管理诊断入口，不增加公共商店核心接口数量。
+
+`projectId` 使用项目列表中的命名 ID，6–30 位小写字母／数字／横线，字母开头、字母或数字结尾；不要传 `projectNumber`、完整资源名或 URL。`displayName` 可能为 null。节点合并分页后返回完整列表；空列表正常，失败不返回部分列表。项目列表只覆盖服务账号能访问的 Firebase 项目；即使列项目权限不足，也可对已知 `projectId` 直接查询 Android 应用。
+
+在服务账号所属的 Google Cloud 项目启用 Firebase Management API，并授予节点服务账号所需目标 Firebase 项目的读取权限（包括 `firebase.clients.list` 等所需权限）。节点为 Firebase 单独申请 `https://www.googleapis.com/auth/firebase.readonly`，与 Publisher／Reporting 的 Token 缓存隔离。私钥和服务账号 JSON 留在节点，接口不返回 Token、API Key 或 Firebase 配置。
+
+先更新需要测试的商店节点，再从调用方执行以下只读查询：
+
+```sh
+curl --cacert ./testflying-prod-ca.crt \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "$CENTER_API/v1/connectors/$CONNECTOR_ID/firebase/projects"
+
+curl --cacert ./testflying-prod-ca.crt \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "$CENTER_API/v1/connectors/$CONNECTOR_ID/firebase/projects/amberia-prod/android-apps"
+```
+
+`CENTER_API` 包含部署前缀，例如 `https://中心地址/store-api`。不要把凭据放入 URL 或发送到聊天中。旧节点返回 `409 firebase_upgrade_required`，中心不会向旧连接发送未知命令，原有业务仍可用；停用节点为 409、错误节点类型 422、离线且无可用回退 503。同一节点同时只允许一个 Firebase 探测，忙时 `429 firebase_busy`。
+
+Firebase 错误只返回固定安全码：`firebase_not_configured`（503，Google 凭据未配置或节点仅支持 iOS）、`firebase_unsupported`（501，非 live 模式）、`firebase_auth_failed`（502）、`firebase_permission_denied`（403）、`firebase_api_disabled`（403）、`firebase_not_found`（404）、`firebase_rate_limited`（429）、`firebase_upstream_error`／`firebase_invalid_response`（502）。原始上游错误正文不会透传。每次最多 100 页／10000 项，单页最多 2 MiB、总读取 16 MiB、整体 60 秒；超限失败，不把不完整结果当作目录。
+
+节点内部 HTTP 使用 `POST /v1/diagnostics/firebase` 与该节点 Token，请求分别为 `{"requestId":"唯一请求标识","firebaseAction":{"type":"projects"}}`、`{"requestId":"唯一请求标识","firebaseAction":{"type":"android_apps","projectId":"amberia-prod"}}`，响应沿用 `StoreReply`。节点在 WSS 请求头声明 `X-Firebase-Protocol: 1`，不增加旧中心无法解析的注册 JSON 字段；中心验证能力后才下发加密请求。此内部接口不直接提供给外部业务系统。
+
+上游接口：[Firebase projects.list](https://firebase.google.com/docs/reference/firebase-management/rest/v1beta1/projects/list)、[projects.androidApps.list](https://firebase.google.com/docs/reference/firebase-management/rest/v1beta1/projects.androidApps/list)。
+
 ### 节点升级与目录发现
 
-商店与截图节点使用明确的程序版本号，本轮为 `0.2.0`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 需升级、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新，需安装一次新版。节点自行更新后重连即更新状态，安装包保持原节点身份和凭据。
+商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.1`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
 
 后续节点生产代码、依赖或安装脚本变化，必须先提升 `crates/store-connector/Cargo.toml` 的独立版本和 `store-protocol::release::CONNECTOR_VERSION`，并同步 Cargo.lock。固定发布守卫检查版本一致、禁止回退，并比较各平台上次发布的节点输入摘要；输入改变却未提升版本时构建直接失败。仅中心页面／接口文档改动可保留节点版本。商店三平台及 arm64 截图包必须使用同一版本与输入摘要才可部署；版本信息写入正式构建和发布报告。
 

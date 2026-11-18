@@ -4,6 +4,7 @@ use std::fmt;
 
 pub mod catalog;
 pub mod crypto;
+pub mod firebase;
 pub mod logs;
 pub mod release;
 pub mod screenshot;

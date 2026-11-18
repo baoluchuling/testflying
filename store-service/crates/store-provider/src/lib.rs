@@ -5,6 +5,7 @@ mod apple_images;
 pub mod assets;
 pub mod catalog;
 pub mod diagnostics;
+mod firebase;
 mod google;
 mod image_query;
 mod images;
@@ -54,6 +55,7 @@ pub struct ProviderConfig {
     pub apple_base_url: String,
     pub google_base_url: String,
     pub google_reporting_base_url: String,
+    pub google_firebase_base_url: String,
     pub google_upload_base_url: String,
     pub google_token_url: String,
     pub store_proxy_url: Option<String>,
@@ -69,6 +71,7 @@ impl Default for ProviderConfig {
             apple_base_url: "https://api.appstoreconnect.apple.com".into(),
             google_base_url: "https://androidpublisher.googleapis.com".into(),
             google_reporting_base_url: "https://playdeveloperreporting.googleapis.com".into(),
+            google_firebase_base_url: "https://firebase.googleapis.com".into(),
             google_upload_base_url: "https://androidpublisher.googleapis.com".into(),
             google_token_url: "https://oauth2.googleapis.com/token".into(),
             store_proxy_url: None,
@@ -101,6 +104,7 @@ struct Inner {
     apple_token: Mutex<Option<(String, u64)>>,
     google_token: Mutex<Option<(String, u64)>>,
     google_reporting_token: Mutex<Option<(String, u64)>>,
+    google_firebase_token: Mutex<Option<(String, u64)>>,
     limits: Mutex<Limits>,
 }
 struct GoogleAccount {
@@ -137,6 +141,7 @@ impl Gateway {
             &config.apple_base_url,
             &config.google_base_url,
             &config.google_reporting_base_url,
+            &config.google_firebase_base_url,
             &config.google_upload_base_url,
             &config.google_token_url,
         ] {
@@ -150,6 +155,14 @@ impl Gateway {
                     "Upstream endpoints must be HTTP(S) URLs without credentials",
                 ));
             }
+        }
+        let firebase_url = Url::parse(&config.google_firebase_base_url)
+            .map_err(|_| invalid("Invalid Firebase endpoint"))?;
+        if firebase_url.query().is_some()
+            || firebase_url.fragment().is_some()
+            || !matches!(firebase_url.path(), "" | "/")
+        {
+            return Err(invalid("Firebase endpoint must be an HTTP(S) origin"));
         }
         let mut builder = Client::builder()
             .connect_timeout(Duration::from_secs(10))
@@ -204,6 +217,7 @@ impl Gateway {
                 apple_token: Mutex::new(None),
                 google_token: Mutex::new(None),
                 google_reporting_token: Mutex::new(None),
+                google_firebase_token: Mutex::new(None),
                 limits: Mutex::new(Limits {
                     events: HashMap::new(),
                     apple_max: 2880,

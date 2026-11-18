@@ -270,6 +270,36 @@ components:
       properties:
         name: {type: string, minLength: 1, maxLength: 160}
         kind: {type: string, enum: [store, screenshot], default: store}
+    FirebaseProject:
+      type: object
+      additionalProperties: false
+      required: [projectId, projectNumber, displayName]
+      properties:
+        projectId: {type: string, pattern: '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'}
+        projectNumber: {type: string, pattern: '^[0-9]+$', maxLength: 30}
+        displayName: {type: [string, 'null'], maxLength: 512}
+    FirebaseAndroidApp:
+      type: object
+      additionalProperties: false
+      required: [projectId, appId, packageName, displayName]
+      properties:
+        projectId: {type: string, pattern: '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'}
+        appId: {type: string, maxLength: 256}
+        packageName: {type: string, maxLength: 180}
+        displayName: {type: [string, 'null'], maxLength: 512}
+    FirebaseProjects:
+      type: object
+      additionalProperties: false
+      required: [projects]
+      properties:
+        projects: {type: array, maxItems: 10000, items: {$ref: '#/components/schemas/FirebaseProject'}}
+    FirebaseAndroidApps:
+      type: object
+      additionalProperties: false
+      required: [projectId, apps]
+      properties:
+        projectId: {type: string}
+        apps: {type: array, maxItems: 10000, items: {$ref: '#/components/schemas/FirebaseAndroidApp'}}
     Connector:
       type: object
       required: [connectorId, name, enabled, appCount, connected]
@@ -481,6 +511,45 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountBindingInput'}}}}
       responses:
         '200': {description: Selected account, content: {application/json: {schema: {$ref: '#/components/schemas/PublicAccountResponse'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/connectors/{id}/firebase/projects:
+    parameters: [{$ref: '#/components/parameters/id'}]
+    get:
+      summary: Read Firebase projects using the selected Store Connector's local Google credentials
+      description: Administrator diagnostic, Connector 0.2.1 capability required. Does not change catalogs, app ownership, forwarding or Reporting. No store edits or Firebase writes. Old nodes return 409 firebase_upgrade_required without receiving unknown commands. Bounded complete pagination; safe errors only.
+      security: [{adminToken: []}]
+      responses:
+        '200': {description: Accessible active Firebase projects, content: {application/json: {schema: {$ref: '#/components/schemas/FirebaseProjects'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/connectors/{id}/firebase/projects/{projectId}/android-apps:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {name: projectId, in: path, required: true, schema: {type: string, pattern: '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'}, description: Firebase projectId, not projectNumber or a resource URL.}
+    get:
+      summary: Read a Firebase project's Android package candidates on a Store Connector
+      description: Firebase registration is not proof of Google Play account membership. Uses separate firebase.readonly OAuth cache and local credentials; result is never ingested into the account directory.
+      security: [{adminToken: []}]
+      responses:
+        '200': {description: Registered active Android apps, content: {application/json: {schema: {$ref: '#/components/schemas/FirebaseAndroidApps'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/connectors/{id}/firebase/projects:
+    parameters: [{$ref: '#/components/parameters/id'}, {$ref: '#/components/parameters/setupHeader'}]
+    get:
+      summary: HTTPS administrator session Firebase project probe
+      security: [{setupSession: []}, {adminToken: []}]
+      responses:
+        '200': {description: Accessible Firebase projects, content: {application/json: {schema: {$ref: '#/components/schemas/FirebaseProjects'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/connectors/{id}/firebase/projects/{projectId}/android-apps:
+    parameters:
+      - {$ref: '#/components/parameters/id'}
+      - {$ref: '#/components/parameters/setupHeader'}
+      - {name: projectId, in: path, required: true, schema: {type: string, pattern: '^[a-z][a-z0-9-]{4,28}[a-z0-9]$'}}
+    get:
+      summary: HTTPS administrator session Firebase Android app probe
+      security: [{setupSession: []}, {adminToken: []}]
+      responses:
+        '200': {description: Registered Firebase Android apps, content: {application/json: {schema: {$ref: '#/components/schemas/FirebaseAndroidApps'}}}}
         default: {$ref: '#/components/responses/Error'}
   /v1/accounts:
     get:

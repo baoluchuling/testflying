@@ -1,5 +1,6 @@
 mod accounts;
 mod api_docs;
+mod firebase;
 pub mod forwarding;
 mod integrations;
 pub mod logs;
@@ -186,6 +187,14 @@ pub fn router_with_screenshots(
         .route("/v1/forwarding/{platform}", put(forwarding::update))
         .route("/v1/logs", get(logs::read))
         .route("/v1/connectors/{id}/logs/latest", get(node_logs::latest))
+        .route(
+            "/v1/connectors/{id}/firebase/projects",
+            get(firebase::projects),
+        )
+        .route(
+            "/v1/connectors/{id}/firebase/projects/{projectId}/android-apps",
+            get(firebase::android_apps),
+        )
         .route(
             "/v1/connectors",
             get(list_connectors).post(create_connector),
@@ -439,6 +448,9 @@ async fn connect_ws(
     let token = bearer(&headers).to_owned();
     let node = state.registry.authenticate(&id, &token)?;
     let screenshot = node.kind == ConnectorKind::Screenshot;
+    let firebase_supported = headers
+        .get("x-firebase-protocol")
+        .is_some_and(|v| v.as_bytes() == b"1");
     if screenshot {
         integrations::require_https_headers(&headers)?;
     }
@@ -478,8 +490,11 @@ async fn connect_ws(
                         id,
                         socket,
                         key,
-                        screenshot.then_some(&state.registry),
-                        Some((&state.registry, catalog_token.as_str())),
+                        transport::RegistrationContext {
+                            firebase_supported,
+                            screenshot_registry: screenshot.then_some(&state.registry),
+                            catalog_registry: Some((&state.registry, catalog_token.as_str())),
+                        },
                         move |endpoint, connector_version| {
                             if screenshot && endpoint.is_some() {
                                 return Err(store_protocol::crypto::error());

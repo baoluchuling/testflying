@@ -1,4 +1,5 @@
 mod catalog;
+mod firebase;
 mod image_jobs;
 use axum::{
     extract::{DefaultBodyLimit, State},
@@ -76,6 +77,7 @@ pub struct Executor {
     config: ConnectorConfig,
     gateway: Gateway,
     capacity: Arc<Semaphore>,
+    firebase_capacity: tokio::sync::Mutex<()>,
     image_jobs: image_jobs::ImageJobs,
     catalog: tokio::sync::Mutex<catalog::CatalogCache>,
     pub assets: Arc<AssetStore>,
@@ -141,6 +143,7 @@ impl Executor {
                 provider.google_service_account_path = None;
                 provider.google_base_url = defaults.google_base_url;
                 provider.google_reporting_base_url = defaults.google_reporting_base_url;
+                provider.google_firebase_base_url = defaults.google_firebase_base_url;
                 provider.google_upload_base_url = defaults.google_upload_base_url;
                 provider.google_token_url = defaults.google_token_url;
             }
@@ -159,6 +162,7 @@ impl Executor {
             config,
             gateway,
             capacity: Arc::new(Semaphore::new(1)),
+            firebase_capacity: tokio::sync::Mutex::new(()),
             image_jobs: image_jobs::ImageJobs::default(),
             assets,
         }))
@@ -296,10 +300,11 @@ pub fn http_router(executor: Arc<Executor>) -> Router {
     Router::new()
         .route(
             "/health",
-            get(|| async { Json(json!({"status":"ok","asyncStoreImagesSupported":true,"connectorVersion":env!("CARGO_PKG_VERSION")})) }),
+            get(|| async { Json(json!({"status":"ok","asyncStoreImagesSupported":true,"firebaseProtocol":1,"connectorVersion":env!("CARGO_PKG_VERSION")})) }),
         )
         .route("/v1/execute", post(http_execute))
         .route("/v1/diagnostics/logs", post(http_logs))
+        .route("/v1/diagnostics/firebase", post(firebase::http_firebase))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(executor)
 }
@@ -533,6 +538,10 @@ async fn connection(
         header::SEC_WEBSOCKET_PROTOCOL,
         crypto::SUBPROTOCOL.parse().expect("protocol header"),
     );
+    request.headers_mut().insert(
+        "x-firebase-protocol",
+        "1".parse().expect("Firebase protocol header"),
+    );
     let socket_config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig::default()
         .max_message_size(Some(crypto::MAX_RECORD_BYTES))
         .max_frame_size(Some(crypto::MAX_RECORD_BYTES));
@@ -624,6 +633,11 @@ async fn connection(
                                 };
                                 let plain=serde_json::to_vec(&result).map_err(|_|crypto::error())?;
                                 for record in channel.encrypt(&plain)? { if !bounded_send(&mut write,Message::Binary(record.into())).await {return Err(crypto::error());} }
+                                continue;
+                            }
+                            NodeRequest::Firebase(request)=>{
+                                let executor=executor.clone();let sender=results.clone();
+                                tokio::spawn(async move {let _=sender.send(executor.execute_firebase(request).await).await;});
                                 continue;
                             }
                             NodeRequest::Store(request)=>request,

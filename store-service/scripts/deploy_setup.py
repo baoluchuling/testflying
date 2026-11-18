@@ -386,6 +386,15 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                   and ((node.get("connectorVersion") is None) == (node.get("versionStatus") == "unknown"))
                   for node in node_versions),
                   "authenticated node version fields distinguish unknown old programs from published version")
+            # Never query a real Firebase account during rollout. A missing node proves
+            # route/auth wiring while failing before any provider command is dispatched.
+            for suffix in ("projects", "projects/firebase-probe/android-apps"):
+                probe = "/v1/connectors/00000000-0000-0000-0000-000000000000/firebase/" + suffix
+                check(request(probe, snapshot["token"])[0] == 401,
+                      "business token cannot call Firebase administrator diagnostic " + suffix)
+                status, body = request(probe, snapshot["admin"])
+                check(status == 404 and json.loads(body).get("error", {}).get("code") == "connector_not_found",
+                      "Firebase administrator route rejects an absent node without provider access " + suffix)
             docs = "/v1/store-management/api-docs"
             for asset in ("start.cmd", "install.ps1", "install.sh"):
                 status, content = request("/connector-setup/" + asset)
@@ -537,6 +546,9 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                       "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],
                       "apiSha256": expected_api, "connectorBinarySha256": expected_connectors,
                       "connectorVersion": release_version, "connectorSourceFingerprint": release_fingerprint,
+                      "firebaseDiagnostics": {"minimumConnectorVersion": "0.2.1", "publishedConnectorVersion": release_version,
+                                              "readOnly": True, "actualFirebaseAccountsQueried": False,
+                                              "automaticMembershipChanges": False, "publicCoreEndpointCountUnchanged": True},
                       "screenshotConnectorSha256": worker["sha256"] if worker else snapshot["screenshotConnectorSha256"],
                       "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,

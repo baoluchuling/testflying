@@ -68,6 +68,7 @@ pub enum NodeRequest {
     Store(StoreRequest),
     Logs(LogRequest),
     Catalog(crate::catalog::CatalogRequest),
+    Firebase(crate::firebase::FirebaseRequest),
 }
 impl NodeRequest {
     pub fn request_id(&self) -> &str {
@@ -75,6 +76,7 @@ impl NodeRequest {
             Self::Store(r) => &r.request_id,
             Self::Logs(r) => &r.request_id,
             Self::Catalog(r) => &r.request_id,
+            Self::Firebase(r) => &r.request_id,
         }
     }
 }
