@@ -176,6 +176,16 @@ fn catalog() -> Value {
         "endpoints":endpoints,
         "endpointCounts":{"store":11,"node":2,"screenshot":6,"account":4,"uploads":2},
         "screenshots":screenshot_contract,
+        "androidDirectoryManagement":{
+            "platforms":["android"],"authentication":["adminToken","setupSession"],
+            "add":{"method":"POST","path":"/v1/accounts/{accountId}/apps","required":["bundleIdentifier"],"optional":["name"],"status":201},
+            "remove":{"method":"DELETE","path":"/v1/accounts/{accountId}/apps/{bundleIdentifier}","status":204},
+            "setupPrefix":"/connector-setup/api/accounts","iosSupported":false,
+            "sources":["catalog","manual","retained"],"requiresConnectorUpgrade":false,
+            "preservesExistingData":true,"refreshPreservesManualAndRetained":true,
+            "removedApplicationsRestoredByReports":false,"readdClearsRemoval":true,
+            "legacyManualOwnershipFlag":"accounts.manualOwnership=false describes legacy binding PUT overrides; Android directory additions create membership and do not use that PUT"
+        },
         "accounts":{"routing":"ownership before availability; all exact directory candidates, including disabled accounts and merchant nodes, participate in ambiguity","directoryRequiresStoreConnectorUpgrade":true,"queryCallsProviders":false,"lastCatalogAtUnit":"unix_seconds","screenshotEnabledMeaning":"execution resolver route available, not node online; false for disabled, ambiguous or unavailable rows","screenshotResolutionStatusSuccess":"resolved","adminPath":"/v1/accounts","setupPath":"/connector-setup/api/accounts","screenshotBinding":{"method":"PUT","adminPath":"/v1/accounts/store-connectors/{storeConnectorId}/screenshot-connector","setupPath":"/connector-setup/api/accounts/store-connectors/{storeConnectorId}/screenshot-connector","requiredNullableField":"connectorId","scope":"all platform directories of one Store Connector identity","futurePlatformsInherit":true,"adminListField":"screenshotBindings","publicNodeIds":false},"forwardingDefault":true,"manualOwnership":false,"forwardingAdminPath":"/v1/accounts/{accountId}/apps/{platform}/{identifier}/forwarding","forwardingSetupPath":"/connector-setup/api/accounts/{accountId}/apps/{platform}/{identifier}/forwarding","forwardingDisabledError":{"status":503,"code":"app_forwarding_disabled"},"credentials":"store credentials remain on nodes; public account views omit connector IDs and fingerprints"},
         "adminDiagnostics":{"authentication":["adminToken"],"method":"GET","path":"/v1/connectors/{id}/logs/latest",
             "summary":"读取指定商店节点最新 JSONL 日志文件；中心流式转发，不保存文件副本",

@@ -91,6 +91,19 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert_eq!(catalog["accounts"]["lastCatalogAtUnit"], "unix_seconds");
     assert_eq!(catalog["accounts"]["queryCallsProviders"], false);
     assert_eq!(
+        catalog["androidDirectoryManagement"]["platforms"],
+        json!(["android"])
+    );
+    assert_eq!(catalog["androidDirectoryManagement"]["iosSupported"], false);
+    assert_eq!(
+        catalog["androidDirectoryManagement"]["remove"]["method"],
+        "DELETE"
+    );
+    assert_eq!(
+        catalog["androidDirectoryManagement"]["refreshPreservesManualAndRetained"],
+        true
+    );
+    assert_eq!(
         endpoints
             .iter()
             .filter(|endpoint| endpoint["group"] == "store")
