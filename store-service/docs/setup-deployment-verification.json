@@ -352,5 +352,49 @@
     "liveCaptureTested": false,
     "providerCalls": 0,
     "apiDocsVerified": true
+  },
+  "screenshotSkillLiveTest": {
+    "runId": "d8ed4c8b67d44504942f71a1c14fb642",
+    "jobId": "6369fa9e-84a3-45e9-ad4d-44d9cbaf2652",
+    "integrationId": "721e2013-2f0e-4359-b057-1a9f673f271f",
+    "nodeId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+    "platform": "ios",
+    "bundleIdentifier": "app.snapflix.ios",
+    "prompt": "\u622a\u53d6 Kissreels iOS \u82f1\u8bed\u9996\u9875\u622a\u56fe\uff0c\u7528\u6765\u505a\u5546\u5e97\u9875\u3002",
+    "target": [
+      {
+        "locale": "en-US",
+        "page": "home",
+        "device": "phone"
+      }
+    ],
+    "acceptedAt": 1794974004,
+    "expectedSkillVersion": "c15b4f5f5d27c4740c485e4f60507c054290a9265134a12599e7f53c9e1aa63b",
+    "status": "succeeded",
+    "liveCaptureTested": true,
+    "error": null,
+    "observedSkill": {
+      "bytes": 266938,
+      "files": 17,
+      "name": "mobile-localized-screenshots",
+      "publishedAt": 1794972822,
+      "schemaVersion": 1,
+      "sha256": "c15b4f5f5d27c4740c485e4f60507c054290a9265134a12599e7f53c9e1aa63b",
+      "version": "c15b4f5f5d27c4740c485e4f60507c054290a9265134a12599e7f53c9e1aa63b"
+    },
+    "notificationStatus": "retrying",
+    "notificationError": "callback_transport_failed",
+    "imageCount": 1,
+    "observedAt": 1794974288,
+    "monitorRunId": "ef9b3e681328401880db7ae2591ea617",
+    "visualVerified": true,
+    "width": 1320,
+    "height": 2868,
+    "imageBytes": 2949650,
+    "imageSha256": "f3878baf0d1dfead491a676dd9c15d9d100a44b3394cb84f4f51594a48142d94",
+    "workerSkillDownloadHttpStatus": 200,
+    "callbackNetwork": {
+      "connected": true
+    }
   }
 }

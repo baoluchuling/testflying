@@ -1,5 +1,5 @@
 {
-  "runId": "3d9f3c32242147f19c12f2072478702f",
+  "runId": "8fc76a5739374c1aa542c5311cfbb687",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -12,7 +12,7 @@
     },
     "packageSha256": "5117f4a2a645aeb307bf3b829c575ad58135cc97e75291e594532ab5b5b21b23"
   },
-  "packageTestsRunId": "fe984e6d4bdc427981d90911c1c161b1",
+  "packageTestsRunId": "0b982e2be5d348de9231e0ce3b4b8951",
   "packageTestsPassed": 7,
   "production": false,
   "checks": [
@@ -37,7 +37,8 @@
     "screenshot node is available in its own deployment panel and excluded from Store Connector downloads",
     "admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it",
     "administrator publishes complete Skill ZIPs, safely handles invalid packages, reads immutable versions and rolls back without reinstalling; long hashes fit mobile layout",
-    "merged installer card; read-only accounts grouped across iOS/Android; discovered apps default on, toggles persist and affect both routes, peers unaffected, no create/edit/bind/unbind controls",
+    "account selector renders and fetches only the chosen account's iOS/Android apps; selection survives directory refresh; no account creation or manual app binding",
+    "account screenshot binding updates both platforms, accepts an offline Mac, preserves forwarding switches and other accounts, supports explicit clearing and blocks saving mixed legacy settings until a choice",
     "unlocked admin can provision a screenshot node and download its macOS deployment ZIP",
     "locking aborts an in-flight screenshot settings refresh and prevents a late response from restoring the form",
     "refresh restores the HTTPS session and clears local files without writing to web storage",
@@ -50,16 +51,16 @@
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "0eabe3eb-ce8b-476d-bcce-032efe2c8fd1",
-    "d0d35b5d-3c47-4f03-894d-336d6f4a1e14"
+    "0e104ce9-0a4c-4923-9e77-9a0284bdcc1c",
+    "55ac8f41-7890-4572-99ac-066db1b80c8e"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0,
   "sourceHashes": {
-    "crates/store-api/src/setup/accounts.mjs": "c1be6253f376ca0f691e0dd626e67d83c0ec78caed2795f7a59e2d6dad3f27a2",
-    "crates/store-api/src/setup/app.mjs": "f80642c2ed1b9eea8b7010fb6aeff81e55fa4b1e2daf10f8287bdfd5f3f8ac50",
+    "crates/store-api/src/setup/accounts.mjs": "4ef536bcc04ed29c2422d68cd1128178550f5adaed1dae6d6f2603b1a071e3b3",
+    "crates/store-api/src/setup/app.mjs": "1004f5f70274c814dd8cce344bfcf88a4283e3984828820e0e535cbf293df4b7",
     "crates/store-api/src/setup/forwarding.mjs": "04a01dacf546f66786f9cc440fae66ee77fd031d752ac5d07ce7c4efa9a6cc7b",
-    "crates/store-api/src/setup/index.html": "fc87bc06933523006728e207307e16e64e2dc892c7e95a50fbb5f50569524089",
+    "crates/store-api/src/setup/index.html": "630a8739ca6c9895d116355a283ba5b67a5206b7396cab82c9fb7d12dd48a3bb",
     "crates/store-api/src/setup/integrations.mjs": "1e12510de9980e761afeb0b67e19d27d221d2ca19f416804f7b1fc1e66edd172",
     "crates/store-api/src/setup/logs.mjs": "f2e0f8ff2929fbd6fae9dddef2ad60d009324fb1aade4253285bf2dd8f6d5670",
     "crates/store-api/src/setup/packager.mjs": "71d28c5d380b145646974b340ff30f27593148d554cac0078c93832525e19484",
@@ -68,8 +69,8 @@
     "crates/store-api/src/setup/style.css": "6a518268433af65f47a3a530d14ff4b84407e2ffa6701ea26ab5c473ae066c86",
     "crates/store-api/src/setup/vendor/JSZIP-LICENSE.markdown": "566c953c6090b1218ca6217dd7359d45dde46581968586dc607d59a78af6a9c4",
     "crates/store-api/src/setup/vendor/jszip.min.js": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
-    "scripts/verify_setup_ui.mjs": "7cb7c0c49e6b5c811e12304400961200c051d7c3b0afc7d017449c6c5cf1918e",
+    "scripts/verify_setup_ui.mjs": "75da9f5ac71fa794900c67765508b97fd652562510eabd72e0bd64899f630acf",
     "scripts/verify_setup_ui.py": "fe7a011495656968f6f3a97bbef72473c8d3c1a3f3e48601534ae5fac359e118"
   },
-  "uiSourceCommit": "a7f644fd268275cee059fdfe090d947c0bd997bc"
+  "uiSourceCommit": "3ea5f7ddd22ea8879f378d1748472230b80652b9"
 }
