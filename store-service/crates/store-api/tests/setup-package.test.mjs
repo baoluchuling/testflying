@@ -34,7 +34,7 @@ async function base(target = "windows-amd64", extra = {}, override = {}) {
 }
 
 test("one Windows node contains both accounts, safe relative paths and unchanged executable", async () => {
-  const result = await buildInstaller(await base(), { target: "windows-amd64", account }, assets, JSZip);
+  const result = await buildInstaller(await base(), { target: "windows-amd64", account, nodeName: "江西聚文/商店:节点" }, assets, JSZip);
   const zip = await JSZip.loadAsync(result.bytes, { checkCRC32: true });
   const actual = JSON.parse(await zip.file("connector.json").async("string"));
   for (const key of ["connectorId", "token", "serverUrl", "messageKey", "uploadKey", "listenAddr", "baseUrl"]) assert.equal(actual[key], config[key]);
@@ -55,7 +55,7 @@ test("one Windows node contains both accounts, safe relative paths and unchanged
   assert.ok(zip.file("testflying-prod-ca.crt"));
   assert.equal(zip.file("connector.json").unixPermissions & 0o777, 0o600);
   assert.equal(zip.file(actual.provider.applePrivateKeyPath).unixPermissions & 0o777, 0o600);
-  assert.equal(result.fileName, "connector-windows-amd64-12345678.zip");
+  assert.equal(result.fileName, "connector-windows-amd64-江西聚文-商店-节点-12345678.zip");
 });
 
 test("Apple-only configuration does not bundle or retain Google credentials", async () => {

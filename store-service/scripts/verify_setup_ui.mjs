@@ -512,6 +512,7 @@ try {
   await download.saveAs(downloaded);
   const zip = await JSZip.loadAsync(fs.readFileSync(downloaded), { checkCRC32: true });
   const config = JSON.parse(await zip.file("connector.json").async("string"));
+  assert.equal(download.suggestedFilename(), `connector-windows-amd64-Browser-verification-·-dual-platform-${config.connectorId.slice(0, 8)}.zip`);
   assert.equal(config.connectorId, await page.locator("#connector").inputValue());
   assert.equal(config.provider.applePrivateKeyPath, "credentials/apple-private-key.p8");
   assert.equal(config.provider.appleKeyId, "SECONDKEY0");
@@ -641,7 +642,7 @@ try {
       page.waitForEvent("download"),
       page.getByRole("button", { name: "下载 macOS 部署包", exact: true }).click(),
     ]);
-    assert.equal(installerDownload.suggestedFilename(), `screenshot-connector-macos-${nodeId.slice(0, 8)}.zip`);
+    assert.equal(installerDownload.suggestedFilename(), `screenshot-connector-macos-New-Screenshot-Mac-${nodeId.slice(0, 8)}.zip`);
     const installerFile = path.join(tmp, "fixture-screenshot-connector.zip");
     await installerDownload.saveAs(installerFile);
     const deployment = await JSZip.loadAsync(fs.readFileSync(installerFile), { checkCRC32: true });

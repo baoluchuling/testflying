@@ -1,4 +1,4 @@
-import { CREDENTIAL_LIMIT, validateAccount, buildInstaller, installationFiles } from "./packager.mjs";
+import { CREDENTIAL_LIMIT, validateAccount, buildInstaller, installationFiles, archiveNodeName } from "./packager.mjs";
 import { bindIntegrations } from "./integrations.mjs";
 import { bindLogs } from "./logs.mjs";
 import { bindForwarding } from "./forwarding.mjs";
@@ -132,9 +132,11 @@ $("screenshotProvision").addEventListener("submit", (event) => {
 });
 $("screenshotDownload").addEventListener("click", () => {
   screenshotAction($("screenshotDownload"), async (active) => {
-    const id = encodeURIComponent($("screenshotNode").value);
+    const connectorId = $("screenshotNode").value;
+    const id = encodeURIComponent(connectorId);
+    const nodeName = archiveNodeName(nodes.find((node) => node.connectorId === connectorId)?.name);
     const bytes = await request(active, `${setupPath}/${id}/screenshot-installer`, { binary: true });
-    downloadFile(bytes, "application/zip", `screenshot-connector-macos-${id.slice(0, 8)}.zip`);
+    downloadFile(bytes, "application/zip", `screenshot-connector-macos-${nodeName}-${id.slice(0, 8)}.zip`);
     $("screenshotStatus").textContent = "部署包已下载，请在对应 Mac 上解压并配置。";
   });
 });
@@ -334,10 +336,11 @@ $("setupForm").addEventListener("submit", async (event) => {
       nodes.push(result.connector);
       renderNodes(id); // Retain this identity on a failed download/retry.
     }
+    const nodeName = nodes.find((node) => node.connectorId === id)?.name;
     status("正在获取节点程序…");
     const installer = await request(active, `${setupPath}/${encodeURIComponent(id)}/installer/${target}`, { binary: true });
     status(upgrade ? "正在生成仅含程序的升级包…" : "正在浏览器内合并配置与账号文件…");
-    const result = await buildInstaller(installer, { target, account, upgrade }, assets, globalThis.JSZip);
+    const result = await buildInstaller(installer, { target, account, upgrade, nodeName }, assets, globalThis.JSZip);
     active.signal.throwIfAborted();
     downloadFile(result.bytes, "application/zip", result.fileName);
     const entry = installFiles[0] ?? launcher;

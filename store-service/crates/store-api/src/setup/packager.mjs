@@ -3,6 +3,12 @@ const ARCHIVE_LIMIT = 160 * 1024 * 1024;
 const TARGETS = new Set(["windows-amd64", "linux-amd64", "darwin-arm64"]);
 const encoder = new TextEncoder();
 
+export function archiveNodeName(name) {
+  const safe = String(name || "").normalize("NFC")
+    .replace(/[<>:"/\\|?*\p{Cc}\p{Cf}]/gu, "-").replace(/\s+/gu, "-");
+  return Array.from(safe).slice(0, 40).join("").replace(/^[ .-]+|[ .-]+$/gu, "") || "node";
+}
+
 export function installationFiles(target) {
   if (target === "windows-amd64") return ["install.cmd", "install.ps1"];
   if (target === "darwin-arm64") return ["install.sh"];
@@ -60,7 +66,7 @@ export function validateAccount(input) {
   return { provider, files };
 }
 
-export async function buildInstaller(installerBytes, { target, account, upgrade = false }, assets, JSZip) {
+export async function buildInstaller(installerBytes, { target, account, upgrade = false, nodeName }, assets, JSZip) {
   if (!TARGETS.has(target)) throw new Error("不支持的安装平台");
   const installFiles = installationFiles(target);
   if (upgrade && !installFiles.length) throw new Error("所选平台不支持仅升级程序");
@@ -136,5 +142,5 @@ export async function buildInstaller(installerBytes, { target, account, upgrade 
     "日志包含任务关联、上游调用步骤、状态、耗时和请求长度，不记录凭据、文案原文或图片。\n";
   zip.file("README.md", "# Connector\n\n" + instructions + logGuide, { unixPermissions: 0o600 });
   const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", platform: "UNIX" });
-  return { bytes, connectorId, fileName: `connector-${target}-${connectorId.slice(0, 8)}${upgrade ? "-upgrade" : ""}.zip` };
+  return { bytes, connectorId, fileName: `connector-${target}-${archiveNodeName(nodeName)}-${connectorId.slice(0, 8)}${upgrade ? "-upgrade" : ""}.zip` };
 }
