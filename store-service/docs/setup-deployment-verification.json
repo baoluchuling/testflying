@@ -1,17 +1,17 @@
 {
-  "runId": "3ef6049ce71946ee82d3ed02146b2366",
+  "runId": "9dbda3eab41c4d3aa722dbd5445ced01",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-18T02:53:42.129797+00:00",
-  "deploymentCommit": "f1fda7e0e7baaac44735e57946b297f8d2b5ef05",
-  "binarySourceCommit": "d63d4d7167de3a1cee7e76e855106ee73bb2d084",
-  "apiSha256": "9ec91b1a635ef655fcdc6d7e4aabcfbac025f36a06b9f1957b00c8f883bcf4d3",
+  "finishedAt": "2026-11-18T03:33:35.905748+00:00",
+  "deploymentCommit": "12ac91a8c5cdfd2ad99f9601abe4ed26c7f8f40a",
+  "binarySourceCommit": "a7f644fd268275cee059fdfe090d947c0bd997bc",
+  "apiSha256": "0fc1b9c4088ae3ca1c0d85f3fd4261de9e32c78aa20b396751a94a3ea51dc16e",
   "connectorBinarySha256": {
-    "linux-amd64": "391d895bcd059a64b5af11e159b9131f9099ca52df05771af64b6936bca6b836",
-    "darwin-arm64": "fdc525704eb8e78abf763d92a43fb59c71bd6587caeaaee64a54d9625ea6db54",
-    "windows-amd64": "162ed7844fe67d02b7b05a275aaed56260e714335b5bf13b94e79ceaa943a0cf"
+    "linux-amd64": "34eff9b49e995dc28621acf408450b54af47cc03f0ca5e277c935aa558d379d9",
+    "darwin-arm64": "d7feb4868eed526de0b751f94ab5343b787adacacc45755a3b0eb1e9e7396f79",
+    "windows-amd64": "17f4960939d43b871a1f3374c13a35dd876984a5873f64feb3221fb4747fa061"
   },
-  "screenshotConnectorSha256": "9671b4fc6a2146a3c88e2cd59320b45931fb192afe7d855f26eea6a94f143dff",
+  "screenshotConnectorSha256": "9525d20311e734b10bf4373891d9248d691fe02cac8c3f8dc39517330a605b01",
   "screenshotUploadConfigured": false,
   "checks": [
     "node connection inventory readable before rollout",
@@ -25,6 +25,8 @@
     "exact deployed log viewer asset logs.mjs",
     "exact deployed log viewer asset app.mjs",
     "exact deployed log viewer asset accounts.mjs",
+    "exact deployed log viewer asset skills.mjs",
+    "exact deployed log viewer asset packager.mjs",
     "exact deployed log viewer asset index.html",
     "exact deployed log viewer asset style.css",
     "exact deployed log viewer asset forwarding.mjs",
@@ -33,6 +35,13 @@
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
+    "existing Connector inventory available for download verification",
+    "linux-amd64 updated installation package available",
+    "linux-amd64 downloaded native installer preparation program verified",
+    "darwin-arm64 updated installation package available",
+    "darwin-arm64 downloaded native installer preparation program verified",
+    "windows-amd64 updated installation package available",
+    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
     "http eleven store, two node, six screenshot and four account endpoints plus two upload helpers",
     "http exact four account endpoints and cached directory contract",
@@ -60,10 +69,15 @@
     "read-only migration preserves integrationsSha256",
     "read-only migration preserves integrationGrantsSha256",
     "read-only migration preserves screenshotSettingsSha256",
+    "read-only migration preserves screenshotSkillSha256",
+    "read-only migration preserves screenshotSkillActive",
     "read-only migration preserves applicationSwitches",
     "preexisting account IDs, names, node relations and enabled states preserved",
     "transactional account migration marker recorded",
     "administrator account migration inventory readable",
+    "administrator Skill publication inventory readable",
+    "Skill inventory mirrors HTTPS developer session route",
+    "business token cannot manage Skill versions",
     "developer account inventory mirrors administrator relations",
     "public cached account inventory omits node IDs and secrets",
     "cached account app schema includes separate screenshot resolution 1b109fa0-2900-4922-a186-ff635daeb59b",
@@ -309,16 +323,34 @@
     "unavailableOrInconsistentBeforeRollout": []
   },
   "storeConnectorPublication": {
-    "runId": "020812ff304c42d799bf4cb5f73d5eab",
-    "sourceCommit": "5003d9acd21ad3f1b209eea9f2415eab61cdcf7b",
+    "runId": "9dbda3eab41c4d3aa722dbd5445ced01",
+    "sourceCommit": "12ac91a8c5cdfd2ad99f9601abe4ed26c7f8f40a",
     "downloadVerified": {
-      "linux-amd64": "391d895bcd059a64b5af11e159b9131f9099ca52df05771af64b6936bca6b836",
-      "darwin-arm64": "fdc525704eb8e78abf763d92a43fb59c71bd6587caeaaee64a54d9625ea6db54",
-      "windows-amd64": "162ed7844fe67d02b7b05a275aaed56260e714335b5bf13b94e79ceaa943a0cf"
+      "linux-amd64": "34eff9b49e995dc28621acf408450b54af47cc03f0ca5e277c935aa558d379d9",
+      "darwin-arm64": "d7feb4868eed526de0b751f94ab5343b787adacacc45755a3b0eb1e9e7396f79",
+      "windows-amd64": "17f4960939d43b871a1f3374c13a35dd876984a5873f64feb3221fb4747fa061"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
     "configurationMergeSupported": true,
     "actualStoreAccountsUsed": false
+  },
+  "screenshotSkillPublication": {
+    "runId": "9dbda3eab41c4d3aa722dbd5445ced01",
+    "manifest": {
+      "bytes": 266938,
+      "files": 17,
+      "name": "mobile-localized-screenshots",
+      "publishedAt": 1794972822,
+      "schemaVersion": 1,
+      "sha256": "c15b4f5f5d27c4740c485e4f60507c054290a9265134a12599e7f53c9e1aa63b",
+      "version": "c15b4f5f5d27c4740c485e4f60507c054290a9265134a12599e7f53c9e1aa63b"
+    },
+    "sourceZipSha256": "03276264de4fdd4d7ab7d58e1fcd1e31b6f19fb38788e2ce97cd64abc6c13639",
+    "publishedByThisRun": true,
+    "requiresInitialScreenshotConnectorUpgrade": true,
+    "liveCaptureTested": false,
+    "providerCalls": 0,
+    "apiDocsVerified": true
   }
 }
