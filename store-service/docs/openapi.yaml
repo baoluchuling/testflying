@@ -17,6 +17,18 @@ info:
 servers:
   - url: http://localhost:8200
 components:
+  requestBodies:
+    AndroidAppInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [bundleIdentifier]
+            properties:
+              bundleIdentifier: {type: string, minLength: 1, maxLength: 180, description: Exact Android package name.}
+              name: {type: [string, 'null'], description: Optional display name, maximum 160 UTF-8 bytes when nonblank; blank defaults to package name.}
   securitySchemes:
     integrationToken: {type: http, scheme: bearer, description: 'HTTPS integration credential covering all nodes/accounts including future nodes; verified app binding and business calls. Screenshot job visibility is limited to the creating integration.'}
     clientToken: {type: http, scheme: bearer, description: STORE_API_TOKEN}
@@ -92,6 +104,7 @@ components:
         name: {type: string}
         storeAppId: {type: [string, 'null']}
         accountId: {type: string, format: uuid}
+        source: {type: string, enum: [catalog, manual, retained], description: 'Android supports manual additions and retained pre-upgrade members. iOS remains catalog-only; manual membership is not provider verification.'}
         enabled: {type: boolean, description: 'Application forwarding switch, defaults true. False blocks new store and screenshot requests; persisted across catalog refreshes.'}
         resolutionStatus: {type: string, description: 'Directory-only ownership: resolved, account_ambiguous, identity_changed, account_disabled, app_forwarding_disabled or app_not_found. Historical manual bindings cannot override merchant catalogs.'}
         screenshotEnabled: {type: boolean, description: 'Computed with the execution screenshot resolver; true only when ownership and route resolve. Does not mean online or immediate execution.'}
@@ -604,6 +617,21 @@ paths:
       responses:
         '200': {description: App rows, content: {application/json: {schema: {$ref: '#/components/schemas/AccountAppList'}}}}
         default: {$ref: '#/components/responses/Error'}
+    post:
+      summary: Add an application to an Android directory
+      description: 'Administrator only. iOS returns 422 android_directory_required. Same-directory duplicate returns 409 app_exists, another Android account returns 409 account_ambiguous. Survives catalog refresh and clears a previous removal; forwarding switches are preserved. Does not call Google or mark discovery ready.'
+      security: [{adminToken: []}]
+      requestBody: {$ref: '#/components/requestBodies/AndroidAppInput'}
+      responses:
+        '201': {description: Application added, content: {application/json: {schema: {$ref: '#/components/schemas/AccountAppList'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/accounts/{accountId}/apps/{bundleIdentifier}:
+    parameters: [{$ref: '#/components/parameters/accountId'}, {$ref: '#/components/parameters/bundleIdentifier'}]
+    delete:
+      summary: Remove an application from an Android directory
+      description: 'Android only, iOS returns 422. Removes membership and prevents future reports from restoring it until re-added. Keeps global forwarding switches, screenshot bindings, existing jobs and Google Play data. Unknown app returns 404; repeating a recorded removal returns 204.'
+      security: [{adminToken: []}]
+      responses: {'204': {description: Directory member removed}, default: {$ref: '#/components/responses/Error'}}
   /v1/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding:
     parameters: [{$ref: '#/components/parameters/accountId'}, {$ref: '#/components/parameters/platform'}, {$ref: '#/components/parameters/bundleIdentifier'}]
     put:
@@ -668,6 +696,21 @@ paths:
       responses:
         '200': {description: App rows, content: {application/json: {schema: {$ref: '#/components/schemas/AccountAppList'}}}}
         default: {$ref: '#/components/responses/Error'}
+    post:
+      summary: HTTPS developer session adds an Android application
+      description: Same Android-only validation, duplicate prevention, persistence and forwarding rules as administrator POST.
+      security: [{setupSession: []}, {adminToken: []}]
+      requestBody: {$ref: '#/components/requestBodies/AndroidAppInput'}
+      responses:
+        '201': {description: Application added, content: {application/json: {schema: {$ref: '#/components/schemas/AccountAppList'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/accounts/{accountId}/apps/{bundleIdentifier}:
+    parameters: [{$ref: '#/components/parameters/accountId'}, {$ref: '#/components/parameters/bundleIdentifier'}, {$ref: '#/components/parameters/setupHeader'}]
+    delete:
+      summary: HTTPS developer session removes an Android application
+      description: Android only; prevents automatic restoration until re-added. Does not delete Google Play data or forwarding switches.
+      security: [{setupSession: []}, {adminToken: []}]
+      responses: {'204': {description: Directory member removed}, default: {$ref: '#/components/responses/Error'}}
   /connector-setup/api/accounts/{accountId}/refresh:
     parameters: [{$ref: '#/components/parameters/accountId'}, {$ref: '#/components/parameters/setupHeader'}]
     post:

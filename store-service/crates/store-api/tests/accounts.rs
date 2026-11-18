@@ -20,6 +20,345 @@ const APP: &str = "com.example.account";
 fn registry() -> Registry {
     Registry::open(":memory:", KEY).unwrap()
 }
+
+#[test]
+fn android_manual_membership_survives_reports_removal_and_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("manual.sqlite");
+    let r = Registry::open(&path, KEY).unwrap();
+    let store = node(&r, "Android");
+    let mac = r
+        .create_with_kind(
+            ConnectorInput { name: "Mac".into() },
+            ConnectorKind::Screenshot,
+        )
+        .unwrap();
+    support::catalog(
+        &r,
+        &store.connector_id,
+        Platform::Android,
+        &["com.example.discovered"],
+    );
+    let account = r.accounts().unwrap().remove(0);
+    r.set_store_account_screenshot(&store.connector_id, Some(&mac.connector_id))
+        .unwrap();
+    r.add_android_app(&account.id, APP, Some("  Manual app  "))
+        .unwrap();
+    assert_eq!(
+        r.resolve(Platform::Android, APP).unwrap().connector_id,
+        store.connector_id
+    );
+    assert_eq!(
+        r.account_apps(&account.id)
+            .unwrap()
+            .iter()
+            .find(|app| app["bundleIdentifier"] == APP)
+            .unwrap()["screenshotEnabled"],
+        true
+    );
+    let row = r
+        .account_apps(&account.id)
+        .unwrap()
+        .into_iter()
+        .find(|row| row["bundleIdentifier"] == APP)
+        .unwrap();
+    assert_eq!(row["name"], "Manual app");
+    assert_eq!(row["source"], "manual");
+    assert_eq!(row["enabled"], true);
+    r.set_app_enabled(&account.id, Platform::Android, APP, false)
+        .unwrap();
+    support::catalog(&r, &store.connector_id, Platform::Android, &[APP]);
+    assert_eq!(r.account_apps(&account.id).unwrap().len(), 1);
+    assert_eq!(
+        r.account_apps(&account.id).unwrap()[0]["name"],
+        "Manual app"
+    );
+    assert_eq!(
+        r.resolve_account(Platform::Android, APP).unwrap_err().code,
+        "app_forwarding_disabled"
+    );
+    r.remove_android_app(&account.id, APP).unwrap();
+    r.remove_android_app(&account.id, APP).unwrap();
+    support::catalog(&r, &store.connector_id, Platform::Android, &[APP]);
+    assert!(r.account_apps(&account.id).unwrap().is_empty());
+    drop(r);
+    let r = Registry::open(&path, KEY).unwrap();
+    support::catalog(&r, &store.connector_id, Platform::Android, &[APP]);
+    assert_eq!(
+        r.resolve_account(Platform::Android, APP).unwrap_err().code,
+        "app_not_found"
+    );
+    r.add_android_app(&account.id, APP, None).unwrap();
+    assert_eq!(r.account_apps(&account.id).unwrap()[0]["enabled"], false);
+    r.set_app_enabled(&account.id, Platform::Android, APP, true)
+        .unwrap();
+    assert_eq!(
+        r.account(&account.id)
+            .unwrap()
+            .screenshot_connector_id
+            .as_deref(),
+        Some(mac.connector_id.as_str())
+    );
+    assert_eq!(
+        r.account_apps(&account.id).unwrap()[0]["screenshotEnabled"],
+        true
+    );
+    assert_eq!(
+        r.remove_android_app(&account.id, "com.example.missing")
+            .unwrap_err()
+            .status,
+        404
+    );
+}
+
+#[test]
+fn android_upgrade_preserves_old_data_and_ios_keeps_catalog_semantics() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("upgrade.sqlite");
+    let r = Registry::open(&path, KEY).unwrap();
+    let store = node(&r, "Legacy");
+    support::catalog(&r, &store.connector_id, Platform::Android, &[APP]);
+    support::catalog(&r, &store.connector_id, Platform::Ios, &[APP]);
+    let android = r
+        .accounts()
+        .unwrap()
+        .into_iter()
+        .find(|a| a.platform == Platform::Android)
+        .unwrap();
+    let ios = r
+        .accounts()
+        .unwrap()
+        .into_iter()
+        .find(|a| a.platform == Platform::Ios)
+        .unwrap();
+    r.set_app_enabled(&android.id, Platform::Android, APP, false)
+        .unwrap();
+    let before = r.account(&android.id).unwrap();
+    drop(r);
+    let db = rusqlite::Connection::open(&path).unwrap();
+    db.execute_batch("DELETE FROM account_migrations WHERE name='android_manual_apps_v1'; DROP TABLE account_app_removals; ALTER TABLE account_apps DROP COLUMN source;").unwrap();
+    drop(db);
+    let r = Registry::open(&path, KEY).unwrap();
+    let after = r.account(&android.id).unwrap();
+    assert_eq!(before.id, after.id);
+    assert_eq!(before.last_catalog_at, after.last_catalog_at);
+    assert_eq!(
+        r.account_apps(&android.id).unwrap()[0]["source"],
+        "retained"
+    );
+    support::catalog(&r, &store.connector_id, Platform::Android, &[]);
+    support::catalog(&r, &store.connector_id, Platform::Ios, &[]);
+    assert!(r.account_apps(&ios.id).unwrap().is_empty());
+    assert_eq!(r.account_apps(&android.id).unwrap()[0]["enabled"], false);
+    assert_eq!(r.account_apps(&android.id).unwrap()[0]["name"], APP);
+    drop(r);
+    let r = Registry::open(&path, KEY).unwrap();
+    assert_eq!(r.account_apps(&android.id).unwrap().len(), 1);
+    r.remove_android_app(&android.id, APP).unwrap();
+    support::catalog(&r, &store.connector_id, Platform::Android, &[APP]);
+    assert!(r.account_apps(&android.id).unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn manual_android_routes_reject_ios_duplicates_bad_input_and_business_tokens() {
+    let state = state();
+    let a = node(&state.registry, "A");
+    let b = node(&state.registry, "B");
+    for (node, platform) in [
+        (&a, Platform::Android),
+        (&a, Platform::Ios),
+        (&b, Platform::Android),
+    ] {
+        support::catalog(&state.registry, &node.connector_id, platform, &[]);
+    }
+    let accounts = state.registry.accounts().unwrap();
+    let android = accounts
+        .iter()
+        .find(|v| v.store_connector_id == a.connector_id && v.platform == Platform::Android)
+        .unwrap();
+    let ios = accounts
+        .iter()
+        .find(|v| v.platform == Platform::Ios)
+        .unwrap();
+    let other = accounts
+        .iter()
+        .find(|v| v.store_connector_id == b.connector_id)
+        .unwrap();
+    let app = store_api::router(state.clone());
+    for prefix in ["/v1/accounts", "/connector-setup/api/accounts"] {
+        let path = format!("{prefix}/{}/apps", android.id);
+        let remove = format!("{path}/{APP}");
+        assert_eq!(
+            call(&app, "POST", &path, CLIENT, json!({"bundleIdentifier":APP}))
+                .await
+                .0,
+            401
+        );
+        assert_eq!(
+            call(&app, "DELETE", &remove, CLIENT, Value::Null).await.0,
+            401
+        );
+        for bad in [
+            json!({"bundleIdentifier":"../bad"}),
+            json!({"bundleIdentifier":APP,"extra":true}),
+            json!({"bundleIdentifier":APP,"name":"x".repeat(161)}),
+            json!({"name":"missing package"}),
+        ] {
+            assert_eq!(call(&app, "POST", &path, ADMIN, bad).await.0, 422);
+        }
+        assert_eq!(
+            call(&app, "POST", &path, ADMIN, json!({"bundleIdentifier":APP}))
+                .await
+                .0,
+            201
+        );
+        assert_eq!(
+            call(&app, "POST", &path, ADMIN, json!({"bundleIdentifier":APP}))
+                .await
+                .1["error"]["code"],
+            "app_exists"
+        );
+        assert_eq!(
+            call(
+                &app,
+                "POST",
+                &format!("{prefix}/{}/apps", other.id),
+                ADMIN,
+                json!({"bundleIdentifier":APP})
+            )
+            .await
+            .1["error"]["code"],
+            "account_ambiguous"
+        );
+        assert_eq!(
+            call(
+                &app,
+                "POST",
+                &format!("{prefix}/{}/apps", ios.id),
+                ADMIN,
+                json!({"bundleIdentifier":APP})
+            )
+            .await
+            .1["error"]["code"],
+            "android_directory_required"
+        );
+        assert_eq!(
+            call(
+                &app,
+                "DELETE",
+                &format!("{prefix}/{}/apps/{APP}", ios.id),
+                ADMIN,
+                Value::Null
+            )
+            .await
+            .0,
+            422
+        );
+        assert_eq!(
+            call(&app, "DELETE", &remove, ADMIN, Value::Null).await.0,
+            204
+        );
+    }
+    let login = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/connector-setup/api/session")
+                .header("x-forwarded-proto", "https")
+                .header("x-testflying-setup", "1")
+                .header("authorization", format!("Bearer {ADMIN}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(login.status(), 204);
+    let cookie = login.headers()["set-cookie"]
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+    for (method, scheme, marked, expected) in [
+        ("POST", "http", true, 403),
+        ("POST", "https", false, 401),
+        ("POST", "https", true, 201),
+        ("DELETE", "http", true, 403),
+        ("DELETE", "https", false, 401),
+        ("DELETE", "https", true, 204),
+    ] {
+        let mut request = Request::builder()
+            .method(method)
+            .uri(format!(
+                "/connector-setup/api/accounts/{}/apps{}",
+                android.id,
+                if method == "DELETE" {
+                    format!("/{APP}")
+                } else {
+                    String::new()
+                }
+            ))
+            .header("x-forwarded-proto", scheme)
+            .header("cookie", cookie)
+            .header("content-type", "application/json");
+        if marked {
+            request = request.header("x-testflying-setup", "1");
+        }
+        let response = app
+            .clone()
+            .oneshot(
+                request
+                    .body(Body::from(json!({"bundleIdentifier":APP}).to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), expected, "{method} {scheme} {marked}");
+    }
+    let failed = report(
+        Platform::Android,
+        CatalogStatus::Failed,
+        Some(&"a".repeat(64)),
+    );
+    state
+        .registry
+        .ingest_catalog(&a.connector_id, &state.registry.token(&a), true, &failed)
+        .unwrap();
+    state
+        .registry
+        .add_android_app(&android.id, APP, Some(" "))
+        .unwrap();
+    assert_eq!(
+        state.registry.account(&android.id).unwrap().catalog_status,
+        "failed"
+    );
+    assert_eq!(
+        state
+            .registry
+            .resolve_account(Platform::Android, APP)
+            .unwrap()
+            .id,
+        android.id
+    );
+    let changed = report(
+        Platform::Android,
+        CatalogStatus::Ready,
+        Some(&"b".repeat(64)),
+    );
+    state
+        .registry
+        .ingest_catalog(&a.connector_id, &state.registry.token(&a), true, &changed)
+        .unwrap();
+    assert_eq!(
+        state
+            .registry
+            .add_android_app(&android.id, "com.example.new", None)
+            .unwrap_err()
+            .code,
+        "identity_changed"
+    );
+}
 fn node(r: &Registry, name: &str) -> Connector {
     r.create(ConnectorInput { name: name.into() }).unwrap()
 }

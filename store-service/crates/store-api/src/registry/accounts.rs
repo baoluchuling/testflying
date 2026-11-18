@@ -109,6 +109,24 @@ pub(super) fn create_schema(db: &mut Connection) -> Result<()> {
           INSERT OR IGNORE INTO account_migration_issues SELECT b.platform,b.bundle_identifier,'legacy_store_invalid' FROM app_bindings b WHERE NOT EXISTS(SELECT 1 FROM account_bindings a WHERE a.platform=b.platform AND a.bundle_identifier=b.bundle_identifier);
           INSERT INTO account_migrations VALUES('accounts_v1');").map_err(database_error)?;
     }
+    let manual_migrated: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM account_migrations WHERE name='android_manual_apps_v1')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(database_error)?;
+    if !manual_migrated {
+        let source_exists: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('account_apps') WHERE name='source')", [], |r| r.get(0)).map_err(database_error)?;
+        if !source_exists {
+            tx.execute_batch("ALTER TABLE account_apps ADD COLUMN source TEXT NOT NULL DEFAULT 'catalog' CHECK(source IN ('catalog','manual','retained'));").map_err(database_error)?;
+        }
+        tx.execute_batch("UPDATE account_apps SET source='retained' WHERE source='catalog' AND account_id IN (SELECT id FROM accounts WHERE platform='android');
+          CREATE TABLE IF NOT EXISTS account_app_removals (
+            account_id TEXT NOT NULL REFERENCES accounts(id), bundle_identifier TEXT NOT NULL,
+            PRIMARY KEY(account_id,bundle_identifier));
+          INSERT INTO account_migrations VALUES('android_manual_apps_v1');").map_err(database_error)?;
+    }
     tx.commit().map_err(database_error)
 }
 
@@ -125,6 +143,17 @@ fn valid_name(name: &str) -> Result<()> {
             422,
             "invalid_name",
             "name must contain 1–160 bytes",
+        ));
+    }
+    Ok(())
+}
+
+fn android_directory(value: &Account) -> Result<()> {
+    if value.platform != Platform::Android {
+        return Err(StoreError::new(
+            422,
+            "android_directory_required",
+            "Only Android directories support adding or removing applications",
         ));
     }
     Ok(())
@@ -602,10 +631,15 @@ impl Registry {
         } else if pending.is_some() {
             // Even an old-identity or failed report cannot silently dismiss a pending change.
         } else if report.status == CatalogStatus::Ready {
-            tx.execute("DELETE FROM account_apps WHERE account_id=?1", [&id])
-                .map_err(database_error)?;
+            tx.execute(
+                "DELETE FROM account_apps WHERE account_id=?1 AND source='catalog'",
+                [&id],
+            )
+            .map_err(database_error)?;
             for app in &report.apps {
-                tx.execute("INSERT INTO account_apps(account_id,bundle_identifier,name,store_app_id) VALUES(?1,?2,?3,?4)",params![id,app.bundle_identifier,app.name,app.store_app_id]).map_err(database_error)?;
+                tx.execute("INSERT INTO account_apps(account_id,bundle_identifier,name,store_app_id)
+                  SELECT ?1,?2,?3,?4 WHERE NOT EXISTS(SELECT 1 FROM account_app_removals WHERE account_id=?1 AND bundle_identifier=?2)
+                  ON CONFLICT(account_id,bundle_identifier) DO NOTHING",params![id,app.bundle_identifier,app.name,app.store_app_id]).map_err(database_error)?;
             }
             tx.execute(
                 "UPDATE account_bindings SET provisional=0 WHERE account_id=?1",
@@ -669,15 +703,15 @@ impl Registry {
     pub fn account_apps(&self, id: &str) -> Result<Vec<Value>> {
         let db = self.db.lock().unwrap();
         let value = account(&db, id)?;
-        let apps: Vec<(String, String, Option<String>)> = {
-            let mut stmt=db.prepare("SELECT bundle_identifier,name,store_app_id FROM account_apps WHERE account_id=?1 ORDER BY bundle_identifier").map_err(database_error)?;
+        let apps: Vec<(String, String, Option<String>, String)> = {
+            let mut stmt=db.prepare("SELECT bundle_identifier,name,store_app_id,source FROM account_apps WHERE account_id=?1 ORDER BY bundle_identifier").map_err(database_error)?;
             let rows = stmt
-                .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .query_map([id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
                 .map_err(database_error)?;
             rows.collect::<std::result::Result<_, _>>()
                 .map_err(database_error)?
         };
-        apps.into_iter().map(|(identifier,name,store_app_id)| {
+        apps.into_iter().map(|(identifier,name,store_app_id,source)| {
             let enabled = app_enabled(&db, value.platform, &identifier)?;
             let resolution=match resolve_account(&db,value.platform,&identifier) {Ok(_)=>"resolved".to_owned(),Err(e)=>e.code};
             // Use execution's resolver rather than inferring per-app availability
@@ -690,8 +724,75 @@ impl Registry {
             } else {
                 resolution.clone()
             };
-            Ok(json!({"platform":value.platform,"bundleIdentifier":identifier,"name":name,"storeAppId":store_app_id,"accountId":id,"enabled":enabled,"resolutionStatus":resolution,"screenshotEnabled":screenshot_resolution=="resolved","screenshotResolutionStatus":screenshot_resolution}))
+            Ok(json!({"platform":value.platform,"bundleIdentifier":identifier,"name":name,"storeAppId":store_app_id,"accountId":id,"source":source,"enabled":enabled,"resolutionStatus":resolution,"screenshotEnabled":screenshot_resolution=="resolved","screenshotResolutionStatus":screenshot_resolution}))
         }).collect()
+    }
+
+    pub fn add_android_app(&self, id: &str, identifier: &str, name: Option<&str>) -> Result<()> {
+        validate_identifier(identifier)?;
+        let name = name.map(str::trim).filter(|s| !s.is_empty());
+        if let Some(name) = name {
+            valid_name(name)?;
+        }
+        let name = name.unwrap_or(identifier);
+        let mut db = self.db.lock().unwrap();
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let value = account(&tx, id)?;
+        android_directory(&value)?;
+        usable(&value)?;
+        if member(&tx, id, identifier)? {
+            return Err(StoreError::new(
+                409,
+                "app_exists",
+                "Application already exists in this directory",
+            ));
+        }
+        let other: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM account_apps p JOIN accounts a ON a.id=p.account_id WHERE a.platform='android' AND p.bundle_identifier=?1)", [identifier], |r| r.get(0)).map_err(database_error)?;
+        if other {
+            return Err(StoreError::new(
+                409,
+                "account_ambiguous",
+                "Application already exists in another Android account",
+            ));
+        }
+        tx.execute("INSERT INTO account_apps(account_id,bundle_identifier,name,source) VALUES(?1,?2,?3,'manual')", params![id,identifier,name]).map_err(database_error)?;
+        tx.execute(
+            "DELETE FROM account_app_removals WHERE account_id=?1 AND bundle_identifier=?2",
+            params![id, identifier],
+        )
+        .map_err(database_error)?;
+        tx.commit().map_err(database_error)
+    }
+
+    pub fn remove_android_app(&self, id: &str, identifier: &str) -> Result<()> {
+        validate_identifier(identifier)?;
+        let mut db = self.db.lock().unwrap();
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        android_directory(&account(&tx, id)?)?;
+        let removed = tx
+            .execute(
+                "DELETE FROM account_apps WHERE account_id=?1 AND bundle_identifier=?2",
+                params![id, identifier],
+            )
+            .map_err(database_error)?;
+        let prior: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM account_app_removals WHERE account_id=?1 AND bundle_identifier=?2)", params![id,identifier], |r| r.get(0)).map_err(database_error)?;
+        if removed == 0 && !prior {
+            return Err(StoreError::new(
+                404,
+                "app_not_found",
+                "Application not found in this directory",
+            ));
+        }
+        tx.execute(
+            "INSERT OR IGNORE INTO account_app_removals VALUES(?1,?2)",
+            params![id, identifier],
+        )
+        .map_err(database_error)?;
+        tx.commit().map_err(database_error)
     }
 
     pub fn set_app_enabled(

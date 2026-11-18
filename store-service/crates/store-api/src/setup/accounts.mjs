@@ -4,6 +4,7 @@ export function bindAccounts(request, getSession) {
   const $ = (id) => document.getElementById(id);
   let accounts = [], nodes = [], directories = new Map(), bindings = new Map(), selected = "", epoch = 0, busy = false;
   const mixed = "__mixed__";
+  const drafts = new Map();
   function groups() {
     const result = new Map(nodes.filter((node) => node.kind === "store").map((node) => [node.connectorId, []]));
     for (const account of accounts) {
@@ -69,6 +70,30 @@ export function bindAccounts(request, getSession) {
         const section = document.createElement("section"); section.dataset.accountId = account.id;
         const heading = document.createElement("h4"); heading.textContent = account.platform === "ios" ? "iOS 目录" : "Android 目录"; section.append(heading);
         paragraph(section, `目录 ID：${account.id}\n状态：${account.catalogStatus} · 错误：${account.catalogError || "无"}\n最后成功：${account.lastCatalogAt == null ? "尚无" : new Date(account.lastCatalogAt * 1000).toLocaleString()}\n账号：${account.enabled ? "启用" : "停用"} · 迁移问题：${account.migrationError || "无"}\n截图节点：${label(account.screenshotConnectorId)}`);
+        if (account.platform === "android") {
+          const form = document.createElement("form"); form.className = "android-app-form";
+          const draft = drafts.get(account.id) || { bundleIdentifier: "", name: "" };
+          drafts.set(account.id, draft);
+          for (const [field, labelText, required] of [["bundleIdentifier", "Android 包名", true], ["name", "应用名称（选填）", false]]) {
+            const label = document.createElement("label"), input = document.createElement("input");
+            input.id = `android-app-${account.id}-${field}`; input.name = field; input.required = required;
+            input.maxLength = field === "name" ? 160 : 180; input.value = draft[field]; input.autocomplete = "off";
+            label.htmlFor = input.id; label.textContent = labelText;
+            input.addEventListener("input", () => { draft[field] = input.value; });
+            form.append(label, input);
+          }
+          const add = document.createElement("button"); add.type = "submit"; add.textContent = "添加应用"; form.append(add);
+          form.addEventListener("submit", (event) => {
+            event.preventDefault();
+            const body = { bundleIdentifier: draft.bundleIdentifier.trim(), name: draft.name.trim() || null };
+            perform(async (active, current) => {
+              await request(active, `accounts/${encodeURIComponent(account.id)}/apps`, { method: "POST", body });
+              drafts.delete(account.id); await load(active, current);
+              return "Android 应用已添加。";
+            });
+          });
+          section.append(form);
+        }
         const apps = directories.get(account.id);
         if (!apps) paragraph(section, "目录读取失败，请重新读取。");
         else if (!apps.length) paragraph(section, "商店尚未返回支持的应用。");
@@ -76,6 +101,7 @@ export function bindAccounts(request, getSession) {
         for (const app of apps || []) {
           const row = document.createElement("li"); row.className = "account-app"; row.dataset.identifier = app.bundleIdentifier;
           paragraph(row, `${app.name} · ${app.platform} / ${app.bundleIdentifier}\n商店应用 ID：${app.storeAppId || "无"} · 路由：${app.resolutionStatus}\n截图路由：${app.screenshotResolutionStatus}`);
+          paragraph(row, `来源：${({manual:"手动添加",retained:"升级保留",catalog:"商店上报"})[app.source] || "商店上报"}`);
           const toggle = document.createElement("label"); toggle.className = "toggle";
           const input = document.createElement("input"); input.type = "checkbox"; input.checked = app.enabled; input.setAttribute("aria-label", `${app.platform} / ${app.bundleIdentifier} 应用转发`);
           const text = document.createElement("span"); text.textContent = "开启应用转发"; toggle.append(input, text); row.append(toggle);
@@ -87,6 +113,17 @@ export function bindAccounts(request, getSession) {
               return enabled ? "应用已开启转发。" : "应用已关闭转发，已创建任务继续执行。";
             });
           });
+          if (account.platform === "android") {
+            const remove = document.createElement("button"); remove.type = "button"; remove.className = "quiet"; remove.textContent = "移除应用";
+            remove.addEventListener("click", () => {
+              if (busy || !window.confirm(`从此账号目录移除 ${app.bundleIdentifier}？后续刷新不会恢复；不会删除 Google Play 中的应用。`)) return;
+              perform(async (active, current) => {
+                await request(active, `accounts/${encodeURIComponent(account.id)}/apps/${encodeURIComponent(app.bundleIdentifier)}`, { method: "DELETE" });
+                await load(active, current); return "Android 应用已移除，可通过添加应用恢复。";
+              });
+            });
+            row.append(remove);
+          }
           list.append(row);
         }
         section.append(list); group.append(section);
@@ -140,6 +177,7 @@ export function bindAccounts(request, getSession) {
     show() { $("accountsWorkspace").hidden = false; $("accountsWorkspace").open = true; perform(load); },
     reset() {
       epoch++; busy = false; accounts = []; nodes = []; directories = new Map(); bindings = new Map(); selected = "";
+      drafts.clear();
       $("accountsWorkspace").hidden = true; $("accountsWorkspace").open = false;
       $("accountMigrationIssues").textContent = ""; $("accountsStatus").textContent = ""; render();
     },

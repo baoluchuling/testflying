@@ -61,7 +61,7 @@ const screenshotSettingsFixture = {
 const screenshotSettingsWrites = [];
 const accountFixtures = [], accountWrites = [], accountBindingWrites = [], directoryReads = [];
 const accountScreenshotBindings = new Map();
-const accountDirectories = new Map(), appForwarding = new Map();
+const accountDirectories = new Map(), appForwarding = new Map(), manualAppNames = new Map();
 const skillFixture = { active: null, versions: [] };
 let failNextSkillPublish = false;
 const skillWrites = [];
@@ -167,6 +167,23 @@ if (!production) {
           res.end(JSON.stringify({storeConnectorId:suffix[1],connectorId:input.connectorId,updatedAccounts:related.length})); return;
         }
         assert(account);
+        if (suffix.length === 2 && suffix[1] === "apps" && req.method === "POST") {
+          assert.equal(account.platform, "android");
+          let body = ""; for await (const part of req) body += part;
+          input = JSON.parse(body); assert.deepEqual(Object.keys(input).sort(), ["bundleIdentifier", "name"]);
+          const apps = accountDirectories.get(account.id) || [];
+          if (apps.includes(input.bundleIdentifier)) { res.writeHead(409).end(JSON.stringify({error:{code:"app_exists",message:"Application already exists"}})); return; }
+          apps.push(input.bundleIdentifier); accountDirectories.set(account.id, apps);
+          manualAppNames.set(`${account.id}/${input.bundleIdentifier}`, input.name || input.bundleIdentifier);
+          res.writeHead(201).end(JSON.stringify({apps:[]})); return;
+        }
+        if (suffix.length === 3 && suffix[1] === "apps" && req.method === "DELETE") {
+          assert.equal(account.platform, "android");
+          const identifier = decodeURIComponent(suffix[2]);
+          assert(accountDirectories.get(account.id)?.includes(identifier));
+          accountDirectories.set(account.id, accountDirectories.get(account.id).filter((item) => item !== identifier));
+          res.writeHead(204).end(); return;
+        }
         if (suffix.length === 5 && suffix[1] === "apps" && suffix[4] === "forwarding" && req.method === "PUT") {
           let body = ""; for await (const part of req) body += part;
           input = JSON.parse(body);
@@ -186,7 +203,8 @@ if (!production) {
             const enabled = appForwarding.get(`${account.platform}/${bundleIdentifier}`) ?? true;
             const resolutionStatus = candidates.length > 1 ? "account_ambiguous" : !enabled ? "app_forwarding_disabled" : !account.enabled ? "account_disabled" : account.catalogStatus === "identity_changed" ? "identity_changed" : "resolved";
             const screenshotResolutionStatus = resolutionStatus !== "resolved" ? resolutionStatus : !account.screenshotConnectorId ? "screenshot_app_not_found" : "resolved";
-            return { platform: account.platform, bundleIdentifier, name: "Fixture application", storeAppId: "fixture-store-id", accountId: account.id, enabled, resolutionStatus, screenshotEnabled: screenshotResolutionStatus === "resolved", screenshotResolutionStatus };
+            const manualName = manualAppNames.get(`${account.id}/${bundleIdentifier}`);
+            return { platform: account.platform, bundleIdentifier, name: manualName || "Fixture application", source: manualName ? "manual" : "catalog", storeAppId: "fixture-store-id", accountId: account.id, enabled, resolutionStatus, screenshotEnabled: screenshotResolutionStatus === "resolved", screenshotResolutionStatus };
           });
           res.end(JSON.stringify({ apps })); return;
         }
@@ -775,7 +793,30 @@ try {
     assert.equal((await firstGroup.textContent()).includes(await page.evaluate(() => new Date(1800000000 * 1000).toLocaleString())), true);
     assert.equal(await page.locator("#managedAccountForm, #managedAccount, #accountSave").count(), 0);
     assert.equal(await page.getByRole("button", {name:"绑定到此账号", exact:true}).count(), 0);
-    assert.equal(await page.locator("#accountsWorkspace form").count(), 0);
+    assert.equal(await page.locator("#accountsWorkspace form").count(), 1);
+    const androidSection = firstGroup.locator(`section[data-account-id="${androidAccount.id}"]`);
+    const iosSection = firstGroup.locator(`section[data-account-id="${firstAccount.id}"]`);
+    assert.equal(await iosSection.locator("form").count(), 0);
+    assert.equal(await iosSection.getByRole("button", {name:"移除应用", exact:true}).count(), 0);
+    await androidSection.getByLabel("Android 包名", {exact:true}).fill("com.example.manual-ui");
+    await androidSection.getByLabel("应用名称（选填）", {exact:true}).fill("Manual UI app");
+    await androidSection.getByRole("button", {name:"添加应用", exact:true}).click();
+    await page.getByText("Android 应用已添加。", {exact:true}).waitFor();
+    const manualRow = () => androidSection.locator('li[data-identifier="com.example.manual-ui"]');
+    assert.match(await manualRow().textContent(), /Manual UI app/);
+    assert.match(await manualRow().textContent(), /手动添加/);
+    await androidSection.getByLabel("Android 包名", {exact:true}).fill("com.example.manual-ui");
+    await androidSection.getByRole("button", {name:"添加应用", exact:true}).click();
+    await page.getByText("此账号目录已包含该应用", {exact:true}).waitFor();
+    assert.equal(await androidSection.getByLabel("Android 包名", {exact:true}).inputValue(), "com.example.manual-ui");
+    page.once("dialog", (dialog) => dialog.dismiss());
+    await manualRow().getByRole("button", {name:"移除应用", exact:true}).click();
+    assert.equal(await manualRow().count(), 1);
+    page.once("dialog", (dialog) => dialog.accept());
+    await manualRow().getByRole("button", {name:"移除应用", exact:true}).click();
+    await page.getByText("Android 应用已移除，可通过添加应用恢复。", {exact:true}).waitFor();
+    assert.equal(await manualRow().count(), 0);
+    checks.push("Android directory adds and removes applications, retains failed-input drafts and confirms removal; iOS exposes neither action");
     assert.equal(await page.locator("#accountSection").evaluate((element) => element.closest(".card") === document.getElementById("connector").closest(".card")), true);
     assert.equal(await page.locator("#setupForm .number").count(), 0);
     const ownedRow = () => firstGroup.locator(`li[data-identifier="com.example.account-ui"]`);

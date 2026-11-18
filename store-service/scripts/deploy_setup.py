@@ -88,6 +88,9 @@ out={'legacyStoreBindings':store,'legacyScreenshotBindings':shot,
  'screenshotSkillActive':rows('screenshot_skill_current','*','1'),
  'accountScreenshotBindings':rows('store_account_screenshot_bindings','store_connector_id,screenshot_connector_id','1'),
  'accountApps':rows('account_apps','account_id,bundle_identifier','1,2'),
+ 'accountAppDetails':rows('account_apps','account_id,bundle_identifier,name,store_app_id','1,2'),
+ 'accountAppSources':rows('account_apps','account_id,bundle_identifier,source','1,2') if 'source' in {r[1] for r in db.execute('PRAGMA table_info(account_apps)')} else [],
+ 'accountAppRemovals':rows('account_app_removals','account_id,bundle_identifier','1,2'),
  'accountStates':rows('accounts','id,platform,catalog_status','1'),
  'applicationSwitches':rows('account_bindings','platform,bundle_identifier,suppressed','1,2'),
  'accounts':accounts,'migrationMarkers':rows('account_migrations','name','1'),
@@ -474,12 +477,22 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                 routing_after = routing_snapshot()
                 for key in ("legacyStoreBindings", "legacyScreenshotBindings", "forwarding",
                             "connectorIdentitySha256", "integrationsSha256",
-                            "integrationGrantsSha256", "screenshotSettingsSha256", "screenshotSkillSha256", "screenshotSkillActive", "applicationSwitches", "accountScreenshotBindings"):
+                            "integrationGrantsSha256", "screenshotSettingsSha256", "screenshotSkillSha256", "screenshotSkillActive", "applicationSwitches", "accountScreenshotBindings", "accountAppRemovals"):
                     check(routing_after[key] == routing_before[key], "read-only migration preserves " + key)
                 check(all(row in routing_after["accounts"] for row in routing_before["accounts"]),
                       "preexisting account IDs, names, node relations and enabled states preserved")
                 check(["accounts_v1"] in routing_after["migrationMarkers"],
                       "transactional account migration marker recorded")
+                check(["android_manual_apps_v1"] in routing_after["migrationMarkers"],
+                      "Android manual directory migration recorded")
+                check(all(row in routing_after["accountAppDetails"] for row in routing_before["accountAppDetails"]),
+                      "preexisting application names, identifiers and store IDs preserved")
+                android_ids = {row[0] for row in routing_before["accounts"] if row[2] == "android"}
+                before_sources = {(a, b): source for a, b, source in routing_before["accountAppSources"]}
+                after_sources = {(a, b): source for a, b, source in routing_after["accountAppSources"]}
+                check(all(after_sources.get((a, b)) == (before_sources.get((a, b), "catalog") if routing_before["accountAppSources"] else "retained")
+                          for a, b in routing_before["accountApps"] if a in android_ids),
+                      "existing Android apps retained across future discovery")
                 status, content = request("/v1/accounts", snapshot["admin"])
                 check(status == 200, "administrator account migration inventory readable")
                 account_inventory = json.loads(content)
@@ -502,7 +515,8 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                 for account_id in account_by_id:
                     status, content = request("/v1/store-management/accounts/" + urllib.parse.quote(account_id, safe="") + "/apps", snapshot["token"])
                     rows = json.loads(content).get("apps", [])
-                    check(status == 200 and all(set(row) == {"platform", "bundleIdentifier", "name", "storeAppId", "accountId", "enabled", "resolutionStatus", "screenshotEnabled", "screenshotResolutionStatus"}
+                    check(status == 200 and all(set(row) == {"platform", "bundleIdentifier", "name", "storeAppId", "accountId", "source", "enabled", "resolutionStatus", "screenshotEnabled", "screenshotResolutionStatus"}
+                                                and row["source"] in ("catalog", "manual", "retained")
                                                 and isinstance(row["enabled"], bool) and isinstance(row["screenshotEnabled"], bool)
                                                 and isinstance(row["screenshotResolutionStatus"], str) for row in rows),
                           "cached account app schema includes separate screenshot resolution " + account_id)

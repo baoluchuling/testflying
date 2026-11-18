@@ -1,5 +1,5 @@
 {
-  "runId": "9e19c5f8c0b44e889032dbd7728d8a6b",
+  "runId": "aea887e3445c43769ef14b3372ab0453",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -36,6 +36,7 @@
     "admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it",
     "store and screenshot selectors show current/latest versions and outdated/current/newer/unknown states; offline reports stay explicitly unverified",
     "administrator publishes complete Skill ZIPs, safely handles invalid packages, reads immutable versions and rolls back without reinstalling; long hashes fit mobile layout",
+    "Android directory adds and removes applications, retains failed-input drafts and confirms removal; iOS exposes neither action",
     "account selector renders and fetches only the chosen account's iOS/Android apps; selection survives directory refresh; no account creation or manual app binding",
     "account screenshot binding updates both platforms, accepts an offline Mac, preserves forwarding switches and other accounts, supports explicit clearing and blocks saving mixed legacy settings until a choice",
     "unlocked admin can provision a screenshot node and download its macOS deployment ZIP",
@@ -45,13 +46,13 @@
     "mobile layout has no horizontal overflow",
     "no provider credential fields or files are uploaded and CSP passes"
   ],
-  "windowsExecutableSha256": "1e026b64ffebb0c5effcf69488db0c609f3918684b4d03d614acc1c5ab6a232f",
+  "windowsExecutableSha256": "a863025d1c83ea204bdb4439f16cdff0178e4ca0ad543f66c44175adc835b8e6",
   "credentialFilesUploaded": false,
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "b1045d7f-01fd-4f85-be1a-e0a92b8585d9",
-    "ea2453d8-774f-4bdc-b070-07370e88628e"
+    "6533eed1-b95d-4857-891f-92bbfdaf646c",
+    "791ae7d8-9c85-4682-9753-34c772f0f909"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0,

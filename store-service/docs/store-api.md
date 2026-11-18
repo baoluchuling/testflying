@@ -150,15 +150,21 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 {"platform":"ios","bundleIdentifier":"com.example.app","name":"Example","storeAppId":"123456789","accountId":"7da6a0fb-16e7-45e5-9782-1f5b47697b73","enabled":true,"resolutionStatus":"resolved","screenshotEnabled":false,"screenshotResolutionStatus":"screenshot_app_not_found"}
 ```
 
-目录仅包含商店成功上报的应用。每个商店账号可含 iOS、Android 两个平台目录，平台目录 ID 是内部查询标识。中心后台通过下拉选择账号，只显示所选账号的应用和截图节点绑定；重新读取保留选择，仅查询该账号目录。账号与凭据仍在安装配置区域创建，目录区域不提供新建账号或手动绑定／解绑应用。
+目录包含商店上报的应用，以及管理员手动添加和升级保留的 Android 应用；iOS 仅使用商店目录。`source` 为 `catalog`（商店上报）、`manual`（手动添加）或 `retained`（本次升级保留的原有 Android 应用），不代表手动应用已经通过 Google 核验。每个商店账号可含 iOS、Android 两个平台目录，平台目录 ID 是内部查询标识。中心后台通过下拉选择账号，只显示所选账号的应用和截图节点绑定；重新读取保留选择，仅查询该账号目录。账号与凭据仍在安装配置区域创建，目录区域不提供新建账号。
 
 `storeAppId` 可空。`enabled` 是应用转发开关，默认 true；关闭返回 `503 app_forwarding_disabled`，同时阻止此应用的新商店和截图请求。目录刷新、失败重试、重连和中心重启不会重置开关，其他应用不受影响。已创建的异步任务保留原执行节点。
 
 `resolutionStatus` 为 `resolved` 或 `account_ambiguous`、`identity_changed`、`account_disabled`、`app_forwarding_disabled` 等安全状态码。`screenshotEnabled` / `screenshotResolutionStatus` 通过截图执行解析器计算，表示路由可解析，不代表在线或立即执行。
 
-应用归属仅来自成功商店目录，无人工绑定覆盖或旧版本临时信任。精确平台＋包名零候选返回 `404 app_not_found`；多个候选返回 `409 account_ambiguous`，停用其中一方也不会改属。账号停用阻止商店和截图；仅商店节点停用时，账号截图节点可用仍能截图。失败保留最后成功目录，没有成功目录时不能路由。兼容 PUT 仅校验请求账号是否为唯一目录归属，不改写归属、解决冲突或重新开启应用；未知或跨平台返回 `422 account_membership_unverified`。
+应用按目录中的精确平台＋包名确定归属，Android 手动添加后可使用同一商店和截图路由。零候选返回 `404 app_not_found`；多个候选返回 `409 account_ambiguous`，停用其中一方也不会改属。账号停用阻止商店和截图；仅商店节点停用时，账号截图节点可用仍能截图。失败保留最后成功目录；Android 手动添加不依赖 Reporting／Firebase 发现成功，也不会把 `catalogStatus` 伪造为成功。兼容 PUT 仅校验请求账号是否为唯一目录归属，不改写归属、解决冲突或重新开启应用；未知或跨平台返回 `422 account_membership_unverified`。
 
 ### 管理员与开发后台
+
+Android 添加应用：管理员 `POST /v1/accounts/{accountId}/apps`，HTTPS session 镜像 `/connector-setup/api/accounts/{accountId}/apps`。正文 `{"bundleIdentifier":"com.example.android","name":"Example"}`，只允许这两个字段；包名必填，沿用平台标识校验（1–180 ASCII 字节），名称选填，非空时最多 160 UTF-8 字节，省略／null／空白使用包名。成功 `201 {"apps":[...]}` 返回该目录应用列表。iOS 目录返回 `422 android_directory_required`，未知目录 404；本目录重复包名 `409 app_exists`，其他 Android 账号已包含该包名返回 `409 account_ambiguous`，均不覆盖旧数据。身份变更待确认或账号停用时不允许添加。新包名默认开启转发；曾关闭的包名仍保留原开关。
+
+Android 移除应用：管理员 `DELETE /v1/accounts/{accountId}/apps/{bundleIdentifier}`，HTTPS session 镜像 `/connector-setup/api/accounts/{accountId}/apps/{bundleIdentifier}`，无正文，成功 204。仅移除此账号目录成员，保存本目录屏蔽记录，后续节点上报／刷新不会自动恢复；重新添加可恢复。未知成员 404，已移除项重复删除 204，iOS 返回 422。不会删除 Google Play 应用、素材、其他账号成员、账号截图绑定或全局转发开关；已创建任务继续按原节点执行。两项操作仅管理员／HTTPS 开发后台会话可用，业务／接入 Token 无权调用。
+
+本次升级原地保留所有已有成员、名称、商店 ID、开关和截图绑定；原有 Android 成员标为 `retained`，新增为 `manual`，两者不会被后续完整目录刷新删除或覆盖。被手动移除的包名即使再次出现在上报列表也不恢复。iOS 和 `catalog` 来源应用仍按完整上报刷新；真正更换商店节点或确认凭据身份变更仍执行原有成员失效规则。
 
 应用开关：管理员 `PUT /v1/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding`，JSON `{"enabled":false}` 或 `{"enabled":true}`，成功 204。后台 HTTPS session 镜像为 `/connector-setup/api/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding`。平台目录必须仍包含该应用，否则返回 `409 app_catalog_changed`，请重新读取。启用不会绕过重复归属、账号停用或身份变化校验。业务和接入 Token 无权修改应用开关。已通过转发校验的请求继续处理；关闭后新进入的请求被阻止。旧商店及截图 DELETE 均返回 `410 manual_binding_removed`，不修改目录或开关。
 

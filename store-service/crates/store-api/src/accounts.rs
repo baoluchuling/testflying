@@ -5,7 +5,11 @@ pub(super) fn management_routes(path: &str) -> Router<Arc<ApiState>> {
     Router::new()
         .route(path, get(list).post(create))
         .route(&format!("{path}/{{id}}"), axum::routing::patch(update))
-        .route(&format!("{path}/{{id}}/apps"), get(apps))
+        .route(&format!("{path}/{{id}}/apps"), get(apps).post(add_app))
+        .route(
+            &format!("{path}/{{id}}/apps/{{identifier}}"),
+            axum::routing::delete(remove_app),
+        )
         .route(
             &format!("{path}/{{id}}/apps/{{platform}}/{{identifier}}/forwarding"),
             axum::routing::put(forwarding),
@@ -43,6 +47,35 @@ async fn set_screenshot(
 #[serde(deny_unknown_fields)]
 struct ForwardingInput {
     enabled: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AppInput {
+    bundle_identifier: String,
+    name: Option<String>,
+}
+
+async fn add_app(
+    State(state): State<Arc<ApiState>>,
+    Path(id): Path<String>,
+    Json(input): Json<AppInput>,
+) -> Result<(StatusCode, Json<Value>)> {
+    state
+        .registry
+        .add_android_app(&id, &input.bundle_identifier, input.name.as_deref())?;
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({"apps":state.registry.account_apps(&id)?})),
+    ))
+}
+
+async fn remove_app(
+    State(state): State<Arc<ApiState>>,
+    Path((id, identifier)): Path<(String, String)>,
+) -> Result<StatusCode> {
+    state.registry.remove_android_app(&id, &identifier)?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn forwarding(
