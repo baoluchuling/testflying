@@ -1,5 +1,5 @@
 {
-  "runId": "8fc76a5739374c1aa542c5311cfbb687",
+  "runId": "9e19c5f8c0b44e889032dbd7728d8a6b",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -12,8 +12,6 @@
     },
     "packageSha256": "5117f4a2a645aeb307bf3b829c575ad58135cc97e75291e594532ab5b5b21b23"
   },
-  "packageTestsRunId": "0b982e2be5d348de9231e0ce3b4b8951",
-  "packageTestsPassed": 7,
   "production": false,
   "checks": [
     "HTTP displays the HTTPS link without prompting for credentials or contacting the node API",
@@ -36,6 +34,7 @@
     "locking hides screenshot settings and clears all unsaved OSS and notification passwords",
     "screenshot node is available in its own deployment panel and excluded from Store Connector downloads",
     "admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it",
+    "store and screenshot selectors show current/latest versions and outdated/current/newer/unknown states; offline reports stay explicitly unverified",
     "administrator publishes complete Skill ZIPs, safely handles invalid packages, reads immutable versions and rolls back without reinstalling; long hashes fit mobile layout",
     "account selector renders and fetches only the chosen account's iOS/Android apps; selection survives directory refresh; no account creation or manual app binding",
     "account screenshot binding updates both platforms, accepts an offline Mac, preserves forwarding switches and other accounts, supports explicit clearing and blocks saving mixed legacy settings until a choice",
@@ -46,21 +45,21 @@
     "mobile layout has no horizontal overflow",
     "no provider credential fields or files are uploaded and CSP passes"
   ],
-  "windowsExecutableSha256": "17f4960939d43b871a1f3374c13a35dd876984a5873f64feb3221fb4747fa061",
+  "windowsExecutableSha256": "1e026b64ffebb0c5effcf69488db0c609f3918684b4d03d614acc1c5ab6a232f",
   "credentialFilesUploaded": false,
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "0e104ce9-0a4c-4923-9e77-9a0284bdcc1c",
-    "55ac8f41-7890-4572-99ac-066db1b80c8e"
+    "b1045d7f-01fd-4f85-be1a-e0a92b8585d9",
+    "ea2453d8-774f-4bdc-b070-07370e88628e"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0,
   "sourceHashes": {
-    "crates/store-api/src/setup/accounts.mjs": "4ef536bcc04ed29c2422d68cd1128178550f5adaed1dae6d6f2603b1a071e3b3",
-    "crates/store-api/src/setup/app.mjs": "1004f5f70274c814dd8cce344bfcf88a4283e3984828820e0e535cbf293df4b7",
+    "crates/store-api/src/setup/accounts.mjs": "bc6ee269cfc33064c7340c7032f1d89adc20533e98e65268079546e484953b1a",
+    "crates/store-api/src/setup/app.mjs": "c20e7cfaa4e286db9c52d445c73cab427e01585985accafb5106863c03072960",
     "crates/store-api/src/setup/forwarding.mjs": "04a01dacf546f66786f9cc440fae66ee77fd031d752ac5d07ce7c4efa9a6cc7b",
-    "crates/store-api/src/setup/index.html": "630a8739ca6c9895d116355a283ba5b67a5206b7396cab82c9fb7d12dd48a3bb",
+    "crates/store-api/src/setup/index.html": "1de450b265dfc67159b6ceed0491874d686e3c3ff875a2b0476775512bde4030",
     "crates/store-api/src/setup/integrations.mjs": "1e12510de9980e761afeb0b67e19d27d221d2ca19f416804f7b1fc1e66edd172",
     "crates/store-api/src/setup/logs.mjs": "f2e0f8ff2929fbd6fae9dddef2ad60d009324fb1aade4253285bf2dd8f6d5670",
     "crates/store-api/src/setup/packager.mjs": "71d28c5d380b145646974b340ff30f27593148d554cac0078c93832525e19484",
@@ -69,8 +68,34 @@
     "crates/store-api/src/setup/style.css": "6a518268433af65f47a3a530d14ff4b84407e2ffa6701ea26ab5c473ae066c86",
     "crates/store-api/src/setup/vendor/JSZIP-LICENSE.markdown": "566c953c6090b1218ca6217dd7359d45dde46581968586dc607d59a78af6a9c4",
     "crates/store-api/src/setup/vendor/jszip.min.js": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
-    "scripts/verify_setup_ui.mjs": "75da9f5ac71fa794900c67765508b97fd652562510eabd72e0bd64899f630acf",
+    "crates/store-api/src/setup/versions.mjs": "d94b6c44955debe3aa0cbf37acf1719083b3198c0e638e481ac747b40e0c0585",
+    "scripts/verify_setup_ui.mjs": "ae8994ee98e52cfc7436160d2d0bc3acbd5394442f8a62b3ba12fbe5bbaec14c",
     "scripts/verify_setup_ui.py": "fe7a011495656968f6f3a97bbef72473c8d3c1a3f3e48601534ae5fac359e118"
   },
-  "uiSourceCommit": "3ea5f7ddd22ea8879f378d1748472230b80652b9"
+  "uiSourceCommit": "a98e7e990015aa4fb0a83ef397c1195f53c5f9d6",
+  "versionReleaseChecks": {
+    "runId": "9e19c5f8c0b44e889032dbd7728d8a6b",
+    "documentChecks": {
+      "openapiParsed": true,
+      "localReferencesResolved": true,
+      "deployPythonParsed": true,
+      "staticRemoteScriptsParsed": 6,
+      "yamlVersion": "2.8.1"
+    },
+    "deploymentArtifactChecks": {
+      "validPackageCases": 1,
+      "rejectedMissingOrInconsistentPackageCases": 6
+    },
+    "connectorProgramVersionProbe": {
+      "store-connector": "store-connector 0.2.0",
+      "screenshot-connector": "screenshot-connector 0.2.0"
+    },
+    "sourceHashes": {
+      "scripts/deploy_setup.py": "89241f2751dfdf5e834f6145a8bcafe0ef6fc2b127b6ee9afbdd58f157c6f00c",
+      "docs/openapi.yaml": "2a6566443d1c99242b34e99496943de9c3f4dc01f7c7975d0f365b3020e70592"
+    }
+  },
+  "connectorVersion": "0.2.0",
+  "packageTestsRunId": "7f05cff995d041e69bb0698b7b48ad72",
+  "packageTestsPassed": 7
 }
