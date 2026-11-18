@@ -93,6 +93,7 @@ out={'legacyStoreBindings':store,'legacyScreenshotBindings':shot,
  'screenshotSettingsSha256':digest(rows('screenshot_settings','id,encrypted','1')),
  'screenshotSkillSha256':digest(skill_rows),
  'screenshotSkillActive':rows('screenshot_skill_current','*','1'),
+ 'accountScreenshotBindings':rows('store_account_screenshot_bindings','store_connector_id,screenshot_connector_id','1'),
  'accountApps':rows('account_apps','account_id,bundle_identifier','1,2'),
  'accountStates':rows('accounts','id,platform,catalog_status','1'),
  'applicationSwitches':rows('account_bindings','platform,bundle_identifier,suppressed','1,2'),
@@ -458,7 +459,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                 routing_after = routing_snapshot()
                 for key in ("legacyStoreBindings", "legacyScreenshotBindings", "forwarding",
                             "connectorIdentitySha256", "integrationsSha256",
-                            "integrationGrantsSha256", "screenshotSettingsSha256", "screenshotSkillSha256", "screenshotSkillActive", "applicationSwitches"):
+                            "integrationGrantsSha256", "screenshotSettingsSha256", "screenshotSkillSha256", "screenshotSkillActive", "applicationSwitches", "accountScreenshotBindings"):
                     check(routing_after[key] == routing_before[key], "read-only migration preserves " + key)
                 check(all(row in routing_after["accounts"] for row in routing_before["accounts"]),
                       "preexisting account IDs, names, node relations and enabled states preserved")
@@ -540,6 +541,9 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                 report["accountMigration"] = account_migration
             if "storeConnectorPublication" in previous_report:
                 report["storeConnectorPublication"] = previous_report["storeConnectorPublication"]
+            for key in ("screenshotSkillPublication", "screenshotSkillLiveTest"):
+                if key in previous_report:
+                    report[key] = previous_report[key]
             if replacements:
                 report["storeConnectorPublication"] = {"runId": root.name, "sourceCommit": commit,
                     "downloadVerified": expected_connectors, "serviceConfigPreserved": True,

@@ -114,9 +114,13 @@ components:
         apps: {type: array, items: {$ref: '#/components/schemas/AccountApp'}}
     AccountList:
       type: object
-      required: [accounts, migrationIssues]
+      required: [accounts, migrationIssues, screenshotBindings]
       properties:
         accounts: {type: array, items: {$ref: '#/components/schemas/Account'}}
+        screenshotBindings:
+          type: array
+          description: Explicit logical-account screenshot settings, including null. Absent groups retain legacy platform settings.
+          items: {$ref: '#/components/schemas/AccountScreenshotBinding'}
         migrationIssues:
           type: array
           items:
@@ -126,6 +130,25 @@ components:
               platform: {type: string, enum: [ios, android]}
               bundleIdentifier: {type: string}
               code: {type: string}
+    AccountScreenshotBinding:
+      type: object
+      required: [storeConnectorId, connectorId]
+      properties:
+        storeConnectorId: {type: string, format: uuid}
+        connectorId: {type: [string, 'null'], format: uuid}
+    AccountScreenshotInput:
+      type: object
+      additionalProperties: false
+      required: [connectorId]
+      properties:
+        connectorId: {type: [string, 'null'], format: uuid, description: Enabled screenshot node UUID, or explicit null to clear the account screenshot route. Offline nodes are allowed.}
+    AccountScreenshotResult:
+      allOf:
+        - {$ref: '#/components/schemas/AccountScreenshotBinding'}
+        - type: object
+          required: [updatedAccounts]
+          properties:
+            updatedAccounts: {type: integer, minimum: 0}
     AccountResponse:
       type: object
       required: [account]
@@ -469,6 +492,28 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountInput'}}}}
       responses:
         '201': {description: Account created, content: {application/json: {schema: {$ref: '#/components/schemas/AccountResponse'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/accounts/store-connectors/{storeConnectorId}/screenshot-connector:
+    parameters:
+      - {name: storeConnectorId, in: path, required: true, schema: {type: string, format: uuid}}
+    put:
+      summary: Configure the screenshot node for an entire store account
+      description: Atomically applies to both platform directories and future arrivals. Store node may be paused; target must be an enabled screenshot node, which may be offline or shared. Null clears only screenshot routing. Existing jobs, app ownership and forwarding switches are unchanged. Business and integration tokens are forbidden.
+      security: [{adminToken: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountScreenshotInput'}}}}
+      responses:
+        '200': {description: Account-wide screenshot setting saved, content: {application/json: {schema: {$ref: '#/components/schemas/AccountScreenshotResult'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/accounts/store-connectors/{storeConnectorId}/screenshot-connector:
+    parameters:
+      - {name: storeConnectorId, in: path, required: true, schema: {type: string, format: uuid}}
+      - {$ref: '#/components/parameters/setupHeader'}
+    put:
+      summary: HTTPS developer session account screenshot node configuration
+      security: [{setupSession: []}, {adminToken: []}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountScreenshotInput'}}}}
+      responses:
+        '200': {description: Account-wide screenshot setting saved, content: {application/json: {schema: {$ref: '#/components/schemas/AccountScreenshotResult'}}}}
         default: {$ref: '#/components/responses/Error'}
   /v1/accounts/{accountId}:
     parameters: [{$ref: '#/components/parameters/accountId'}]

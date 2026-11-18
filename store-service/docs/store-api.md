@@ -150,7 +150,7 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 {"platform":"ios","bundleIdentifier":"com.example.app","name":"Example","storeAppId":"123456789","accountId":"7da6a0fb-16e7-45e5-9782-1f5b47697b73","enabled":true,"resolutionStatus":"resolved","screenshotEnabled":false,"screenshotResolutionStatus":"screenshot_app_not_found"}
 ```
 
-目录仅包含商店成功上报的应用。每个商店账号可含 iOS、Android 两个平台目录，平台目录 ID 是内部查询标识。中心后台按商店账号分组展示；账号与凭据仍在安装配置区域创建，目录区域不提供新建、编辑、绑定或解绑。
+目录仅包含商店成功上报的应用。每个商店账号可含 iOS、Android 两个平台目录，平台目录 ID 是内部查询标识。中心后台通过下拉选择账号，只显示所选账号的应用和截图节点绑定；重新读取保留选择，仅查询该账号目录。账号与凭据仍在安装配置区域创建，目录区域不提供新建账号或手动绑定／解绑应用。
 
 `storeAppId` 可空。`enabled` 是应用转发开关，默认 true；关闭返回 `503 app_forwarding_disabled`，同时阻止此应用的新商店和截图请求。目录刷新、失败重试、重连和中心重启不会重置开关，其他应用不受影响。已创建的异步任务保留原执行节点。
 
@@ -162,7 +162,11 @@ HTTP 入口用同一枚业务 API Token 申请图片上传凭据，申请成功�
 
 应用开关：管理员 `PUT /v1/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding`，JSON `{"enabled":false}` 或 `{"enabled":true}`，成功 204。后台 HTTPS session 镜像为 `/connector-setup/api/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding`。平台目录必须仍包含该应用，否则返回 `409 app_catalog_changed`，请重新读取。启用不会绕过重复归属、账号停用或身份变化校验。业务和接入 Token 无权修改应用开关。已通过转发校验的请求继续处理；关闭后新进入的请求被阻止。旧商店及截图 DELETE 均返回 `410 manual_binding_removed`，不修改目录或开关。
 
-管理员 GET／POST `/v1/accounts`、PATCH `/v1/accounts/{accountId}`、GET `/v1/accounts/{accountId}/apps`、POST `/v1/accounts/{accountId}/refresh` 保留作技术配置接口，沿用管理员鉴权及 HTTPS session 镜像。目录页面只读取缓存和操作应用开关；创建账号和上传两平台凭据仍在上方合并后的「账号与节点配置」卡片进行。
+账号截图节点：管理员 `PUT /v1/accounts/store-connectors/{storeConnectorId}/screenshot-connector`，HTTPS session 镜像 `/connector-setup/api/accounts/store-connectors/{storeConnectorId}/screenshot-connector`。正文必填 `{"connectorId":"截图节点 UUID"}` 或显式 `{"connectorId":null}`，成功 `200 {"storeConnectorId":"商店节点 UUID","connectorId":"截图节点 UUID 或 null","updatedAccounts":2}`（此处 null 是 JSON null，不是字符串）。商店节点 ID 对应逻辑账号，非平台目录 ID。整组 iOS／Android 目录在同一事务中更新，未来首次上报的平台继承该配置；显式 null 清空该账号截图路由。目标须为已启用截图节点，允许离线，也可由多个账号共用。商店节点暂停不影响配置截图链路。应用归属、应用开关及已创建任务的执行节点保持原样。业务／接入 Token 无权修改，缺失字段、未知字段及错误类型返回 422。历史平台配置不一致时后台要求明确选择，不自动覆盖。
+
+管理员 GET `/v1/accounts` 另返回 `screenshotBindings:[{"storeConnectorId":"商店节点 UUID","connectorId":null}]`，仅包含显式账号级配置；没有映射时沿用既有平台配置。公共账号列表不暴露此信息。
+
+管理员 GET／POST `/v1/accounts`、PATCH `/v1/accounts/{accountId}`、GET `/v1/accounts/{accountId}/apps`、POST `/v1/accounts/{accountId}/refresh` 保留作技术配置接口，沿用管理员鉴权及 HTTPS session 镜像。目录页面读取缓存、操作应用开关及账号截图节点；创建账号和上传两平台凭据仍在上方合并后的「账号与节点配置」卡片进行。
 
 POST 必填 `name`、`platform`、`storeConnectorId`，可选 `screenshotConnectorId`，返回 201。名称非空且至多 160 UTF-8 字节。PATCH 可传 `name`、`enabled`、`storeConnectorId`、`screenshotConnectorId`、`acceptIdentityChange`，返回 200。省略节点字段保留原值；截图节点传 null 清空；平台不可修改。截图节点可供多个账号共用。管理员账号对象在 PublicAccount 上增加 `storeConnectorId`、可空 `screenshotConnectorId`、可空 `migrationError`；GET 列表另含 `migrationIssues:[{platform,bundleIdentifier,code}]`。
 

@@ -11,6 +11,32 @@ pub(super) fn management_routes(path: &str) -> Router<Arc<ApiState>> {
             axum::routing::put(forwarding),
         )
         .route(&format!("{path}/{{id}}/refresh"), post(refresh))
+        .route(
+            &format!("{path}/store-connectors/{{storeConnectorId}}/screenshot-connector"),
+            axum::routing::put(set_screenshot),
+        )
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ScreenshotInput {
+    #[serde(deserialize_with = "required_nullable")]
+    connector_id: Option<String>,
+}
+fn required_nullable<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(deserializer)
+}
+async fn set_screenshot(
+    State(state): State<Arc<ApiState>>,
+    Path(store): Path<String>,
+    Json(input): Json<ScreenshotInput>,
+) -> Result<Json<Value>> {
+    Ok(Json(state.registry.set_store_account_screenshot(
+        &store,
+        input.connector_id.as_deref(),
+    )?))
 }
 
 #[derive(Deserialize)]
@@ -37,7 +63,7 @@ fn public_view(account: Account) -> Value {
 
 async fn list(State(state): State<Arc<ApiState>>) -> Result<Json<Value>> {
     Ok(Json(
-        json!({"accounts":state.registry.accounts()?,"migrationIssues":state.registry.account_migration_issues()?}),
+        json!({"accounts":state.registry.accounts()?,"migrationIssues":state.registry.account_migration_issues()?,"screenshotBindings":state.registry.store_account_screenshot_bindings()?}),
     ))
 }
 

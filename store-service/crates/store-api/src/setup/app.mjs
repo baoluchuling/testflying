@@ -73,7 +73,8 @@ async function request(active, path, { method = "GET", body, binary = false, tok
       let code;
       try { code = (await response.json()).error?.code; } catch { /* Never display raw provider or server errors. */ }
       const messages = { app_catalog_changed: "目录已变化，请重新读取后操作", app_forwarding_disabled: "此应用已关闭转发", account_ambiguous: "多个商店账号返回了此应用，请检查商店目录", account_membership_unverified: "商店目录尚未包含此应用", identity_changed: "账号身份已变化，请由开发人员核对配置", account_disabled: "账号已停用", account_not_found: "账号目录不存在", app_not_found: "商店目录尚未包含此应用" };
-      throw new Error(messages[code] || `账号请求失败（${response.status}）`);
+      const bindingMessages = { connector_not_found: "节点不存在，请重新读取目录", invalid_connector_kind: "所选账号不是商店节点", invalid_screenshot_connector: "请选择截图类型的节点", connector_disabled: "截图节点已停用，请选择已启用节点", account_screenshot_conflict: "账号已有不同的截图配置，请重新读取后统一设置", legacy_screenshot_conflict: "历史截图配置不一致，请选择统一的截图节点" };
+      throw new Error(messages[code] || bindingMessages[code] || `账号请求失败（${response.status}）`);
     }
     throw new Error(`中心请求失败（${response.status}），请检查节点状态后重试`);
   }

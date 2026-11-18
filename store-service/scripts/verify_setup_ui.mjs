@@ -58,7 +58,8 @@ const screenshotSettingsFixture = {
   notification: { url: "", tokenConfigured: false, status: "not_configured" },
 };
 const screenshotSettingsWrites = [];
-const accountFixtures = [], accountWrites = [];
+const accountFixtures = [], accountWrites = [], accountBindingWrites = [], directoryReads = [];
+const accountScreenshotBindings = new Map();
 const accountDirectories = new Map(), appForwarding = new Map();
 const skillFixture = { active: null, versions: [] };
 let failNextSkillPublish = false;
@@ -151,7 +152,18 @@ if (!production) {
         const suffix = url.pathname.slice((setupApi + "accounts").length).split("/").filter(Boolean);
         const account = accountFixtures.find((item) => item.id === suffix[0]);
         let input;
-        if (suffix.length === 0 && req.method === "GET") { res.end(JSON.stringify({ accounts: accountFixtures, migrationIssues: [] })); return; }
+        if (suffix.length === 0 && req.method === "GET") { res.end(JSON.stringify({ accounts: accountFixtures, migrationIssues: [], screenshotBindings: [...accountScreenshotBindings].map(([storeConnectorId, connectorId]) => ({storeConnectorId, connectorId})) })); return; }
+        if (suffix.length === 3 && suffix[0] === "store-connectors" && suffix[2] === "screenshot-connector" && req.method === "PUT") {
+          assert(nodes.some((node) => node.connectorId === suffix[1] && node.kind === "store"));
+          let body = ""; for await (const part of req) body += part;
+          input = JSON.parse(body); assert.deepEqual(Object.keys(input), ["connectorId"]);
+          assert(input.connectorId === null || nodes.some((node) => node.connectorId === input.connectorId && node.kind === "screenshot" && node.enabled));
+          accountScreenshotBindings.set(suffix[1], input.connectorId);
+          const related = accountFixtures.filter((item) => item.storeConnectorId === suffix[1]);
+          for (const item of related) { item.screenshotConnectorId = input.connectorId; if (item.migrationError?.startsWith("legacy_screenshot_")) item.migrationError = null; }
+          accountBindingWrites.push(input);
+          res.end(JSON.stringify({storeConnectorId:suffix[1],connectorId:input.connectorId,updatedAccounts:related.length})); return;
+        }
         assert(account);
         if (suffix.length === 5 && suffix[1] === "apps" && suffix[4] === "forwarding" && req.method === "PUT") {
           let body = ""; for await (const part of req) body += part;
@@ -166,6 +178,7 @@ if (!production) {
           res.writeHead(204).end(); return;
         }
         if (suffix.length === 2 && suffix[1] === "apps" && req.method === "GET") {
+          directoryReads.push(account.id);
           const apps = (accountDirectories.get(account.id) || []).map((bundleIdentifier) => {
             const candidates = accountFixtures.filter((candidate) => candidate.platform === account.platform && accountDirectories.get(candidate.id)?.includes(bundleIdentifier));
             const enabled = appForwarding.get(`${account.platform}/${bundleIdentifier}`) ?? true;
@@ -729,7 +742,9 @@ try {
     await page.locator("#accountsReload").click();
     await page.getByText("账号目录已读取。", { exact: true }).waitFor();
     assert.equal(await page.locator("#accountsWorkspace").evaluate((element) => element.open), true);
-    assert.equal(await page.locator("#accountGroups > section").count(), 2);
+    assert.equal(await page.locator("#accountGroups > section").count(), 1);
+    assert.equal(await page.locator("#accountSelector").inputValue(), firstStore.connectorId);
+    assert.deepEqual([...new Set(directoryReads)].sort(), [firstAccount.id, androidAccount.id].sort());
     const firstGroup = page.locator(`#accountGroups > section[data-store-connector-id="${firstStore.connectorId}"]`);
     assert.equal(await firstGroup.locator(":scope > section").count(), 2);
     assert.match(await firstGroup.textContent(), /iOS 目录/);
@@ -751,16 +766,64 @@ try {
     await page.getByText("账号目录已读取。", { exact: true }).waitFor();
     assert.equal(await ownedRow().locator("input").isChecked(), false);
     assert.equal(await firstGroup.locator('li[data-identifier="com.example.peer"] input').isChecked(), true);
+    const otherScreenshot = { connectorId: randomUUID(), kind: "screenshot", name: "Offline screenshot Mac", enabled: true, connected: false };
+    nodes.push(otherScreenshot);
+    await page.locator("#accountsReload").click();
+    await page.getByText("账号目录已读取。", {exact:true}).waitFor();
+    await page.locator("#accountScreenshotNode").selectOption(otherScreenshot.connectorId);
+    await page.locator("#accountScreenshotSave").click();
+    await page.getByText("账号截图节点已保存，iOS 和 Android 共用此配置。已创建任务不受影响。", {exact:true}).waitFor();
+    assert.equal(firstAccount.screenshotConnectorId, otherScreenshot.connectorId);
+    assert.equal(androidAccount.screenshotConnectorId, otherScreenshot.connectorId);
+    assert.equal(secondAccount.screenshotConnectorId, screenshotNode.connectorId);
+    assert.equal(await ownedRow().locator("input").isChecked(), false);
+    await page.locator("#accountsReload").click();
+    await page.getByText("账号目录已读取。", {exact:true}).waitFor();
+    assert.equal(await page.locator("#accountScreenshotNode").inputValue(), otherScreenshot.connectorId);
+    await page.locator("#accountScreenshotNode").selectOption("");
+    await page.locator("#accountScreenshotSave").click();
+    await page.getByText("账号截图节点已保存，iOS 和 Android 共用此配置。已创建任务不受影响。", {exact:true}).waitFor();
+    assert.equal(firstAccount.screenshotConnectorId, null);
+    assert.equal(androidAccount.screenshotConnectorId, null);
+    assert.equal(await ownedRow().locator("input").isChecked(), false);
+    accountScreenshotBindings.delete(firstStore.connectorId);
+    firstAccount.screenshotConnectorId = screenshotNode.connectorId;
+    androidAccount.screenshotConnectorId = otherScreenshot.connectorId;
+    await page.locator("#accountsReload").click();
+    await page.getByText("账号目录已读取。", {exact:true}).waitFor();
+    assert.equal(await page.locator("#accountScreenshotNode").inputValue(), "__mixed__");
+    assert.equal(await page.locator("#accountScreenshotSave").isDisabled(), true);
+    firstAccount.screenshotConnectorId = null; androidAccount.screenshotConnectorId = null;
+    firstAccount.migrationError = "legacy_screenshot_conflict";
+    await page.locator("#accountsReload").click();
+    await page.getByText("账号目录已读取。", {exact:true}).waitFor();
+    assert.equal(await page.locator("#accountScreenshotNode").inputValue(), "__mixed__");
+    assert.equal(await page.locator("#accountScreenshotSave").isDisabled(), true);
+    await page.locator("#accountScreenshotNode").selectOption(screenshotNode.connectorId);
+    await page.locator("#accountScreenshotSave").click();
+    await page.getByText("账号截图节点已保存，iOS 和 Android 共用此配置。已创建任务不受影响。", {exact:true}).waitFor();
+    assert.equal(androidAccount.screenshotConnectorId, screenshotNode.connectorId);
+    assert.deepEqual(accountBindingWrites, [{connectorId:otherScreenshot.connectorId},{connectorId:null},{connectorId:screenshotNode.connectorId}]);
     await ownedRow().locator("input").check();
     await page.getByText("应用已开启转发。", { exact: true }).waitFor();
     assert.equal(appForwarding.get("ios/com.example.account-ui"), true);
     assert.deepEqual(accountWrites.map((write) => write.input), [{enabled:false},{enabled:true}]);
     secondAccount.catalogStatus = "failed"; secondAccount.catalogError = "catalog_discovery_failed";
-    await page.locator("#accountsReload").click();
+    await page.locator("#accountSelector").selectOption(secondStore.connectorId);
     await page.getByText("账号目录已读取。", { exact: true }).waitFor();
     assert.match(await page.locator("#accountGroups").textContent(), /catalog_discovery_failed/);
     assert.equal(await page.locator('#accountGroups li[data-identifier="com.example.second"]').count(), 1);
-    checks.push("merged installer card; read-only accounts grouped across iOS/Android; discovered apps default on, toggles persist and affect both routes, peers unaffected, no create/edit/bind/unbind controls");
+    assert.equal(await page.locator('#accountGroups li[data-identifier="com.example.account-ui"]').count(), 0);
+    const readsBefore = directoryReads.length;
+    await page.locator("#accountsReload").click();
+    await page.getByText("账号目录已读取。", {exact:true}).waitFor();
+    assert.equal(await page.locator("#accountSelector").inputValue(), secondStore.connectorId);
+    assert.deepEqual(directoryReads.slice(readsBefore), [secondAccount.id]);
+    await page.locator("#accountSelector").selectOption(firstStore.connectorId);
+    await page.getByText("账号目录已读取。", {exact:true}).waitFor();
+    assert.equal(await page.locator('#accountGroups li[data-identifier="com.example.second"]').count(), 0);
+    checks.push("account selector renders and fetches only the chosen account's iOS/Android apps; selection survives directory refresh; no account creation or manual app binding");
+    checks.push("account screenshot binding updates both platforms, accepts an offline Mac, preserves forwarding switches and other accounts, supports explicit clearing and blocks saving mixed legacy settings until a choice");
     await page.locator("#accountsWorkspace").screenshot({ path: path.join(tmp, "setup-preview.png") });
     await page.locator("#accountsWorkspace summary").click();
     await page.locator("#screenshotSettingsWorkspace summary").click();
@@ -784,6 +847,7 @@ try {
     assert.equal(await page.locator("#screenshotSkillWorkspace").isVisible(), false);
     assert.equal(await page.locator("#screenshotSkillFile").inputValue(), "");
     assert.equal(await page.locator("#accountGroups li").count(), 0);
+    assert.equal(await page.locator("#accountSelector option").count(), 0);
     assert.equal(await page.locator("#screenshotNode").inputValue(), "");
     checks.push("unlocked admin can provision a screenshot node and download its macOS deployment ZIP");
     checks.push("locking aborts an in-flight screenshot settings refresh and prevents a late response from restoring the form");
