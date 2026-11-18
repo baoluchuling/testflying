@@ -893,6 +893,24 @@ Get-Content -LiteralPath $logFile.FullName -Tail 50 -Wait
 
 截图与商店业务在同一中心，使用同一应用账号归属和不同执行链路。先确认账号目录成员资格并配置账号截图 Mac，可通过兼容 PUT 为应用启用该节点；之后触发任务仍只传平台、包名、截图要求和 target 数组。中心创建任务并返回 jobId，外部保存响应中的 ID，不在请求中传 jobId、节点 ID、accountId、项目路径或模拟器 ID。无需另外创建旧商店绑定，商店凭据不进入截图请求；开发环境和项目需在实体 Mac 准备好，由 Codex 查找和操作。商店平台转发开关不影响截图任务。
 
+### 截图 Skill 自动更新与显式加载
+
+中心后台「截图 Skill · 自动更新」上传完整 ZIP，须包含一个技能的 `SKILL.md`、脚本和参考资料。首次安装／升级支持此能力的截图 Connector 后，后续仅发布 Skill，无需重装节点。技能版本是整个标准化包的 SHA-256，内容不可覆盖；可从历史版本中切回已有版本。最多保留十个版本，运行中任务使用的版本保留到任务结束。
+
+| 方法 | 管理员路径 | 正文与响应 |
+|---|---|---|
+| GET | `/v1/screenshot-skill` | `200 {"active":SkillManifest或null,"versions":[SkillManifest]}` |
+| POST | `/v1/screenshot-skill` | `Content-Type: application/zip`，原始 ZIP 正文，验证后原子发布，返回 201 和同样结构 |
+| PUT | `/v1/screenshot-skill` | JSON `{"version":"64位小写SHA256"}`，选择已有版本，返回 200 和同样结构 |
+
+后台 HTTPS session 镜像为 `/connector-setup/api/screenshot-skill`，使用现有会话及 `X-Testflying-Setup: 1`。外部业务／接入 Token 不能发布或回退。ZIP 最大 2 MiB；解码文件合计 4 MiB、单文件 1 MiB、最多 256 个文件，`SKILL.md` 最大 64 KiB。拒绝路径穿越、链接、大小写重名、文件／目录冲突和不安全路径；忽略 macOS 导出元数据。上传失败不会改变当前版本。版本历史全部被运行任务占用时，等待任务结束后再发布。
+
+`SkillManifest` 字段：`schemaVersion:1`、`name`、`version`、`sha256`、`bytes`、`files`、`publishedAt`（Unix 秒）；`version` 和 `sha256` 均为标准化 JSON 包的 64 位小写摘要。节点在每次领取任务时检查并固定最新 manifest，任务查询响应 `skill` 可核对版本，原始 `prompt` 和 `target` 不变。未发布 Skill 时该字段为 null。
+
+新节点声明 `X-Screenshot-Protocol: 3` 和 `X-Screenshot-Skill-Protocol: 1`。发布 Skill 后，缺少新能力的旧节点领取待执行任务返回 `409 screenshot_skill_upgrade_required`，不会消费任务或绕过技能执行。节点用自己的凭据 HTTPS GET `/v1/connectors/{id}/screenshot-skill/{version}` 获取标准化完整包，中心不提供外部下载地址。包最大 8 MiB，校验 SHA 后原子更新本机缓存，并为本次任务准备独立的 `.agents/skills/{name}`；不覆盖全机 Codex Skills 或修改 `CODEX_HOME`。相同版本复用已校验缓存；有新版但下载或校验失败时任务明确失败。
+
+Codex 启动后，连接器调用原生 `skills/list` 确认准确的技能名、绝对路径和启用状态，再在 `turn/start` 中显式加入 `{"type":"skill","name":"技能名","path":"本任务SKILL.md绝对路径"}`。无法识别或加载返回 `codex_skill_unavailable`，不启动无 Skill 的任务。节点日志记录检查、更新、缓存命中、版本和 SHA；技能负责准备、导航和原图检查，上传继续使用 Connector 的截图／OSS 送达工具。任务运行中不切换版本，也不会因更新重做已完成任务。此管理及节点内部接口不计入 23 个公开核心接口。
+
 正常业务链路无需外部轮询：中心生成并持久保存 jobId，将它返回给调用方并转给节点；节点完成截图与 OSS 上传后向中心确认，再由中心带同一个 jobId 和目标图片结果通知外部。查询接口仅作排障或核对备用，不参与任务执行和完成判定。当前外部回调 POST 协议尚未补齐，本版先完成任务字段、节点转发和 OSS 结果关联，暂不发送外部通知。
 
 下列路径追加到 HTTPS 中心基础地址（例如 `https://store-api.example.com/store-api`），不要追加到 `{APP}` 下。接口均要求 HTTPS 和 `Authorization: Bearer INTEGRATION_TOKEN`；绑定的 PUT/GET/DELETE 也允许管理员 Token。普通商店业务 Token 无权使用截图接口。应用后端负责校验当前用户的应用权限。

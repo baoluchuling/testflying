@@ -18,9 +18,17 @@ Content-Type: application/json
 
 已有和新发放的接入 Token 均可调用全部启用的截图节点。接入系统用同一枚 Token 调用商店和截图接口，并用发起任务的 Token 查询任务状态。通用商店 Token 无法派截图任务。 [接入凭据管理](connector-setup.md)
 
+## 截图 Skill 自动更新
+
+在中心后台「截图 Skill · 自动更新」上传完整技能 ZIP，包括 SKILL.md、脚本、参考资料和 agents 配置。发布前校验结构和大小，版本采用整包 SHA-256，支持切回历史版本。已有截图节点需先安装一次支持 Skill 的新版程序；之后发布 Skill 无需重新安装或重启节点。
+
+每次领取任务时，中心在同一事务中固定最新 Skill 版本。节点先校验缓存；发现新版本则从中心下载、验证摘要并原子切换，再为本任务准备独立 `.agents/skills`。Codex 原生技能列表必须能找到准确名称和路径且已启用，任务才会通过原生 Skill 输入开始，外部原始提示词保持不变。下载、校验或加载失败会明确上报，不静默使用旧版或跳过技能。
+
+运行中的任务继续使用原版本，后续任务才使用更新版本。节点日志记录技能名、版本、SHA、缓存命中与加载错误；任务查询的 `skill` 可核对中心指定版本。中心已发布 Skill 时，旧节点会收到 `screenshot_skill_upgrade_required`，需要先升级一次。新能力不修改全局 Codex 配置或电脑上其他 Skills。
+
 ## 外部对接文档
 
-截图节点列表、按包名绑定、触发和查询任务的唯一对接说明已合并到 [中心统一接口文档](store-api.md#截图节点与截图任务https)。触发只传 platform、bundleIdentifier、prompt 和 target 数组，响应返回中心生成的 jobId；查询仅作排障备用。本页仅保留实体 Mac 部署运维说明。中心保留 prompt 原文，通过 get_capture_task 提供 jobId、应用身份与目标；本轮协议 3 需安装最新截图节点程序。
+截图节点列表、按包名绑定、触发和查询任务的唯一对接说明已合并到 [中心统一接口文档](store-api.md#截图节点与截图任务https)。触发只传 platform、bundleIdentifier、prompt 和 target 数组，响应返回中心生成的 jobId；查询仅作排障备用。本页仅保留实体 Mac 部署运维说明。中心保留 prompt 原文，通过 get_capture_task 提供 jobId、应用身份与目标；本轮协议 3 及 Skill 能力需安装最新截图节点程序。
 
 ## 在实体 Mac 上运行
 

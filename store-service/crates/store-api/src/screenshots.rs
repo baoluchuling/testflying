@@ -164,6 +164,12 @@ pub(super) fn routes(
         ));
     let admin = Router::new()
         .route(
+            "/v1/screenshot-skill",
+            get(crate::screenshot_skill::read)
+                .post(crate::screenshot_skill::publish)
+                .put(crate::screenshot_skill::select),
+        )
+        .route(
             "/v1/screenshot-settings",
             get(crate::screenshot_settings::read).put(crate::screenshot_settings::update),
         )
@@ -188,6 +194,10 @@ pub(super) fn routes(
         .merge(admin)
         .merge(binding)
         .route("/v1/connectors/{id}/screenshot-jobs/claim", post(claim))
+        .route(
+            "/v1/connectors/{id}/screenshot-skill/{version}",
+            get(skill_bundle),
+        )
         .route(
             "/v1/connectors/{id}/screenshot-jobs/{job}/upload-ticket",
             post(delivery::prepare),
@@ -432,16 +442,32 @@ async fn claim(
 ) -> Result<Response> {
     authorize_worker(&state, &id, &headers)?;
     Ok(
-        match state.registry.claim_screenshot_protocol(
+        match state.registry.claim_screenshot_with_skill_protocol(
             &id,
             headers
                 .get("x-screenshot-protocol")
                 .is_some_and(|v| v == "3"),
+            headers
+                .get("x-screenshot-skill-protocol")
+                .is_some_and(|v| v == "1"),
         )? {
             Some(job) => Json(job).into_response(),
             None => StatusCode::NO_CONTENT.into_response(),
         },
     )
+}
+
+async fn skill_bundle(
+    State(state): State<Arc<ApiState>>,
+    Path((id, version)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    authorize_worker(&state, &id, &headers)?;
+    Ok((
+        [(header::CONTENT_TYPE, "application/json")],
+        state.registry.screenshot_skill_bundle(&version)?,
+    )
+        .into_response())
 }
 
 fn lease(headers: &HeaderMap) -> Result<&str> {
@@ -484,6 +510,11 @@ async fn fail(
             | "screenshot_oss_config_changed"
             | "delivery_unknown"
             | "invalid_upload_ticket"
+            | "screenshot_skill_download_failed"
+            | "screenshot_skill_invalid"
+            | "screenshot_skill_cache_unsafe"
+            | "screenshot_skill_install_failed"
+            | "codex_skill_unavailable"
     ) {
         return Err(
             StoreError::new(422, "invalid_failure", "Unknown screenshot failure code").into(),

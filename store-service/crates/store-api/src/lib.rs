@@ -6,6 +6,7 @@ pub mod logs;
 mod node_logs;
 pub mod registry;
 mod screenshot_settings;
+mod screenshot_skill;
 mod screenshots;
 mod setup;
 mod store_jobs;

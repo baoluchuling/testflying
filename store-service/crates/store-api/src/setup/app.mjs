@@ -4,6 +4,7 @@ import { bindLogs } from "./logs.mjs";
 import { bindForwarding } from "./forwarding.mjs";
 import { bindScreenshotSettings } from "./screenshot-settings.mjs";
 import { bindAccounts } from "./accounts.mjs";
+import { bindScreenshotSkill } from "./skills.mjs";
 
 const $ = (id) => document.getElementById(id);
 const api = new URL("api/", window.location.href);
@@ -16,6 +17,7 @@ const logs = bindLogs(request, () => $("setupForm").hidden ? undefined : session
 const forwarding=bindForwarding(request,()=>$("setupForm").hidden?undefined:session);
 const screenshotSettings = bindScreenshotSettings(request, () => $("setupForm").hidden ? undefined : session);
 const accounts = bindAccounts(request, () => $("setupForm").hidden ? undefined : session);
+const screenshotSkill = bindScreenshotSkill(request, () => $("setupForm").hidden ? undefined : session);
 
 function status(message, kind = "info") {
   $("status").hidden = false;
@@ -25,7 +27,7 @@ function status(message, kind = "info") {
 
 class Unauthorized extends Error {}
 
-async function request(active, path, { method = "GET", body, binary = false, token } = {}) {
+async function request(active, path, { method = "GET", body, binary = false, token, rawBody = false } = {}) {
   active.signal.throwIfAborted();
   const response = await fetch(new URL(path, api), {
     method,
@@ -37,9 +39,9 @@ async function request(active, path, { method = "GET", body, binary = false, tok
     headers: {
       "X-Testflying-Setup": "1",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...(body === undefined ? {} : { "Content-Type": rawBody ? "application/zip" : "application/json" }),
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : rawBody ? body : JSON.stringify(body),
     signal: active.signal,
     keepalive: path === "session" && method === "DELETE",
   });
@@ -59,6 +61,12 @@ async function request(active, path, { method = "GET", body, binary = false, tok
       try { code = (await response.json()).error?.code; } catch { /* No raw response text is shown. */ }
       const messages = { logs_upgrade_required: "请先在该节点安装最新升级包，再读取日志", logs_unavailable: "节点日志不可用，请检查本机日志目录权限", connector_disconnected: "节点未连接，暂时无法读取日志", connector_disabled: "节点已停用" };
       throw new Error(messages[code] || `节点日志读取失败（${response.status}）`);
+    }
+    if (path === "screenshot-skill") {
+      let code;
+      try { code = (await response.json()).error?.code; } catch { /* Do not display arbitrary server/package text. */ }
+      const messages = {invalid_screenshot_skill:"Skill ZIP 无效，请检查 SKILL.md、文件路径和包大小",screenshot_skill_not_found:"该 Skill 版本不存在，请刷新版本列表",screenshot_skill_versions_busy:"历史版本仍被运行中的任务使用，请待任务结束后再发布"};
+      throw new Error(messages[code] || `Skill 操作失败（${response.status}）`);
     }
     if (binary && response.status === 503) throw new Error("所选系统的程序尚未发布，请选择其他系统");
     if (path === "accounts" || path.startsWith("accounts/") || /^apps\/[^/]+\/[^/]+\/account$/.test(path)) {
@@ -208,6 +216,7 @@ function resetSession() {
   forwarding.reset();
   screenshotSettings.reset();
   accounts.reset();
+  screenshotSkill.reset();
   $("screenshotWorkspace").open = false;
   $("screenshotWorkspace").hidden = true;
   $("screenshotStatus").textContent = "";
@@ -243,6 +252,7 @@ async function restoreSession(token = "") {
     forwarding.show();
     screenshotSettings.show();
     accounts.show();
+    screenshotSkill.show();
     $("status").hidden = true;
   } catch (error) {
     if (!active.signal.aborted) {

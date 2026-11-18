@@ -1,5 +1,6 @@
 use super::{
     diagnostic::{codex_diagnostic, Log},
+    skill::InstalledSkill,
     worker::{drain_stderr, finish_process, wait_for_exit},
 };
 use serde_json::{json, Value};
@@ -16,6 +17,8 @@ const GOAL: &str = "Fulfill the user's screenshot request and obtain confirmed d
 const MAX_MESSAGE: u64 = 1024 * 1024;
 
 pub(super) const INSTRUCTIONS: &str = "You own the screenshot task. Call get_capture_task first to read the task identity, center-generated jobId, app and ordered target array. The user's message is the original visual request. Fulfill each target separately without a Cartesian product. Pass its zero-based targetIndex to capture_screenshot and upload_screenshot; omit targetIndex only for legacy tasks with target=null. Finish uploading each captured image before capturing another. After delivered=false continue with an unfinished target, and finish only after delivered=true. Find the project on this computer and use the local development tools to prepare the requested screen. Choose an appropriate iOS Simulator or Android Emulator, reuse a suitable one or create and boot one as needed. Decide whether to build, install or launch the app. Treat project source as read-only and use the provided build output paths. If no simulator is ready, prepare one using the installed development tools and runtimes. Report a simulator environment blocker only when the required tools or runtime are missing and prevent preparation. Call validate_simulator with the chosen device, then capture_screenshot when the requested screen is visible. Upload the returned screenshotId using upload_screenshot. If a tool returns a retryable error, fix the issue or wait if appropriate and call it again within this Goal. Only a successful upload_screenshot response with delivered=true completes the task. If delivery cannot be retried, report the blocker. Use the provided upload tool for delivery and preserve the requested app screen until the capture is complete.";
+
+pub(super) const SKILL_INSTRUCTIONS: &str = "Use the attached screenshot skill for preparation, navigation and visual checks. Before each final upload, apply its visual checks to the original image captured for this target. Connector tools and task identity, target order, one-image-at-a-time upload and confirmed delivery remain authoritative. Skill product examples are historical examples; use the app and targets from get_capture_task.";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum GoalChange {
@@ -133,6 +136,7 @@ pub(super) struct Session<'a> {
     pub(super) instructions: String,
     pub(super) prompt: &'a str,
     pub(super) job: Uuid,
+    pub(super) skill: Option<&'a InstalledSkill>,
 }
 
 impl Session<'_> {
@@ -191,7 +195,7 @@ impl Session<'_> {
         result
     }
 
-    async fn start(&self, rpc: &mut Protocol) -> Result<String, &'static str> {
+    async fn start(&self, rpc: &mut Protocol, log: &Log) -> Result<String, &'static str> {
         rpc.request(
             0,
             "initialize",
@@ -205,6 +209,26 @@ impl Session<'_> {
         rpc.send(json!({"method":"initialized"}))
             .await
             .map_err(|_| "codex_initialize_failed")?;
+        if let Some(skill) = self.skill {
+            let listed = rpc
+                .request(
+                    5,
+                    "skills/list",
+                    json!({"cwds":[self.root],"forceReload":true}),
+                )
+                .await
+                .map_err(|_| "codex_skill_unavailable")?;
+            if !skill_available(&listed, self.root, skill) {
+                return Err("codex_skill_unavailable");
+            }
+            log.event(
+                Some(self.job),
+                format_args!(
+                    "skill_discovered name={} version={} sha256={}",
+                    skill.name, skill.version, skill.sha256
+                ),
+            );
+        }
         let started = rpc
             .request(
                 1,
@@ -236,7 +260,17 @@ impl Session<'_> {
         if goal["goal"]["status"] != "active" {
             return Err("codex_goal_setup_failed");
         }
-        let input = vec![json!({"type":"text","text":self.prompt})];
+        let mut input = vec![json!({"type":"text","text":self.prompt})];
+        if let Some(skill) = self.skill {
+            input.push(json!({"type":"skill","name":skill.name,"path":skill.path}));
+            log.event(
+                Some(self.job),
+                format_args!(
+                    "skill_explicit_input name={} version={} sha256={}",
+                    skill.name, skill.version, skill.sha256
+                ),
+            );
+        }
         // The first turn can issue a tool call immediately after its response.
         rpc.request(
             3,
@@ -260,7 +294,7 @@ impl Session<'_> {
         mut call: impl AsyncFnMut(String, Value, watch::Receiver<bool>) -> ToolReply,
     ) -> Result<(), &'static str> {
         let thread = tokio::select! {
-            r = self.start(rpc) => r?,
+            r = self.start(rpc, log) => r?,
             _ = stop.wait_for(|stopped| *stopped) => return Err("codex_interrupted"),
         };
         log.event(Some(self.job), "codex_goal_started");
@@ -323,9 +357,150 @@ impl Session<'_> {
     }
 }
 
+fn skill_available(listed: &Value, root: &Path, skill: &InstalledSkill) -> bool {
+    if !skill.path.is_absolute() {
+        return false;
+    }
+    let Some(skill_root) = skill.path.parent() else {
+        return false;
+    };
+    listed["data"].as_array().is_some_and(|data| {
+        data.iter().any(|entry| {
+            entry["cwd"].as_str() == root.to_str()
+                && entry["errors"].as_array().is_some_and(|errors| {
+                    errors.iter().all(|error| {
+                        error["path"].as_str().is_some_and(|path| {
+                            let path = Path::new(path);
+                            path.is_absolute() && !path.starts_with(skill_root)
+                        })
+                    })
+                })
+                && entry["skills"].as_array().is_some_and(|skills| {
+                    skills.iter().any(|found| {
+                        found["name"] == skill.name
+                            && found["path"].as_str() == skill.path.to_str()
+                            && found["enabled"] == true
+                    })
+                })
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn verifies_native_skill_discovery_before_turn_and_preserves_original_text() {
+        for mode in [
+            "enabled",
+            "unrelated_error",
+            "disabled",
+            "missing",
+            "wrong_path",
+            "target_error",
+            "rpc_error",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            let cwd = root.path().canonicalize().unwrap();
+            let skill = InstalledSkill {
+                name: "capture".into(),
+                path: cwd.join(".agents/skills/capture/SKILL.md"),
+                version: "a".repeat(64),
+                sha256: "a".repeat(64),
+            };
+            let listed = json!({"data":[{"cwd":cwd,"skills": if mode == "missing" { json!([]) } else { json!([{
+                "name":"capture","path":if mode == "wrong_path" { cwd.join("other/SKILL.md") } else { skill.path.clone() },"enabled":mode != "disabled"
+            }]) },"errors":if mode == "target_error" { json!([{"path":skill.path,"message":"invalid skill"}]) } else if mode == "unrelated_error" { json!([{"path":cwd.join(".agents/skills/unrelated/SKILL.md"),"message":"unrelated broken skill"}]) } else { json!([]) }}]});
+            let response = if mode == "rpc_error" {
+                json!({"id":5,"error":{"code":-32601,"message":"unsupported skills/list"}})
+            } else {
+                json!({"id":5,"result":listed})
+            };
+            let fixture = root.path().join("fake-codex.sh");
+            let transcript = root.path().join("input.jsonl");
+            let mut script = format!(
+                r#"#!/bin/sh
+set -eu
+file=$1
+shift
+[ "$1 $2 $3" = "--enable goals app-server" ]
+read_request() {{ IFS= read -r line; printf '%s\n' "$line" >> "$file"; }}
+reply() {{ printf '%s\n' "$1"; }}
+read_request
+reply '{{"id":0,"result":{{}}}}'
+read_request
+read_request
+cat <<'SKILLS_RESPONSE'
+{response}
+SKILLS_RESPONSE
+"#
+            );
+            if matches!(mode, "enabled" | "unrelated_error") {
+                script.push_str(r#"read_request
+reply '{"id":1,"result":{"thread":{"id":"fixture-thread"}}}'
+read_request
+reply '{"id":2,"result":{"goal":{"status":"active"}}}'
+read_request
+reply '{"id":3,"result":{"turn":{"id":"first-turn"}}}'
+reply '{"id":"stop","method":"item/tool/call","params":{"threadId":"fixture-thread","tool":"fixture_block","arguments":{}}}'
+read_request
+read_request
+reply '{"id":4,"result":{"goal":{"status":"blocked"}}}'
+"#);
+            }
+            std::fs::write(&fixture, script).unwrap();
+            let prompt = "原始请求\n  keep spacing and \"quotes\"";
+            let session = Session {
+                root: &cwd,
+                instructions: INSTRUCTIONS.into(),
+                prompt,
+                job: Uuid::new_v4(),
+                skill: Some(&skill),
+            };
+            let log = Log::for_config(&root.path().join("connector.json"));
+            let mut command = Command::new("/bin/sh");
+            command.arg(&fixture).arg(&transcript);
+            let (_stop, mut stop) = watch::channel(false);
+            let result = session
+                .run(&mut command, &log, &mut stop, async |_, _, _| {
+                    ToolReply::error("fixture_block", "fixture", false, GoalChange::Blocked)
+                })
+                .await;
+            let input = std::fs::read_to_string(&transcript).unwrap();
+            let messages: Vec<Value> = input
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            assert_eq!(messages[2]["method"], "skills/list", "{mode}");
+            assert_eq!(
+                messages[2]["params"],
+                json!({"cwds":[cwd],"forceReload":true})
+            );
+            if matches!(mode, "enabled" | "unrelated_error") {
+                assert_eq!(result, Ok(()));
+                let turn = messages
+                    .iter()
+                    .find(|message| message["method"] == "turn/start")
+                    .unwrap();
+                assert_eq!(
+                    turn["params"]["input"],
+                    json!([
+                        {"type":"text","text":prompt}, {"type":"skill","name":"capture","path":skill.path}
+                    ])
+                );
+            } else {
+                assert_eq!(result, Err("codex_skill_unavailable"), "{mode}");
+                assert!(
+                    !messages
+                        .iter()
+                        .any(|message| message["method"] == "thread/start"
+                            || message["method"] == "turn/start"),
+                    "{mode}"
+                );
+            }
+        }
+    }
 
     #[tokio::test]
     async fn keeps_original_prompt_separate_and_returns_tool_errors_to_the_same_goal() {
@@ -368,6 +543,7 @@ reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
             instructions: INSTRUCTIONS.into(),
             prompt: &prompt,
             job: Uuid::new_v4(),
+            skill: None,
         };
         let log = Log::for_config(&root.path().join("connector.json"));
         let mut command = Command::new("/bin/sh");

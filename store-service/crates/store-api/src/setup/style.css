@@ -2,3 +2,4 @@
 #logEntries details{margin:12px 0;border-top:1px solid #e1e7ef;padding-top:10px}#logEntries summary{cursor:pointer;overflow-wrap:anywhere;font-size:12px}#logEntries pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;font-size:11px}#logFilters button{margin-top:14px}#logFilters .toggle{margin-top:14px}#logWorkspace{min-width:0}
 
 .account-metadata,.account-app p,#accountsStatus{white-space:pre-line;overflow-wrap:anywhere}.account-metadata{font-size:12px;color:#64748b}#accountApps{list-style:none;padding:0}.account-app{border-top:1px solid #e1e7ef;padding:12px 0}.account-app p{font-size:13px;margin:0 0 8px}#managedAccountForm button{margin-top:14px}#accountsStatus{color:#315a94}
+#screenshotSkillWorkspace{min-width:0}#screenshotSkillForm button{margin:12px 0}#screenshotSkillStatus{overflow-wrap:anywhere}

@@ -49,6 +49,13 @@ pub(super) fn create_schema(db: &Connection) -> Result<()> {
         db.execute("ALTER TABLE screenshot_jobs ADD COLUMN targets TEXT", [])
             .map_err(database_error)?;
     }
+    if !columns.iter().any(|name| name == "skill_manifest") {
+        db.execute(
+            "ALTER TABLE screenshot_jobs ADD COLUMN skill_manifest TEXT",
+            [],
+        )
+        .map_err(database_error)?;
+    }
     // Existing queued/running protocol-3 jobs may still contain signed historical
     // image URLs. Only jobs created under the callback protocol are eligible.
     if !columns.iter().any(|name| name == "callback_eligible") {
@@ -654,13 +661,13 @@ impl Registry {
             .map_err(database_error)?;
         expire(&tx, timestamp()?)?;
         let job = tx.query_row(
-            "SELECT connector_id,profile,status,result,error,platform,bundle_identifier,id,targets FROM screenshot_jobs WHERE integration_id=?2 AND id=?1",
+            "SELECT connector_id,profile,status,result,error,platform,bundle_identifier,id,targets,skill_manifest FROM screenshot_jobs WHERE integration_id=?2 AND id=?1",
             params![id, access.id],
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?,
-                      row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?,row.get::<_,Option<String>>(5)?,row.get::<_,Option<String>>(6)?,row.get::<_,String>(7)?,row.get::<_,Option<String>>(8)?)),
+                      row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?,row.get::<_,Option<String>>(5)?,row.get::<_,Option<String>>(6)?,row.get::<_,String>(7)?,row.get::<_,Option<String>>(8)?,row.get::<_,Option<String>>(9)?)),
         ).optional().map_err(database_error)?;
-        let (node, profile, status, result, error, platform, identifier, job_id, targets) = job
-            .ok_or_else(|| {
+        let (node, profile, status, result, error, platform, identifier, job_id, targets, skill) =
+            job.ok_or_else(|| {
                 StoreError::new(404, "screenshot_job_not_found", "Screenshot job not found")
             })?;
         let mut result = result
@@ -669,11 +676,15 @@ impl Registry {
             .map_err(|_| {
                 StoreError::new(500, "registry_error", "Invalid screenshot delivery record")
             })?;
+        let skill = skill
+            .map(|value| serde_json::from_str::<store_protocol::skill::SkillManifest>(&value))
+            .transpose()
+            .map_err(|_| database_error(rusqlite::Error::InvalidQuery))?;
         super::screenshot_notifications::decorate(&tx, &self.signing_key, id, &mut result)?;
         tx.commit().map_err(database_error)?;
         let profile = (!profile.is_empty()).then_some(profile);
         Ok(
-            json!({"jobId":job_id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()).unwrap_or_else(|| json!([])),"connectorId":node,"platform":platform,"bundleIdentifier":identifier,"profile":profile,"status":status,"result":result,"error":error}),
+            json!({"jobId":job_id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()).unwrap_or_else(|| json!([])),"connectorId":node,"platform":platform,"bundleIdentifier":identifier,"profile":profile,"status":status,"result":result,"error":error,"skill":skill}),
         )
     }
 
@@ -682,10 +693,20 @@ impl Registry {
         self.claim_screenshot_protocol(node, false)
     }
 
+    #[cfg(test)]
     pub(crate) fn claim_screenshot_protocol(
         &self,
         node: &str,
         current_protocol: bool,
+    ) -> Result<Option<Value>> {
+        self.claim_screenshot_with_skill_protocol(node, current_protocol, false)
+    }
+
+    pub(crate) fn claim_screenshot_with_skill_protocol(
+        &self,
+        node: &str,
+        current_protocol: bool,
+        skill_protocol: bool,
     ) -> Result<Option<Value>> {
         let time = timestamp()?;
         let mut db = self.db.lock().unwrap();
@@ -696,6 +717,14 @@ impl Registry {
         let claimed = if let Some((id, profile, prompt, platform, identifier)) =
             claimable_screenshot(&tx, node, time)?
         {
+            let skill = super::screenshot_skill::active(&tx)?;
+            if skill.is_some() && !skill_protocol {
+                return Err(StoreError::new(
+                    409,
+                    "screenshot_skill_upgrade_required",
+                    "Upgrade the Screenshot Connector to skill protocol 1",
+                ));
+            }
             let targets: Option<String> = tx
                 .query_row(
                     "SELECT targets FROM screenshot_jobs WHERE id=?1",
@@ -711,9 +740,14 @@ impl Registry {
                 ));
             }
             let lease = Uuid::new_v4().to_string();
+            let skill_record = skill
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()
+                .map_err(|_| database_error(rusqlite::Error::InvalidQuery))?;
             tx.execute(
-                "UPDATE screenshot_jobs SET status='running', deadline=?2, lease=?3, prompt='' WHERE id=?1",
-                params![id, time + 1800, lease],
+                "UPDATE screenshot_jobs SET status='running', deadline=?2, lease=?3, prompt='', skill_manifest=?4 WHERE id=?1",
+                params![id, time + 1800, lease,skill_record],
             ).map_err(database_error)?;
             let profile = (!profile.is_empty()).then_some(profile);
             let prompt = match (&platform, &identifier) {
@@ -724,7 +758,7 @@ impl Registry {
                 _ => prompt,
             };
             Some(
-                json!({"jobId":id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()),"platform":platform,"bundleIdentifier":identifier,"profile":profile,"prompt":prompt,"lease":lease}),
+                json!({"jobId":id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()),"platform":platform,"bundleIdentifier":identifier,"profile":profile,"prompt":prompt,"lease":lease,"skill":skill}),
             )
         } else {
             None

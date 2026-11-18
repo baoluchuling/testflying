@@ -610,6 +610,55 @@ paths:
                     url: {type: string, description: 'Complete HTTP or HTTPS Studio callback endpoint, including /api/hooks/captures. Image URLs remain HTTPS.'}
                     token: {type: string, writeOnly: true}
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+  /v1/screenshot-skill:
+    get:
+      summary: Read screenshot Skill versions and active immutable manifest
+      security: [{adminToken: []}]
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    post:
+      summary: Validate a complete Skill ZIP and atomically publish it
+      description: 'Administrator only. ZIP <=2MiB; <=256 portable safe files, <=1MiB each, <=4MiB decoded total; SKILL.md <=64KiB. Rejects links, traversal, duplicates and hierarchy conflicts. Includes scripts, references and agents metadata. Version is SHA256 of the immutable canonical JSON bundle. Retains ten versions and pins versions used by running tasks. Failure leaves the active version unchanged.'
+      security: [{adminToken: []}]
+      requestBody:
+        required: true
+        content: {application/zip: {schema: {type: string, format: binary}}}
+      responses: {'201': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    put:
+      summary: Select a previously published Skill version
+      security: [{adminToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: false, required: [version], properties: {version: {type: string, pattern: '^[a-f0-9]{64}$'}}}}}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+  /connector-setup/api/screenshot-skill:
+    parameters: [{$ref: '#/components/parameters/setupHeader'}]
+    get:
+      summary: HTTPS administrator session Skill inventory
+      security: [{setupSession: []}, {adminToken: []}]
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    post:
+      summary: HTTPS administrator session Skill ZIP publication
+      security: [{setupSession: []}, {adminToken: []}]
+      requestBody:
+        required: true
+        content: {application/zip: {schema: {type: string, format: binary}}}
+      responses: {'201': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+    put:
+      summary: HTTPS administrator session Skill version switch
+      security: [{setupSession: []}, {adminToken: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, additionalProperties: false, required: [version], properties: {version: {type: string, pattern: '^[a-f0-9]{64}$'}}}}}
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
+  /v1/connectors/{id}/screenshot-skill/{version}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: version, in: path, required: true, schema: {type: string, pattern: '^[a-f0-9]{64}$'}}
+    get:
+      summary: Screenshot node downloads the exact immutable Skill bundle
+      description: 'Enabled screenshot node credentials only, HTTPS. No redirects or external download URL. Canonical JSON contains schemaVersion, name and files[{path,data(base64),executable}], <=8MiB. Worker verifies manifest bytes, version/SHA and paths, updates a bounded local cache atomically and prepares a per-task .agents/skills directory. Every new task checks the latest version at claim time. Claim requires X-Screenshot-Skill-Protocol:1 when a Skill is published; old nodes receive409 without consuming jobs. Native skills/list recognition and turn/start skill input are required; failed updates/load block execution. Original user prompt stays unchanged.'
+      security: [{nodeToken: []}]
+      responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
   /v1/screenshot-connectors:
     get:
       summary: List all enabled Screenshot Connectors, including offline Macs

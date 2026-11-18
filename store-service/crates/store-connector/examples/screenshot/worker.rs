@@ -1,7 +1,7 @@
 use super::{
     diagnostic::Log,
     goal::{self, GoalChange, ToolReply},
-    Failure,
+    skill, Failure,
 };
 use reqwest::{Client, Method, RequestBuilder, StatusCode, Url};
 use serde::Deserialize;
@@ -107,6 +107,7 @@ struct Job {
     lease: Uuid,
     profile: Option<String>,
     prompt: String,
+    skill: Option<store_protocol::skill::SkillManifest>,
 }
 
 pub(super) struct Worker<'a> {
@@ -115,6 +116,7 @@ pub(super) struct Worker<'a> {
     oss_client: Client,
     jobs: String,
     log: Log,
+    data: PathBuf,
 }
 
 impl<'a> Worker<'a> {
@@ -157,6 +159,11 @@ impl<'a> Worker<'a> {
                 .build()?,
             jobs,
             log: Log::for_config(path),
+            data: path
+                .parent()
+                .filter(|path| !path.as_os_str().is_empty())
+                .unwrap_or(Path::new("."))
+                .to_path_buf(),
         })
     }
 
@@ -171,6 +178,7 @@ impl<'a> Worker<'a> {
             let mut response = self
                 .request(Method::POST, "claim")
                 .header("X-Screenshot-Protocol", "3")
+                .header("X-Screenshot-Skill-Protocol", "1")
                 .send()
                 .await?;
             match response.status() {
@@ -250,9 +258,15 @@ impl<'a> Worker<'a> {
             .prefix("testflying-screenshot-")
             .tempdir()
             .map_err(|_| "capture_failed")?;
-        let result = self.run_goal_in(workspace.path(), job, stop).await;
+        let root = workspace
+            .path()
+            .canonicalize()
+            .map_err(|_| "capture_failed")?;
+        let result = self.run_goal_in(&root, job, stop).await;
         if workspace.close().is_err() {
             self.log.event(Some(job.job_id), "task_cleanup_failed");
+        } else {
+            self.log.event(Some(job.job_id), "task_cleaned");
         }
         result
     }
@@ -264,6 +278,23 @@ impl<'a> Worker<'a> {
         stop: &mut watch::Receiver<bool>,
     ) -> Result<(), &'static str> {
         let id = Some(job.job_id);
+        let installed = if let Some(manifest) = &job.skill {
+            let request = self
+                .client
+                .get(format!(
+                    "{}/v1/connectors/{}/screenshot-skill/{}",
+                    self.config.server_url.as_str().trim_end_matches('/'),
+                    self.config.connector_id,
+                    manifest.version
+                ))
+                .bearer_auth(&self.config.token);
+            Some(tokio::select! {
+                result = skill::prepare(manifest, &self.data, root, request, &self.log, job.job_id) => result?,
+                _ = stop.wait_for(|stopped| *stopped) => return Err("codex_interrupted"),
+            })
+        } else {
+            None
+        };
         let unavailable = |_| "profile_unavailable";
         let codex = match self
             .config
@@ -291,18 +322,23 @@ impl<'a> Worker<'a> {
         let adb = self.config.adb();
         let mut command = Command::new(codex);
         job_environment(&mut command, root, codex_home.as_deref());
-        let instructions = match adb.as_deref() {
+        let mut instructions = match adb.as_deref() {
             Some(adb) => format!(
                 "{}\nThe local ADB executable is {adb:?}.",
                 goal::INSTRUCTIONS
             ),
             None => goal::INSTRUCTIONS.to_owned(),
         };
+        if installed.is_some() {
+            instructions.push('\n');
+            instructions.push_str(goal::SKILL_INSTRUCTIONS);
+        }
         let session = goal::Session {
             root,
             instructions,
             prompt: &job.prompt,
             job: job.job_id,
+            skill: installed.as_ref(),
         };
         let mut tools = JobTools {
             worker: self,
@@ -318,7 +354,7 @@ impl<'a> Worker<'a> {
             failure: "codex_failed",
         };
         self.log.event(id, "codex_starting");
-        let _ = session
+        let result = session
             .run(
                 &mut command,
                 &self.log,
@@ -330,6 +366,8 @@ impl<'a> Worker<'a> {
         // The center result is authoritative even if Codex exits after delivery.
         if tools.center_finished {
             Ok(())
+        } else if result == Err("codex_skill_unavailable") {
+            Err("codex_skill_unavailable")
         } else {
             Err(tools.failure)
         }
@@ -378,7 +416,7 @@ impl JobTools<'_, '_> {
                 );
             }
             return ToolReply::ok(
-                json!({"jobId":self.job.job_id,"platform":self.job.platform,"bundleIdentifier":self.job.bundle_identifier,"prompt":self.job.prompt,"target":self.job.target,"profile":self.job.profile,"completedTargetIndices":self.completed_targets}),
+                json!({"jobId":self.job.job_id,"platform":self.job.platform,"bundleIdentifier":self.job.bundle_identifier,"prompt":self.job.prompt,"target":self.job.target,"profile":self.job.profile,"skill":self.job.skill,"completedTargetIndices":self.completed_targets}),
                 GoalChange::Continue,
             );
         }
@@ -1285,6 +1323,7 @@ mod tests {
             lease: Uuid::new_v4(),
             profile: None,
             prompt: "Amberia 首页".into(),
+            skill: None,
         };
         let lease = job.lease.to_string();
         let png = store_protocol::upload::decode_chunk("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==").unwrap();
@@ -1552,6 +1591,62 @@ mod tests {
         let decoded: Job = serde_json::from_slice(&body).unwrap();
         assert_eq!(decoded.prompt, prompt);
         assert_eq!(decoded.target.unwrap().len(), 256);
+    }
+
+    #[tokio::test]
+    async fn invalid_claim_skill_blocks_codex_startup_and_exposes_claim_metadata() {
+        let workspace = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let manifest = store_protocol::skill::SkillManifest {
+            schema_version: 1,
+            name: "../escape".into(),
+            version: "a".repeat(64),
+            sha256: "a".repeat(64),
+            bytes: 1,
+            files: 1,
+            published_at: 1,
+        };
+        let job: Job = serde_json::from_value(json!({
+            "jobId":Uuid::new_v4(),"lease":Uuid::new_v4(),"prompt":"unchanged original", "skill":manifest
+        })).unwrap();
+        let config = Config {
+            kind: "screenshot".into(),
+            connector_id: Uuid::new_v4().to_string(),
+            token: "a".repeat(64),
+            server_url: Url::parse("https://fixture.example").unwrap(),
+            message_key: "fixture".into(),
+            // If execution reaches binary resolution this would return profile_unavailable instead.
+            codex_path: Some(workspace.path().join("must-not-start-codex")),
+            codex_home: None,
+            adb_path: None,
+            ca_file: None,
+        };
+        let worker = Worker::new(&config, &workspace.path().join("connector.json")).unwrap();
+        let (_stop, mut stop) = watch::channel(false);
+        assert_eq!(
+            worker.run_goal_in(root.path(), &job, &mut stop).await,
+            Err("screenshot_skill_invalid")
+        );
+        assert!(!root.path().join(".agents").exists());
+        let mut tools = JobTools {
+            worker: &worker,
+            job: &job,
+            root: root.path(),
+            adb: None,
+            screenshot: None,
+            current_target: None,
+            completed_targets: std::collections::BTreeSet::new(),
+            upload_attempted: None,
+            retry_upload: false,
+            center_finished: false,
+            failure: "codex_failed",
+        };
+        let context = tools.call("get_capture_task", json!({}), &mut stop).await;
+        assert_eq!(
+            context.value["skill"],
+            serde_json::to_value(&manifest).unwrap()
+        );
+        assert_eq!(context.value["prompt"], "unchanged original");
     }
 
     #[tokio::test]

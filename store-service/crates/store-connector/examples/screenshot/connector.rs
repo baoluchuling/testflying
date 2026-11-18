@@ -14,6 +14,8 @@ use tokio_tungstenite::{
 mod diagnostic;
 #[path = "goal.rs"]
 mod goal;
+#[path = "skill.rs"]
+mod skill;
 #[path = "worker.rs"]
 mod worker;
 use diagnostic::Log;

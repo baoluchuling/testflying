@@ -60,6 +60,9 @@ const screenshotSettingsFixture = {
 const screenshotSettingsWrites = [];
 const accountFixtures = [], accountWrites = [];
 const accountDirectories = new Map(), appForwarding = new Map();
+const skillFixture = { active: null, versions: [] };
+let failNextSkillPublish = false;
+const skillWrites = [];
 let heldSettings;
 let settingsStarted;
 let releaseSettings;
@@ -74,6 +77,7 @@ if (!production) {
     "": [path.join(web, "index.html"), "text/html"],
     "app.mjs": [path.join(web, "app.mjs"), "text/javascript"],
     "accounts.mjs": [path.join(web, "accounts.mjs"), "text/javascript"],
+    "skills.mjs": [path.join(web, "skills.mjs"), "text/javascript"],
     "integrations.mjs": [path.join(web, "integrations.mjs"), "text/javascript"],
     "logs.mjs": [path.join(web, "logs.mjs"), "text/javascript"],
     "forwarding.mjs": [path.join(web,"forwarding.mjs"),"text/javascript"],
@@ -121,6 +125,27 @@ if (!production) {
         if (!fixtureSession || !req.headers.cookie?.split(/;\s*/).includes(`${sessionCookie}=${fixtureSession}`)) {
           res.writeHead(401).end("{}"); return;
         }
+      }
+      if (url.pathname === setupApi + "screenshot-skill") {
+        if (req.method === "POST") {
+          assert.equal(req.headers["content-type"], "application/zip");
+          const parts = []; for await (const part of req) parts.push(part);
+          const body = Buffer.concat(parts); assert(body.length <= 2 * 1024 * 1024);
+          const uploaded = await JSZip.loadAsync(body, { checkCRC32:true });
+          assert(uploaded.file("fixture-capture/SKILL.md"));
+          skillWrites.push(hash(body));
+          if (failNextSkillPublish) { failNextSkillPublish = false; res.writeHead(422).end(JSON.stringify({error:{code:"invalid_screenshot_skill",message:"<img src=x onerror=alert(1)> fixture-skill-private"}})); return; }
+          const version = hash(body);
+          const value = {schemaVersion:1,name:"fixture-capture",version,sha256:version,bytes:body.length,files:2,publishedAt:1800000000};
+          if (!skillFixture.versions.some((item) => item.version === version)) skillFixture.versions.unshift(value);
+          skillFixture.active = value;
+        } else if (req.method === "PUT") {
+          let body = ""; for await (const part of req) body += part;
+          const input = JSON.parse(body); assert.deepEqual(Object.keys(input), ["version"]);
+          const selected = skillFixture.versions.find((item) => item.version === input.version); assert(selected);
+          skillFixture.active = selected;
+        } else assert.equal(req.method, "GET");
+        res.writeHead(req.method === "POST" ? 201 : 200).end(JSON.stringify(skillFixture)); return;
       }
       if (url.pathname === setupApi + "accounts" || url.pathname.startsWith(setupApi + "accounts/")) {
         const suffix = url.pathname.slice((setupApi + "accounts").length).split("/").filter(Boolean);
@@ -651,6 +676,46 @@ try {
     assert.equal(nodeConfig.kind, "screenshot");
     assert.deepEqual(Object.keys(deployment.files).sort(),
       ["README.md", "connector.json", "install.sh", "run.sh", "screenshot-connector", "testflying-prod-ca.crt"]);
+    await page.locator("#screenshotSkillWorkspace summary").click();
+    await page.locator("#screenshotSkillPublish:enabled").waitFor();
+    assert.match(await page.locator("#screenshotSkillActive").textContent(), /尚未发布/);
+    const skillZip = async (text) => {
+      const zip = new JSZip();
+      zip.file("fixture-capture/SKILL.md", "---\nname: fixture-capture\ndescription: Screenshot fixture\n---\n" + text);
+      zip.file("fixture-capture/references/guide.md", "Use the Connector delivery tools.");
+      return zip.generateAsync({type:"nodebuffer"});
+    };
+    const firstSkill = await skillZip("Version one"), secondSkill = await skillZip("Version two");
+    const uploadSkill = async (buffer) => {
+      await page.locator("#screenshotSkillFile").setInputFiles({name:"fixture-capture.zip",mimeType:"application/zip",buffer});
+      await page.locator("#screenshotSkillPublish").click();
+    };
+    failNextSkillPublish = true;
+    await uploadSkill(firstSkill);
+    await page.getByText("Skill ZIP 无效，请检查 SKILL.md、文件路径和包大小", {exact:true}).waitFor();
+    assert.equal(await page.locator("#screenshotSkillWorkspace img").count(), 0);
+    assert.equal((await page.locator("#screenshotSkillWorkspace").textContent()).includes("fixture-skill-private"), false);
+    assert.equal(await page.locator("#setupForm").isVisible(), true);
+    await uploadSkill(firstSkill);
+    await page.getByText("Skill 已发布，后续开始的任务会先更新并显式加载。运行中的任务继续使用原版本。", {exact:true}).waitFor();
+    assert.equal(skillFixture.active.version, hash(firstSkill));
+    assert.equal(await page.locator("#screenshotSkillFile").inputValue(), "");
+    await uploadSkill(secondSkill);
+    await page.getByText("Skill 已发布，后续开始的任务会先更新并显式加载。运行中的任务继续使用原版本。", {exact:true}).waitFor();
+    assert.equal(skillFixture.active.version, hash(secondSkill));
+    await page.locator("#screenshotSkillVersion").selectOption(hash(firstSkill));
+    await page.locator("#screenshotSkillActivate").click();
+    await page.getByText("已切换 Skill 版本，后续开始的任务使用此版本。", {exact:true}).waitFor();
+    assert.equal(skillFixture.active.version, hash(firstSkill));
+    await page.locator("#screenshotSkillRefresh").click();
+    await page.getByText("Skill 版本已刷新。", {exact:true}).waitFor();
+    assert.match(await page.locator("#screenshotSkillActive").textContent(), new RegExp(hash(firstSkill)));
+    assert.equal(await page.locator("#screenshotSkillActivate").isDisabled(), true);
+    await page.setViewportSize({width:390,height:844});
+    assert(await page.evaluate(() => document.body.scrollWidth <= window.innerWidth));
+    await page.setViewportSize({width:1440,height:1100});
+    await page.locator("#screenshotSkillWorkspace summary").click();
+    checks.push("administrator publishes complete Skill ZIPs, safely handles invalid packages, reads immutable versions and rolls back without reinstalling; long hashes fit mobile layout");
     await page.locator("#accountsReload:enabled").waitFor();
     const firstStore = nodes.find((node) => node.kind === "store");
     const secondStore = { connectorId: randomUUID(), kind: "store", name: "Second account store", enabled: true, connected: false };
@@ -716,6 +781,8 @@ try {
     await assertSettingsSecretsEmpty();
     assert.equal(await page.locator("#screenshotWorkspace").isVisible(), false);
     assert.equal(await page.locator("#accountsWorkspace").isVisible(), false);
+    assert.equal(await page.locator("#screenshotSkillWorkspace").isVisible(), false);
+    assert.equal(await page.locator("#screenshotSkillFile").inputValue(), "");
     assert.equal(await page.locator("#accountGroups li").count(), 0);
     assert.equal(await page.locator("#screenshotNode").inputValue(), "");
     checks.push("unlocked admin can provision a screenshot node and download its macOS deployment ZIP");

@@ -56,6 +56,20 @@
         </section>
         <div class="download-bar"><p>生成的 ZIP 含私钥与节点凭据，请勿公开分享。</p><button id="downloadButton" type="submit">生成并下载 Windows 安装包</button></div>
       </form>
+      <details id="screenshotSkillWorkspace" class="card" hidden>
+        <summary>截图 Skill · 自动更新</summary>
+        <p class="muted">发布完整 Skill ZIP，包含 SKILL.md、脚本和参考资料。截图节点每次开始任务前检查版本，校验更新后显式交给 Codex；更新或加载失败会报错，运行中的任务保持原版本。</p>
+        <p class="hint">已有截图节点需先升级一次以支持 Skill；之后更新 Skill 无需重装节点。ZIP 不超过 2 MiB，支持一个技能目录。</p>
+        <p id="screenshotSkillActive" class="account-metadata"></p>
+        <form id="screenshotSkillForm">
+          <label for="screenshotSkillFile">Skill ZIP</label><input id="screenshotSkillFile" type="file" accept=".zip,application/zip" required>
+          <button id="screenshotSkillPublish" type="submit">上传并发布 Skill</button>
+        </form>
+        <label for="screenshotSkillVersion">已有版本</label><select id="screenshotSkillVersion"></select>
+        <button id="screenshotSkillActivate" type="button" class="quiet" disabled>切换到所选版本</button>
+        <button id="screenshotSkillRefresh" type="button" class="quiet">刷新 Skill 版本</button>
+        <p id="screenshotSkillStatus" role="status" aria-live="polite"></p>
+      </details>
       <details id="accountsWorkspace" class="card" hidden>
         <summary>账号目录与节点路由</summary>
         <p class="muted">按商店账号展示 iOS、Android 目录。应用根据商店接口返回的目录自动归属，默认开启转发；关闭后不再转发此应用的新商店或截图请求，已创建任务继续执行。账号在上方「账号与节点配置」中创建。</p>

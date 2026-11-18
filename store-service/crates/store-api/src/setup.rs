@@ -131,6 +131,12 @@ pub(super) fn routes(state: Arc<super::ApiState>) -> Router<Arc<super::ApiState>
             get(super::screenshot_settings::read).put(super::screenshot_settings::update),
         )
         .route(
+            "/connector-setup/api/screenshot-skill",
+            get(super::screenshot_skill::read)
+                .post(super::screenshot_skill::publish)
+                .put(super::screenshot_skill::select),
+        )
+        .route(
             "/connector-setup/api/forwarding",
             get(super::forwarding::read),
         )
@@ -236,6 +242,10 @@ async fn asset(Path(name): Path<String>) -> Response {
         "screenshot-settings.mjs" => (
             "text/javascript; charset=utf-8",
             include_bytes!("setup/screenshot-settings.mjs"),
+        ),
+        "skills.mjs" => (
+            "text/javascript; charset=utf-8",
+            include_bytes!("setup/skills.mjs"),
         ),
         "packager.mjs" => (
             "text/javascript; charset=utf-8",

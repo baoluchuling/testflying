@@ -6,6 +6,7 @@ pub mod catalog;
 pub mod crypto;
 pub mod logs;
 pub mod screenshot;
+pub mod skill;
 pub mod upload;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]

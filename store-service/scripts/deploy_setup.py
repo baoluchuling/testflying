@@ -82,6 +82,7 @@ def digest(value):
 store=rows('app_bindings','platform,bundle_identifier,connector_id','1,2')
 shot=rows('screenshot_app_bindings','platform,bundle_identifier,connector_id','1,2')
 accounts=rows('accounts','id,name,platform,store_connector_id,screenshot_connector_id,enabled,migration_error','1')
+skill_rows=[(v,m,hashlib.sha256(b).hexdigest()) for v,m,b in db.execute('SELECT version,manifest,bundle FROM screenshot_skill_versions ORDER BY version')] if 'screenshot_skill_versions' in tables else []
 out={'legacyStoreBindings':store,'legacyScreenshotBindings':shot,
  'legacyStoreSha256':digest(store),'legacyScreenshotSha256':digest(shot),
  'forwarding':rows('platform_forwarding','platform,enabled','1'),
@@ -90,6 +91,8 @@ out={'legacyStoreBindings':store,'legacyScreenshotBindings':shot,
  'integrationsSha256':digest(rows('integrations','id,name','1')),
  'integrationGrantsSha256':digest(rows('integration_connectors','integration_id,connector_id','1,2')),
  'screenshotSettingsSha256':digest(rows('screenshot_settings','id,encrypted','1')),
+ 'screenshotSkillSha256':digest(skill_rows),
+ 'screenshotSkillActive':rows('screenshot_skill_current','*','1'),
  'accountApps':rows('account_apps','account_id,bundle_identifier','1,2'),
  'accountStates':rows('accounts','id,platform,catalog_status','1'),
  'applicationSwitches':rows('account_bindings','platform,bundle_identifier,suppressed','1,2'),
@@ -362,7 +365,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                   "center startup and subsequent HTTP requests recorded")
             check(request("/v1/logs", snapshot["token"])[0] == 401,
                   "business credentials cannot read administrator logs")
-            for asset in ("logs.mjs", "app.mjs", "accounts.mjs", "index.html", "style.css", "forwarding.mjs", "screenshot-settings.mjs"):
+            for asset in ("logs.mjs", "app.mjs", "accounts.mjs", "skills.mjs", "packager.mjs", "index.html", "style.css", "forwarding.mjs", "screenshot-settings.mjs"):
                 path = "/connector-setup/" + ("" if asset == "index.html" else asset)
                 status, content = request(path)
                 check(status == 200 and content == (PROJECT / "crates/store-api/src/setup" / asset).read_bytes(),
@@ -455,7 +458,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                 routing_after = routing_snapshot()
                 for key in ("legacyStoreBindings", "legacyScreenshotBindings", "forwarding",
                             "connectorIdentitySha256", "integrationsSha256",
-                            "integrationGrantsSha256", "screenshotSettingsSha256", "applicationSwitches"):
+                            "integrationGrantsSha256", "screenshotSettingsSha256", "screenshotSkillSha256", "screenshotSkillActive", "applicationSwitches"):
                     check(routing_after[key] == routing_before[key], "read-only migration preserves " + key)
                 check(all(row in routing_after["accounts"] for row in routing_before["accounts"]),
                       "preexisting account IDs, names, node relations and enabled states preserved")
@@ -464,6 +467,13 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                 status, content = request("/v1/accounts", snapshot["admin"])
                 check(status == 200, "administrator account migration inventory readable")
                 account_inventory = json.loads(content)
+                status, content = request("/v1/screenshot-skill", snapshot["admin"])
+                skill_inventory = json.loads(content)
+                check(status == 200 and set(skill_inventory) == {"active", "versions"}
+                      and isinstance(skill_inventory["versions"], list), "administrator Skill publication inventory readable")
+                status, content = request("/connector-setup/api/screenshot-skill", snapshot["admin"])
+                check(status == 200 and json.loads(content) == skill_inventory, "Skill inventory mirrors HTTPS developer session route")
+                check(request("/v1/screenshot-skill", snapshot["token"])[0] == 401, "business token cannot manage Skill versions")
                 account_by_id = {account["id"]: account for account in account_inventory["accounts"]}
                 status, content = request("/connector-setup/api/accounts", snapshot["admin"])
                 check(status == 200 and json.loads(content)["accounts"] == account_inventory["accounts"],

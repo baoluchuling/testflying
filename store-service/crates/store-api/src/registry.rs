@@ -15,6 +15,7 @@ pub use accounts::{Account, AccountInput, AccountPatch};
 mod integrations;
 pub(crate) mod screenshot_notifications;
 mod screenshot_settings;
+pub(crate) mod screenshot_skill;
 pub(crate) mod screenshots;
 pub(crate) mod store_jobs;
 pub(crate) use integrations::{Integration, IntegrationInput, TOKEN_PREFIX};
@@ -104,6 +105,7 @@ impl Registry {
         screenshots::create_schema(&db)?;
         store_jobs::create_schema(&db)?;
         screenshot_settings::create_schema(&db)?;
+        screenshot_skill::create_schema(&db)?;
         screenshot_notifications::create_schema(&db)?;
         accounts::create_schema(&mut db)?;
         let db = Arc::new(Mutex::new(db));
