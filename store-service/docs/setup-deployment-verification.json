@@ -1,17 +1,19 @@
 {
-  "runId": "1f3b84186cb344ba9e0aeb01957375a8",
+  "runId": "2c692772f08140a4bcef85eb0875cc7e",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-18T04:21:39.516675+00:00",
-  "deploymentCommit": "7a159dbb9cdd91b1a1e5fdc321d074dae77067c4",
-  "binarySourceCommit": "3ea5f7ddd22ea8879f378d1748472230b80652b9",
-  "apiSha256": "183104396566d1a4886064995a098ed6d95f48e99432598c9a84a1503f05fedc",
+  "finishedAt": "2026-11-18T04:56:36.423818+00:00",
+  "deploymentCommit": "45b3677dfec697f0d4ba89756b4b95b97cbb4b0d",
+  "binarySourceCommit": "a98e7e990015aa4fb0a83ef397c1195f53c5f9d6",
+  "apiSha256": "48cd1705b5c42b2e87389f80b42dc93ea7c58ac70a45e79fd33160b40b6e6d66",
   "connectorBinarySha256": {
-    "linux-amd64": "34eff9b49e995dc28621acf408450b54af47cc03f0ca5e277c935aa558d379d9",
-    "darwin-arm64": "d7feb4868eed526de0b751f94ab5343b787adacacc45755a3b0eb1e9e7396f79",
-    "windows-amd64": "17f4960939d43b871a1f3374c13a35dd876984a5873f64feb3221fb4747fa061"
+    "linux-amd64": "5bd4a699aff8dac91a7109ca2d3b7cee0770a9e2c3e007efe99c9068b400ed2b",
+    "darwin-arm64": "c15e6c78926856677824046add83160f76ae8ee11b0a553b892f54a237ccaeb1",
+    "windows-amd64": "1e026b64ffebb0c5effcf69488db0c609f3918684b4d03d614acc1c5ab6a232f"
   },
-  "screenshotConnectorSha256": "9525d20311e734b10bf4373891d9248d691fe02cac8c3f8dc39517330a605b01",
+  "connectorVersion": "0.2.0",
+  "connectorSourceFingerprint": "62aab9d9342cc1e235aa2ec513fd7bbb164eb0e7c580defa5bfa799824ce241f",
+  "screenshotConnectorSha256": "a66d3688fb117fc1d67d4269c41dcdceec07b6716103e023f563c275e94ed994",
   "screenshotUploadConfigured": false,
   "checks": [
     "node connection inventory readable before rollout",
@@ -25,6 +27,7 @@
     "exact deployed log viewer asset logs.mjs",
     "exact deployed log viewer asset app.mjs",
     "exact deployed log viewer asset accounts.mjs",
+    "exact deployed log viewer asset versions.mjs",
     "exact deployed log viewer asset skills.mjs",
     "exact deployed log viewer asset packager.mjs",
     "exact deployed log viewer asset index.html",
@@ -32,9 +35,17 @@
     "exact deployed log viewer asset forwarding.mjs",
     "exact deployed log viewer asset screenshot-settings.mjs",
     "previously connected nodes recovered after center restart",
+    "authenticated node version fields distinguish unknown old programs from published version",
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
+    "existing Connector inventory available for download verification",
+    "linux-amd64 updated installation package available",
+    "linux-amd64 downloaded native installer preparation program verified",
+    "darwin-arm64 updated installation package available",
+    "darwin-arm64 downloaded native installer preparation program verified",
+    "windows-amd64 updated installation package available",
+    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
     "http eleven store, two node, six screenshot and four account endpoints plus two upload helpers",
     "http exact four account endpoints and cached directory contract",
@@ -77,6 +88,7 @@
     "cached account app schema includes separate screenshot resolution 1b109fa0-2900-4922-a186-ff635daeb59b",
     "cached account app schema includes separate screenshot resolution 9273266c-30c6-4ff5-a05f-f11388d7583b",
     "cached account app schema includes separate screenshot resolution 5fc49492-4157-4fac-b253-5248756b5aeb",
+    "cached account app schema includes separate screenshot resolution d4484176-a743-43f6-920b-f9e8860ec59f",
     "directory-only ownership and application switch /v1/apps/android/app.snapflix.android",
     "exact catalog route or expected blocked result /v1/apps/android/app.snapflix.android/connector",
     "exact catalog route or expected blocked result /v1/apps/android/app.snapflix.android/screenshot-connector",
@@ -89,6 +101,9 @@
     "directory-only ownership and application switch /v1/apps/android/com.app.android.qw.readink",
     "exact catalog route or expected blocked result /v1/apps/android/com.app.android.qw.readink/connector",
     "exact catalog route or expected blocked result /v1/apps/android/com.app.android.qw.readink/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/ios/app.readpod.ios",
+    "exact catalog route or expected blocked result /v1/apps/ios/app.readpod.ios/connector",
+    "exact catalog route or expected blocked result /v1/apps/ios/app.readpod.ios/screenshot-connector",
     "directory-only ownership and application switch /v1/apps/ios/app.snapflix.ios",
     "exact catalog route or expected blocked result /v1/apps/ios/app.snapflix.ios/connector",
     "exact catalog route or expected blocked result /v1/apps/ios/app.snapflix.ios/screenshot-connector",
@@ -100,8 +115,7 @@
     "exact catalog route or expected blocked result /v1/apps/ios/com.cfs.pagealoud.ios/screenshot-connector",
     "directory-only ownership and application switch /v1/apps/ios/com.ios.earnnovel.cash",
     "exact catalog route or expected blocked result /v1/apps/ios/com.ios.earnnovel.cash/connector",
-    "exact catalog route or expected blocked result /v1/apps/ios/com.ios.earnnovel.cash/screenshot-connector",
-    "administrator account list exposes account-wide screenshot settings after migration"
+    "exact catalog route or expected blocked result /v1/apps/ios/com.ios.earnnovel.cash/screenshot-connector"
   ],
   "testNodesCreated": 0,
   "appBindingsWritten": 0,
@@ -216,8 +230,8 @@
         1
       ]
     ],
-    "accountsBefore": 3,
-    "accountsAfter": 3,
+    "accountsBefore": 4,
+    "accountsAfter": 4,
     "migrationMarkers": [
       [
         "accounts_v1"
@@ -272,6 +286,17 @@
       },
       {
         "platform": "ios",
+        "bundleIdentifier": "app.readpod.ios",
+        "accountId": "d4484176-a743-43f6-920b-f9e8860ec59f",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "storeError": null,
+        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "screenshotError": null
+      },
+      {
+        "platform": "ios",
         "bundleIdentifier": "app.snapflix.ios",
         "accountId": "1b109fa0-2900-4922-a186-ff635daeb59b",
         "ownershipStatus": 200,
@@ -318,12 +343,12 @@
     "unavailableOrInconsistentBeforeRollout": []
   },
   "storeConnectorPublication": {
-    "runId": "9dbda3eab41c4d3aa722dbd5445ced01",
-    "sourceCommit": "12ac91a8c5cdfd2ad99f9601abe4ed26c7f8f40a",
+    "runId": "2c692772f08140a4bcef85eb0875cc7e",
+    "sourceCommit": "45b3677dfec697f0d4ba89756b4b95b97cbb4b0d",
     "downloadVerified": {
-      "linux-amd64": "34eff9b49e995dc28621acf408450b54af47cc03f0ca5e277c935aa558d379d9",
-      "darwin-arm64": "d7feb4868eed526de0b751f94ab5343b787adacacc45755a3b0eb1e9e7396f79",
-      "windows-amd64": "17f4960939d43b871a1f3374c13a35dd876984a5873f64feb3221fb4747fa061"
+      "linux-amd64": "5bd4a699aff8dac91a7109ca2d3b7cee0770a9e2c3e007efe99c9068b400ed2b",
+      "darwin-arm64": "c15e6c78926856677824046add83160f76ae8ee11b0a553b892f54a237ccaeb1",
+      "windows-amd64": "1e026b64ffebb0c5effcf69488db0c609f3918684b4d03d614acc1c5ab6a232f"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
@@ -398,5 +423,28 @@
     "explicitBindingCount": 0,
     "productionBindingsWritten": 0,
     "requiresNodeUpgrade": false
+  },
+  "nodeVersionCompatibility": {
+    "runId": "2c692772f08140a4bcef85eb0875cc7e",
+    "remoteNodeInstallationsPerformed": 0,
+    "versionDoesNotGateBusiness": true,
+    "storeNodes": [
+      {
+        "connectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "name": "\u6307\u95f4\u4e92\u52a8",
+        "connected": true,
+        "connectorVersion": null,
+        "latestConnectorVersion": "0.2.0",
+        "versionStatus": "unknown"
+      },
+      {
+        "connectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "name": "\u6c5f\u897f\u805a\u6587",
+        "connected": true,
+        "connectorVersion": null,
+        "latestConnectorVersion": "0.2.0",
+        "versionStatus": "unknown"
+      }
+    ]
   }
 }
