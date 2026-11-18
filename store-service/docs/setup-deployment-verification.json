@@ -1,11 +1,11 @@
 {
-  "runId": "958761f8c23444d086141759811683fb",
+  "runId": "ac697e836c8349a5844a4dfbdfab4eed",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-18T10:59:07.956730+00:00",
-  "deploymentCommit": "39eb282705a96b9bc65ba01fb941db39b79c13ed",
-  "binarySourceCommit": "de1c76d79bc4373550f67fa0688ad85480bd9544",
-  "apiSha256": "46aee353285102620f7057e0758030b91ce6e951dfeb559eb30415ef2bd42e6e",
+  "finishedAt": "2026-11-18T11:14:12.330409+00:00",
+  "deploymentCommit": "97d7529c817cf740e15a1e247a17769f0e370fbe",
+  "binarySourceCommit": "726d6eb75825b9e386253089e24446e365d1f749",
+  "apiSha256": "e2b59648c199704013b1f56042677c0c55faf675a5dd0f7a3b0eec95e45b4589",
   "connectorBinarySha256": {
     "linux-amd64": "e0549bb5b1a4b9c7bd9f028ede113d226d98d70c5572eba45388dcb7d1fc3255",
     "darwin-arm64": "59cbe28920c89354b59d072f5b13f52a6d00258d68fbf08e03a0952331dfdf2d",
@@ -86,6 +86,9 @@
     "preexisting account IDs, names, node relations and enabled states preserved",
     "transactional account migration marker recorded",
     "Android manual directory migration recorded",
+    "legacy Android directory backfill marker recorded",
+    "application membership changes only by audited legacy Android additions",
+    "restored legacy Android membership keeps exact account and identifier",
     "preexisting application names, identifiers and store IDs preserved",
     "existing Android apps retained across future discovery",
     "administrator account migration inventory readable",
@@ -246,8 +249,29 @@
         "accounts_v1"
       ],
       [
+        "android_legacy_bindings_v1"
+      ],
+      [
         "android_manual_apps_v1"
       ]
+    ],
+    "legacyAndroidRestored": [
+      {
+        "accountId": "5fc49492-4157-4fac-b253-5248756b5aeb",
+        "bundleIdentifier": "com.app.android.qw.newreadink"
+      },
+      {
+        "accountId": "5fc49492-4157-4fac-b253-5248756b5aeb",
+        "bundleIdentifier": "com.app.android.qw.readink"
+      },
+      {
+        "accountId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
+        "bundleIdentifier": "app.snapflix.android"
+      },
+      {
+        "accountId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
+        "bundleIdentifier": "com.amberia.android"
+      }
     ],
     "migrationIssues": [],
     "accountMigrationErrors": [],
@@ -255,46 +279,46 @@
       {
         "platform": "android",
         "bundleIdentifier": "app.snapflix.android",
-        "accountId": null,
-        "ownershipStatus": 404,
-        "ownershipError": "app_not_found",
-        "storeConnectorId": null,
-        "storeError": "app_not_found",
-        "screenshotConnectorId": null,
-        "screenshotError": "app_not_found"
+        "accountId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "storeError": null,
+        "screenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "screenshotError": null
       },
       {
         "platform": "android",
         "bundleIdentifier": "com.amberia.android",
-        "accountId": null,
-        "ownershipStatus": 404,
-        "ownershipError": "app_not_found",
-        "storeConnectorId": null,
-        "storeError": "app_not_found",
-        "screenshotConnectorId": null,
-        "screenshotError": "app_not_found"
+        "accountId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "storeError": null,
+        "screenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "screenshotError": null
       },
       {
         "platform": "android",
         "bundleIdentifier": "com.app.android.qw.newreadink",
-        "accountId": null,
-        "ownershipStatus": 404,
-        "ownershipError": "app_not_found",
-        "storeConnectorId": null,
-        "storeError": "app_not_found",
-        "screenshotConnectorId": null,
-        "screenshotError": "app_not_found"
+        "accountId": "5fc49492-4157-4fac-b253-5248756b5aeb",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "storeError": null,
+        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "screenshotError": null
       },
       {
         "platform": "android",
         "bundleIdentifier": "com.app.android.qw.readink",
-        "accountId": null,
-        "ownershipStatus": 404,
-        "ownershipError": "app_not_found",
-        "storeConnectorId": null,
-        "storeError": "app_not_found",
-        "screenshotConnectorId": null,
-        "screenshotError": "app_not_found"
+        "accountId": "5fc49492-4157-4fac-b253-5248756b5aeb",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "storeError": null,
+        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "screenshotError": null
       },
       {
         "platform": "ios",
@@ -437,7 +461,7 @@
     "requiresNodeUpgrade": false
   },
   "androidManualDirectory": {
-    "runId": "958761f8c23444d086141759811683fb",
+    "runId": "ac697e836c8349a5844a4dfbdfab4eed",
     "androidOnly": true,
     "addAndRemove": true,
     "existingApplicationDataPreserved": true,
