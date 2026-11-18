@@ -1,19 +1,28 @@
 {
-  "runId": "2c692772f08140a4bcef85eb0875cc7e",
+  "runId": "8acac2945ba2408bbb5e3763d143790d",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-18T04:56:36.423818+00:00",
-  "deploymentCommit": "45b3677dfec697f0d4ba89756b4b95b97cbb4b0d",
-  "binarySourceCommit": "a98e7e990015aa4fb0a83ef397c1195f53c5f9d6",
-  "apiSha256": "48cd1705b5c42b2e87389f80b42dc93ea7c58ac70a45e79fd33160b40b6e6d66",
+  "finishedAt": "2026-11-18T09:48:03.647675+00:00",
+  "deploymentCommit": "52b8dec1c9740dd1ad103ed8c86411c55f025c8a",
+  "binarySourceCommit": "4e039dd0fb5878192cc5fbb189ce21ca47860349",
+  "apiSha256": "f88e7a4a4d25357f966037ce78be3083231a9f310baa077fc577e58c59110a94",
   "connectorBinarySha256": {
-    "linux-amd64": "5bd4a699aff8dac91a7109ca2d3b7cee0770a9e2c3e007efe99c9068b400ed2b",
-    "darwin-arm64": "c15e6c78926856677824046add83160f76ae8ee11b0a553b892f54a237ccaeb1",
-    "windows-amd64": "1e026b64ffebb0c5effcf69488db0c609f3918684b4d03d614acc1c5ab6a232f"
+    "linux-amd64": "e0549bb5b1a4b9c7bd9f028ede113d226d98d70c5572eba45388dcb7d1fc3255",
+    "darwin-arm64": "59cbe28920c89354b59d072f5b13f52a6d00258d68fbf08e03a0952331dfdf2d",
+    "windows-amd64": "a863025d1c83ea204bdb4439f16cdff0178e4ca0ad543f66c44175adc835b8e6"
   },
-  "connectorVersion": "0.2.0",
-  "connectorSourceFingerprint": "62aab9d9342cc1e235aa2ec513fd7bbb164eb0e7c580defa5bfa799824ce241f",
-  "screenshotConnectorSha256": "a66d3688fb117fc1d67d4269c41dcdceec07b6716103e023f563c275e94ed994",
+  "connectorVersion": "0.2.1",
+  "connectorSourceFingerprint": "efdac6d78a11c51461b2e5b38048ec8a5d26078e4518b03fd3d0ff474b2a3395",
+  "firebaseDiagnostics": {
+    "minimumConnectorVersion": "0.2.1",
+    "publishedConnectorVersion": "0.2.1",
+    "readOnly": true,
+    "actualFirebaseAccountsQueried": false,
+    "automaticMembershipChanges": false,
+    "publicCoreEndpointCountUnchanged": true,
+    "routesVerifiedWithoutProviderAccess": true
+  },
+  "screenshotConnectorSha256": "39156555daa83948f931558e40fb4645a605e2dc359339145a8b2665f7103e60",
   "screenshotUploadConfigured": false,
   "checks": [
     "node connection inventory readable before rollout",
@@ -36,6 +45,10 @@
     "exact deployed log viewer asset screenshot-settings.mjs",
     "previously connected nodes recovered after center restart",
     "authenticated node version fields distinguish unknown old programs from published version",
+    "business token cannot call Firebase administrator diagnostic projects",
+    "Firebase administrator route rejects an absent node without provider access projects",
+    "business token cannot call Firebase administrator diagnostic projects/firebase-probe/android-apps",
+    "Firebase administrator route rejects an absent node without provider access projects/firebase-probe/android-apps",
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
@@ -343,12 +356,12 @@
     "unavailableOrInconsistentBeforeRollout": []
   },
   "storeConnectorPublication": {
-    "runId": "2c692772f08140a4bcef85eb0875cc7e",
-    "sourceCommit": "45b3677dfec697f0d4ba89756b4b95b97cbb4b0d",
+    "runId": "8acac2945ba2408bbb5e3763d143790d",
+    "sourceCommit": "52b8dec1c9740dd1ad103ed8c86411c55f025c8a",
     "downloadVerified": {
-      "linux-amd64": "5bd4a699aff8dac91a7109ca2d3b7cee0770a9e2c3e007efe99c9068b400ed2b",
-      "darwin-arm64": "c15e6c78926856677824046add83160f76ae8ee11b0a553b892f54a237ccaeb1",
-      "windows-amd64": "1e026b64ffebb0c5effcf69488db0c609f3918684b4d03d614acc1c5ab6a232f"
+      "linux-amd64": "e0549bb5b1a4b9c7bd9f028ede113d226d98d70c5572eba45388dcb7d1fc3255",
+      "darwin-arm64": "59cbe28920c89354b59d072f5b13f52a6d00258d68fbf08e03a0952331dfdf2d",
+      "windows-amd64": "a863025d1c83ea204bdb4439f16cdff0178e4ca0ad543f66c44175adc835b8e6"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
@@ -425,7 +438,7 @@
     "requiresNodeUpgrade": false
   },
   "nodeVersionCompatibility": {
-    "runId": "2c692772f08140a4bcef85eb0875cc7e",
+    "runId": "8acac2945ba2408bbb5e3763d143790d",
     "remoteNodeInstallationsPerformed": 0,
     "versionDoesNotGateBusiness": true,
     "storeNodes": [
@@ -434,7 +447,7 @@
         "name": "\u6307\u95f4\u4e92\u52a8",
         "connected": true,
         "connectorVersion": null,
-        "latestConnectorVersion": "0.2.0",
+        "latestConnectorVersion": "0.2.1",
         "versionStatus": "unknown"
       },
       {
@@ -442,7 +455,7 @@
         "name": "\u6c5f\u897f\u805a\u6587",
         "connected": true,
         "connectorVersion": null,
-        "latestConnectorVersion": "0.2.0",
+        "latestConnectorVersion": "0.2.1",
         "versionStatus": "unknown"
       }
     ]
