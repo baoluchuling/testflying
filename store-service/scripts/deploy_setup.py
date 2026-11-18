@@ -91,6 +91,15 @@ out={'legacyStoreBindings':store,'legacyScreenshotBindings':shot,
  'accountAppDetails':rows('account_apps','account_id,bundle_identifier,name,store_app_id','1,2'),
  'accountAppSources':rows('account_apps','account_id,bundle_identifier,source','1,2') if 'source' in {r[1] for r in db.execute('PRAGMA table_info(account_apps)')} else [],
  'accountAppRemovals':rows('account_app_removals','account_id,bundle_identifier','1,2'),
+ 'legacyAndroidCandidates':[list(r) for r in db.execute('''SELECT a.id,b.bundle_identifier FROM app_bindings b
+  JOIN accounts a ON a.platform=b.platform AND a.store_connector_id=b.connector_id
+  JOIN account_bindings ab ON ab.platform=b.platform AND ab.bundle_identifier=b.bundle_identifier AND ab.account_id=a.id
+  JOIN connectors c ON c.id=b.connector_id
+  WHERE b.platform='android' AND ab.provisional=1 AND c.mode!='screenshot' AND a.catalog_status!='identity_changed'
+    AND NOT EXISTS(SELECT 1 FROM account_app_removals r WHERE r.account_id=a.id AND r.bundle_identifier=b.bundle_identifier)
+    AND NOT EXISTS(SELECT 1 FROM account_apps p JOIN accounts other ON other.id=p.account_id
+      WHERE other.platform='android' AND p.bundle_identifier=b.bundle_identifier AND p.account_id!=a.id)
+  ORDER BY a.id,b.bundle_identifier''')] if 'account_app_removals' in tables else [],
  'accountStates':rows('accounts','id,platform,catalog_status','1'),
  'applicationSwitches':rows('account_bindings','platform,bundle_identifier,suppressed','1,2'),
  'accounts':accounts,'migrationMarkers':rows('account_migrations','name','1'),
@@ -303,13 +312,22 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
         previously_connected = {node["connectorId"] for node in json.loads(body)["connectors"] if node["connected"]}
         routing_baseline = []
         routing_excluded = []
+        expected_legacy_android = []
         if routing_before is not None:
             node_states = {row[0]: row[1:] for row in routing_before["connectors"]}
             account_rows = {row[0]: row for row in routing_before["accounts"]}
             states = {row[0]: row[2] for row in routing_before["accountStates"]}
             switches = {(p, app): off for p, app, off in routing_before["applicationSwitches"]}
             candidates = {}
-            for account_id, identifier in routing_before["accountApps"]:
+            if ["android_legacy_bindings_v1"] not in routing_before["migrationMarkers"]:
+                existing_apps = {tuple(row) for row in routing_before["accountApps"]}
+                for account_id, identifier in routing_before["legacyAndroidCandidates"]:
+                    valid = (1 <= len(identifier) <= 180 and not identifier.startswith('.')
+                             and not identifier.endswith('.') and '..' not in identifier
+                             and all(c.isascii() and (c.isalnum() or c in '._-') for c in identifier))
+                    if valid and (account_id, identifier) not in existing_apps:
+                        expected_legacy_android.append([account_id, identifier])
+            for account_id, identifier in routing_before["accountApps"] + expected_legacy_android:
                 account = account_rows[account_id]
                 candidates.setdefault((account[2], identifier), []).append(account)
             keys = set(candidates) | {(p, app) for p, app, _ in routing_before["legacyStoreBindings"]}
@@ -485,6 +503,15 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                       "transactional account migration marker recorded")
                 check(["android_manual_apps_v1"] in routing_after["migrationMarkers"],
                       "Android manual directory migration recorded")
+                check(["android_legacy_bindings_v1"] in routing_after["migrationMarkers"],
+                      "legacy Android directory backfill marker recorded")
+                check({tuple(row) for row in routing_after["accountApps"]}
+                      == {tuple(row) for row in routing_before["accountApps"] + expected_legacy_android},
+                      "application membership changes only by audited legacy Android additions")
+                after_details = {(a, b): (name, store_id) for a, b, name, store_id in routing_after["accountAppDetails"]}
+                after_source_map = {(a, b): source for a, b, source in routing_after["accountAppSources"]}
+                check(all(after_details.get((a, b)) == (b, None) and after_source_map.get((a, b)) == "retained"
+                          for a, b in expected_legacy_android), "restored legacy Android membership keeps exact account and identifier")
                 check(all(row in routing_after["accountAppDetails"] for row in routing_before["accountAppDetails"]),
                       "preexisting application names, identifiers and store IDs preserved")
                 android_ids = {row[0] for row in routing_before["accounts"] if row[2] == "android"}
@@ -549,6 +576,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                     "preservedHashes": {key: routing_after[key] for key in ("legacyStoreSha256", "legacyScreenshotSha256", "connectorIdentitySha256", "integrationsSha256", "integrationGrantsSha256", "screenshotSettingsSha256")},
                     "forwarding": routing_after["forwarding"], "accountsBefore": len(routing_before["accounts"]),
                     "accountsAfter": len(routing_after["accounts"]), "migrationMarkers": routing_after["migrationMarkers"],
+                    "legacyAndroidRestored": [{"accountId": a, "bundleIdentifier": b} for a, b in expected_legacy_android],
                     "migrationIssues": account_inventory["migrationIssues"],
                     "accountMigrationErrors": [{"accountId": account["id"], "code": account["migrationError"]}
                                                for account in account_by_id.values() if account["migrationError"]],

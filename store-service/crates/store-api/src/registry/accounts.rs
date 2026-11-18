@@ -127,6 +127,42 @@ pub(super) fn create_schema(db: &mut Connection) -> Result<()> {
             PRIMARY KEY(account_id,bundle_identifier));
           INSERT INTO account_migrations VALUES('android_manual_apps_v1');").map_err(database_error)?;
     }
+    let legacy_android_migrated: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM account_migrations WHERE name='android_legacy_bindings_v1')",
+        [], |r| r.get(0),
+    ).map_err(database_error)?;
+    if !legacy_android_migrated {
+        // Only carry forward bindings still awaiting merchant discovery for the
+        // same account identity. A successful catalog or accepted identity change
+        // clears provisional, so stale bindings cannot reappear in a new account.
+        let candidates: Vec<(String, String)> = {
+            let mut stmt = tx.prepare("SELECT a.id,b.bundle_identifier FROM app_bindings b
+              JOIN accounts a ON a.platform=b.platform AND a.store_connector_id=b.connector_id
+              JOIN account_bindings ab ON ab.platform=b.platform AND ab.bundle_identifier=b.bundle_identifier AND ab.account_id=a.id
+              JOIN connectors c ON c.id=b.connector_id
+              WHERE b.platform='android' AND ab.provisional=1 AND c.mode!='screenshot'
+                AND a.catalog_status!='identity_changed'
+                AND NOT EXISTS(SELECT 1 FROM account_app_removals r WHERE r.account_id=a.id AND r.bundle_identifier=b.bundle_identifier)").map_err(database_error)?;
+            let rows = stmt
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                .map_err(database_error)?;
+            rows.collect::<std::result::Result<_, _>>()
+                .map_err(database_error)?
+        };
+        for (id, identifier) in candidates {
+            let conflict: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM account_apps p JOIN accounts a ON a.id=p.account_id WHERE a.platform='android' AND p.bundle_identifier=?1 AND p.account_id!=?2)",params![identifier,id],|r|r.get(0)).map_err(database_error)?;
+            if conflict || validate_identifier(&identifier).is_err() {
+                tx.execute("INSERT OR IGNORE INTO account_migration_issues(platform,bundle_identifier,code) VALUES('android',?1,?2)",params![identifier,if conflict {"legacy_android_account_conflict"} else {"legacy_android_identifier_invalid"}]).map_err(database_error)?;
+                continue;
+            }
+            tx.execute("INSERT OR IGNORE INTO account_apps(account_id,bundle_identifier,name,source) VALUES(?1,?2,?2,'retained')",params![id,identifier]).map_err(database_error)?;
+        }
+        tx.execute(
+            "INSERT INTO account_migrations VALUES('android_legacy_bindings_v1')",
+            [],
+        )
+        .map_err(database_error)?;
+    }
     tx.commit().map_err(database_error)
 }
 

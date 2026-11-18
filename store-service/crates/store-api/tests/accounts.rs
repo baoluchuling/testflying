@@ -22,6 +22,147 @@ fn registry() -> Registry {
 }
 
 #[test]
+fn android_legacy_bindings_backfill_after_manual_upgrade_without_reviving_removed_or_changed_apps()
+{
+    for case in [
+        "restore",
+        "removed",
+        "conflict",
+        "catalog_verified",
+        "identity_changed",
+        "existing",
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("legacy-android.sqlite");
+        let r = Registry::open(&path, KEY).unwrap();
+        let store = node(&r, "Legacy Android");
+        let other = node(&r, "Other account");
+        for (node, platform) in [
+            (&store, Platform::Android),
+            (&store, Platform::Ios),
+            (&other, Platform::Android),
+        ] {
+            support::catalog(&r, &node.connector_id, platform, &[]);
+        }
+        let all = r.accounts().unwrap();
+        let android = all
+            .iter()
+            .find(|a| a.platform == Platform::Android && a.store_connector_id == store.connector_id)
+            .unwrap();
+        let ios = all.iter().find(|a| a.platform == Platform::Ios).unwrap();
+        let second = all
+            .iter()
+            .find(|a| a.store_connector_id == other.connector_id)
+            .unwrap();
+        let mac = r
+            .create_with_kind(
+                ConnectorInput {
+                    name: "Screenshot Mac".into(),
+                },
+                ConnectorKind::Screenshot,
+            )
+            .unwrap();
+        r.set_store_account_screenshot(&store.connector_id, Some(&mac.connector_id))
+            .unwrap();
+        let failed = report(
+            Platform::Android,
+            CatalogStatus::Failed,
+            Some(&"a".repeat(64)),
+        );
+        r.ingest_catalog(&store.connector_id, &r.token(&store), true, &failed)
+            .unwrap();
+        match case {
+            "removed" | "existing" => {
+                r.add_android_app(&android.id, APP, Some("Existing display name"))
+                    .unwrap();
+                if case == "removed" {
+                    r.remove_android_app(&android.id, APP).unwrap();
+                }
+            }
+            "conflict" => r.add_android_app(&second.id, APP, None).unwrap(),
+            "identity_changed" => {
+                let changed = report(
+                    Platform::Android,
+                    CatalogStatus::Ready,
+                    Some(&"b".repeat(64)),
+                );
+                r.ingest_catalog(&store.connector_id, &r.token(&store), true, &changed)
+                    .unwrap();
+            }
+            _ => {}
+        }
+        let android_id = android.id.clone();
+        let ios_id = ios.id.clone();
+        drop(r);
+        let db = rusqlite::Connection::open(&path).unwrap();
+        assert!(db.query_row("SELECT EXISTS(SELECT 1 FROM account_migrations WHERE name='android_manual_apps_v1')",[],|r|r.get::<_,bool>(0)).unwrap());
+        db.execute(
+            "DELETE FROM account_migrations WHERE name='android_legacy_bindings_v1'",
+            [],
+        )
+        .unwrap();
+        for (platform, id) in [("android", &android_id), ("ios", &ios_id)] {
+            db.execute("INSERT INTO app_bindings(platform,bundle_identifier,connector_id) VALUES(?1,?2,?3)",rusqlite::params![platform,APP,store.connector_id]).unwrap();
+            db.execute("INSERT INTO account_bindings(platform,bundle_identifier,account_id,provisional,suppressed) VALUES(?1,?2,?3,?4,1)",rusqlite::params![platform,APP,id,i64::from(case!="catalog_verified")]).unwrap();
+        }
+        drop(db);
+        let r = Registry::open(&path, KEY).unwrap();
+        let apps = r.account_apps(&android_id).unwrap();
+        if case == "restore" {
+            assert_eq!(apps.len(), 1);
+            assert_eq!(apps[0]["source"], "retained");
+            assert_eq!(apps[0]["bundleIdentifier"], APP);
+            assert_eq!(apps[0]["enabled"], false);
+            assert_eq!(apps[0]["resolutionStatus"], "app_forwarding_disabled");
+            assert_eq!(r.account(&android_id).unwrap().catalog_status, "failed");
+            r.set_app_enabled(&android_id, Platform::Android, APP, true)
+                .unwrap();
+            assert_eq!(
+                r.resolve(Platform::Android, APP).unwrap().connector_id,
+                store.connector_id
+            );
+            assert_eq!(
+                r.account_apps(&android_id).unwrap()[0]["screenshotEnabled"],
+                true
+            );
+            support::catalog(&r, &store.connector_id, Platform::Android, &[]);
+            assert_eq!(r.account_apps(&android_id).unwrap().len(), 1);
+        } else if case == "existing" {
+            assert_eq!(apps.len(), 1);
+            assert_eq!(apps[0]["name"], "Existing display name");
+            assert_eq!(apps[0]["source"], "manual");
+        } else {
+            assert!(apps.is_empty(), "{case}");
+            if case == "conflict" {
+                assert_eq!(r.account_apps(&second.id).unwrap().len(), 1);
+                assert_eq!(
+                    r.account_migration_issues().unwrap()[0]["code"],
+                    "legacy_android_account_conflict"
+                );
+            }
+        }
+        assert!(r.account_apps(&ios_id).unwrap().is_empty());
+        assert_eq!(
+            r.account(&android_id)
+                .unwrap()
+                .screenshot_connector_id
+                .as_deref(),
+            Some(mac.connector_id.as_str())
+        );
+        let before = r.account_apps(&android_id).unwrap();
+        drop(r);
+        let r = Registry::open(&path, KEY).unwrap();
+        assert_eq!(r.account_apps(&android_id).unwrap(), before, "{case}");
+        if case == "restore" {
+            r.remove_android_app(&android_id, APP).unwrap();
+            drop(r);
+            let r = Registry::open(&path, KEY).unwrap();
+            assert!(r.account_apps(&android_id).unwrap().is_empty());
+        }
+    }
+}
+
+#[test]
 fn android_manual_membership_survives_reports_removal_and_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("manual.sqlite");

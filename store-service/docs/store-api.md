@@ -166,6 +166,8 @@ Android 移除应用：管理员 `DELETE /v1/accounts/{accountId}/apps/{bundleId
 
 本次升级原地保留所有已有成员、名称、商店 ID、开关和截图绑定；原有 Android 成员标为 `retained`，新增为 `manual`，两者不会被后续完整目录刷新删除或覆盖。被手动移除的包名即使再次出现在上报列表也不恢复。iOS 和 `catalog` 来源应用仍按完整上报刷新；真正更换商店节点或确认凭据身份变更仍执行原有成员失效规则。
 
+旧版 Android 手动绑定也会一次性补入原账号目录，标为 `retained`；即使已安装上一版添加／移除功能，也会执行此补迁移。仅恢复仍指向原节点、待商店发现确认的旧绑定；不恢复已手动移除、已通过完整商店目录淘汰或身份变更的成员，不覆盖其他账号的已有归属。原有转发开关和账号截图节点保留，原旧表没有应用名称时用包名显示。跨账号冲突保留原数据并记录 `legacy_android_account_conflict`，供管理员核对。
+
 应用开关：管理员 `PUT /v1/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding`，JSON `{"enabled":false}` 或 `{"enabled":true}`，成功 204。后台 HTTPS session 镜像为 `/connector-setup/api/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding`。平台目录必须仍包含该应用，否则返回 `409 app_catalog_changed`，请重新读取。启用不会绕过重复归属、账号停用或身份变化校验。业务和接入 Token 无权修改应用开关。已通过转发校验的请求继续处理；关闭后新进入的请求被阻止。旧商店及截图 DELETE 均返回 `410 manual_binding_removed`，不修改目录或开关。
 
 账号截图节点：管理员 `PUT /v1/accounts/store-connectors/{storeConnectorId}/screenshot-connector`，HTTPS session 镜像 `/connector-setup/api/accounts/store-connectors/{storeConnectorId}/screenshot-connector`。正文必填 `{"connectorId":"截图节点 UUID"}` 或显式 `{"connectorId":null}`，成功 `200 {"storeConnectorId":"商店节点 UUID","connectorId":"截图节点 UUID 或 null","updatedAccounts":2}`（此处 null 是 JSON null，不是字符串）。商店节点 ID 对应逻辑账号，非平台目录 ID。整组 iOS／Android 目录在同一事务中更新，未来首次上报的平台继承该配置；显式 null 清空该账号截图路由。目标须为已启用截图节点，允许离线，也可由多个账号共用。商店节点暂停不影响配置截图链路。应用归属、应用开关及已创建任务的执行节点保持原样。业务／接入 Token 无权修改，缺失字段、未知字段及错误类型返回 422。历史平台配置不一致时后台要求明确选择，不自动覆盖。
