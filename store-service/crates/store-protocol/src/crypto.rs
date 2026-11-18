@@ -13,6 +13,12 @@ pub const HANDSHAKE_BYTES: usize = 4096;
 pub struct Registration {
     pub connector_id: String,
     pub base_url: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_connector_version"
+    )]
+    pub connector_version: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logs_version: Option<u8>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -21,6 +27,20 @@ pub struct Registration {
     pub store_versions_version: Option<u8>,
     #[serde(default)]
     pub async_store_images_supported: bool,
+}
+
+fn deserialize_connector_version<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    use serde::Deserialize;
+    let version = Option::<String>::deserialize(deserializer)?;
+    if version
+        .as_deref()
+        .is_some_and(|value| crate::release::ConnectorVersion::parse(value).is_none())
+    {
+        return Err(serde::de::Error::custom("Invalid Connector version"));
+    }
+    Ok(version)
 }
 
 pub fn error() -> StoreError {
@@ -133,11 +153,30 @@ mod capability_tests {
         let old: Registration =
             serde_json::from_str(r#"{"connectorId":"old","baseUrl":null}"#).unwrap();
         assert!(!old.async_store_images_supported);
+        assert_eq!(old.connector_version, None);
         assert_eq!(old.app_catalog_version, None);
         let new: Registration = serde_json::from_str(
             r#"{"connectorId":"new","baseUrl":null,"asyncStoreImagesSupported":true}"#,
         )
         .unwrap();
         assert!(new.async_store_images_supported);
+    }
+
+    #[test]
+    fn registration_rejects_noncanonical_or_unbounded_versions() {
+        for value in ["0.02.0", "4294967296.0.0", "0.2.0-beta", "<img src=x>"] {
+            assert!(serde_json::from_value::<Registration>(serde_json::json!({
+                "connectorId":"node", "connectorVersion":value
+            }))
+            .is_err());
+        }
+        let registration: Registration = serde_json::from_value(serde_json::json!({
+            "connectorId":"node", "connectorVersion":crate::release::CONNECTOR_VERSION
+        }))
+        .unwrap();
+        assert_eq!(
+            registration.connector_version.as_deref(),
+            Some(crate::release::CONNECTOR_VERSION)
+        );
     }
 }

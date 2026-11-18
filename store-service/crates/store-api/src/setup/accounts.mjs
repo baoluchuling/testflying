@@ -1,3 +1,5 @@
+import { nodeLabel } from "./versions.mjs";
+
 export function bindAccounts(request, getSession) {
   const $ = (id) => document.getElementById(id);
   let accounts = [], nodes = [], directories = new Map(), bindings = new Map(), selected = "", epoch = 0, busy = false;
@@ -12,7 +14,7 @@ export function bindAccounts(request, getSession) {
   }
   const label = (id) => {
     const node = nodes.find((item) => item.connectorId === id);
-    return node ? `${node.name} · ${id} · ${node.enabled ? (node.connected ? "已连接" : "未连接") : "已停用"}` : id || "未配置";
+    return node ? `${nodeLabel(node)} · ${id}` : id || "未配置";
   };
   function controls() {
     for (const control of $("accountsWorkspace").querySelectorAll("button, input, select")) control.disabled = busy;

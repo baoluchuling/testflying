@@ -289,9 +289,26 @@ fn node_view(state: &ApiState, node: Connector) -> Value {
     let logs_available = node.kind == ConnectorKind::Store
         && (state.transport.logs_supported(&node.connector_id)
             || (!connected && node.base_url.is_some()));
+    let version_status = store_protocol::release::version_status(node.connector_version.as_deref());
     let mut value = serde_json::to_value(node).expect("Connector serialization");
     value["connected"] = json!(connected);
     value["logsAvailable"] = json!(logs_available);
+    value["latestConnectorVersion"] = json!(store_protocol::release::CONNECTOR_VERSION);
+    value["versionStatus"] = json!(version_status);
+    value
+}
+
+fn business_node_view(state: &ApiState, node: Connector) -> Value {
+    let mut value = node_view(state, node);
+    if let Some(fields) = value.as_object_mut() {
+        for field in [
+            "connectorVersion",
+            "latestConnectorVersion",
+            "versionStatus",
+        ] {
+            fields.remove(field);
+        }
+    }
     value
 }
 
@@ -389,7 +406,7 @@ async fn bind_connector(
     Path((platform, identifier)): Path<(Platform, String)>,
     Json(input): Json<BindInput>,
 ) -> Result<Json<Value>> {
-    Ok(Json(node_view(
+    Ok(Json(business_node_view(
         &state,
         state
             .registry
@@ -407,7 +424,7 @@ async fn app_connector(
     State(state): State<Arc<ApiState>>,
     Path((platform, identifier)): Path<(Platform, String)>,
 ) -> Result<Json<Value>> {
-    Ok(Json(node_view(
+    Ok(Json(business_node_view(
         &state,
         state.registry.resolve(platform, &identifier)?,
     )))
@@ -463,14 +480,15 @@ async fn connect_ws(
                         key,
                         screenshot.then_some(&state.registry),
                         Some((&state.registry, catalog_token.as_str())),
-                        move |endpoint| {
+                        move |endpoint, connector_version| {
                             if screenshot && endpoint.is_some() {
                                 return Err(store_protocol::crypto::error());
                             }
-                            registration_state.registry.register_endpoint(
+                            registration_state.registry.register_connection(
                                 &registration_id,
                                 &token,
                                 endpoint.as_deref(),
+                                connector_version.as_deref(),
                             )
                         },
                     )

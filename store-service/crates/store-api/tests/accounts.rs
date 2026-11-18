@@ -629,6 +629,67 @@ fn migration_is_one_time_preserves_settings_snapshots_and_flags_conflicts_and_or
     }
 }
 
+#[tokio::test]
+async fn business_connector_bindings_omit_version_metadata_while_admin_inventory_keeps_it() {
+    let state = state();
+    let store = node(&state.registry, "Versioned store");
+    let token = state.registry.token(&store);
+    state
+        .registry
+        .register_connection(
+            &store.connector_id,
+            &token,
+            None,
+            Some(store_protocol::release::CONNECTOR_VERSION),
+        )
+        .unwrap();
+    support::catalog(&state.registry, &store.connector_id, Platform::Ios, &[APP]);
+    let app = store_api::router(state);
+    let (status, issued) = call(
+        &app,
+        "POST",
+        "/v1/integrations",
+        ADMIN,
+        json!({"name":"Version metadata boundary"}),
+    )
+    .await;
+    assert_eq!(status, 201);
+    let integration = issued["token"].as_str().unwrap();
+    let path = format!("/v1/apps/ios/{APP}/connector");
+    let (status, bound) = call(
+        &app,
+        "PUT",
+        &path,
+        integration,
+        json!({"connectorId":store.connector_id}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (status, resolved) = call(&app, "GET", &path, ADMIN, Value::Null).await;
+    assert_eq!(status, 200);
+    for response in [bound, resolved] {
+        assert_eq!(response["connectorId"], store.connector_id);
+        for field in [
+            "connectorVersion",
+            "latestConnectorVersion",
+            "versionStatus",
+        ] {
+            assert!(response.get(field).is_none(), "{field}");
+        }
+    }
+    let (status, inventory) = call(&app, "GET", "/v1/connectors", ADMIN, Value::Null).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        inventory["connectors"][0]["connectorVersion"],
+        store_protocol::release::CONNECTOR_VERSION
+    );
+    assert_eq!(
+        inventory["connectors"][0]["latestConnectorVersion"],
+        store_protocol::release::CONNECTOR_VERSION
+    );
+    assert_eq!(inventory["connectors"][0]["versionStatus"], "current");
+}
+
 fn state() -> Arc<ApiState> {
     ApiState::new(
         registry(),

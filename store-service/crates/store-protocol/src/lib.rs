@@ -5,6 +5,7 @@ use std::fmt;
 pub mod catalog;
 pub mod crypto;
 pub mod logs;
+pub mod release;
 pub mod screenshot;
 pub mod skill;
 pub mod upload;

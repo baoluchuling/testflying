@@ -378,7 +378,7 @@ async fn list_nodes(
         .list()?
         .into_iter()
         .filter(|node| node.kind == ConnectorKind::Screenshot && node.enabled)
-        .map(|node| node_view(&state, node))
+        .map(|node| business_node_view(&state, node))
         .collect::<Vec<_>>();
     Ok(Json(json!({"connectors":nodes})))
 }
@@ -391,7 +391,7 @@ async fn bind(
         .registry
         .bind_screenshot(platform, &identifier, &input.connector_id)?;
     Ok(Json(
-        json!({"platform":platform,"bundleIdentifier":identifier,"connector":node_view(&state,node)}),
+        json!({"platform":platform,"bundleIdentifier":identifier,"connector":business_node_view(&state,node)}),
     ))
 }
 async fn binding(
@@ -400,7 +400,7 @@ async fn binding(
 ) -> Result<Json<Value>> {
     let node = state.registry.screenshot_binding(platform, &identifier)?;
     Ok(Json(
-        json!({"platform":platform,"bundleIdentifier":identifier,"connector":node_view(&state,node)}),
+        json!({"platform":platform,"bundleIdentifier":identifier,"connector":business_node_view(&state,node)}),
     ))
 }
 async fn unbind(

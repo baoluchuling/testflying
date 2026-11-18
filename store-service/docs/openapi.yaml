@@ -281,6 +281,9 @@ components:
         enabled: {type: boolean}
         appCount: {type: integer, minimum: 0}
         connected: {type: boolean, description: Active WSS connection only; not an HTTP health probe.}
+        connectorVersion: {type: [string, 'null'], description: Last version reported in a confirmed authenticated WSS handshake. Null for an old node without version reporting. Offline nodes retain their last report.}
+        latestConnectorVersion: {type: string, description: Published Connector version supported by this center.}
+        versionStatus: {type: string, enum: [current, outdated, newer, unknown], description: Numeric major.minor.patch comparison, separate from connection status. Unknown requires upgrading the node once to enable version reporting.}
     Installation:
       type: object
       description: Private node configuration. Add store credential paths locally before live use.

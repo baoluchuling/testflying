@@ -223,6 +223,10 @@ async fn asset(Path(name): Path<String>) -> Response {
             "text/javascript; charset=utf-8",
             include_bytes!("setup/app.mjs"),
         ),
+        "versions.mjs" => (
+            "text/javascript; charset=utf-8",
+            include_bytes!("setup/versions.mjs"),
+        ),
         "accounts.mjs" => (
             "text/javascript; charset=utf-8",
             include_bytes!("setup/accounts.mjs"),

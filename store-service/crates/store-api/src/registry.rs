@@ -51,6 +51,7 @@ pub struct Connector {
     pub name: String,
     pub kind: ConnectorKind,
     pub base_url: Option<String>,
+    pub connector_version: Option<String>,
     pub enabled: bool,
     pub app_count: u64,
     #[serde(skip)]
@@ -93,6 +94,12 @@ impl Registry {
             integration_id TEXT NOT NULL REFERENCES integrations(id) ON DELETE CASCADE,
             connector_id TEXT NOT NULL REFERENCES connectors(id) ON DELETE CASCADE,
             PRIMARY KEY(integration_id,connector_id));",
+        )
+        .map_err(database_error)?;
+        db.execute_batch(
+            "CREATE TABLE IF NOT EXISTS connector_reports (
+            connector_id TEXT PRIMARY KEY REFERENCES connectors(id) ON DELETE CASCADE,
+            connector_version TEXT);",
         )
         .map_err(database_error)?;
         db.execute_batch(
@@ -196,10 +203,10 @@ impl Registry {
 
     pub fn get(&self, id: &str) -> Result<Connector> {
         let db = self.db.lock().unwrap();
-        let mut node=db.query_row("SELECT c.id,c.name,c.mode,c.base_url,c.enabled,c.nonce FROM connectors c WHERE c.id=?1", [id], |row| Ok(Connector {
+        let mut node=db.query_row("SELECT c.id,c.name,c.mode,c.base_url,c.enabled,c.nonce,(SELECT connector_version FROM connector_reports WHERE connector_id=c.id) FROM connectors c WHERE c.id=?1", [id], |row| Ok(Connector {
             connector_id: row.get(0)?, name: row.get(1)?,
             kind: if row.get::<_, String>(2)? == "screenshot" { ConnectorKind::Screenshot } else { ConnectorKind::Store },
-            base_url: row.get(3)?, enabled: row.get(4)?, nonce: row.get(5)?, app_count: 0,
+            base_url: row.get(3)?, enabled: row.get(4)?, nonce: row.get(5)?, connector_version: row.get(6)?, app_count: 0,
         })).optional().map_err(database_error)?.ok_or_else(|| StoreError::new(404, "connector_not_found", "Connector not found"))?;
         node.app_count = accounts::app_count(&db, id, node.kind == ConnectorKind::Screenshot)?;
         Ok(node)
@@ -241,11 +248,39 @@ impl Registry {
 
     /// Called only after the encrypted session has proved possession of current keys.
     pub fn register_endpoint(&self, id: &str, token: &str, endpoint: Option<&str>) -> Result<()> {
+        self.register_metadata(id, token, endpoint, None)
+    }
+
+    /// Only the confirmed encrypted handshake may update the last reported version.
+    /// A legacy authenticated reconnect explicitly replaces the report with unknown.
+    pub fn register_connection(
+        &self,
+        id: &str,
+        token: &str,
+        endpoint: Option<&str>,
+        connector_version: Option<&str>,
+    ) -> Result<()> {
+        if connector_version
+            .is_some_and(|value| store_protocol::release::ConnectorVersion::parse(value).is_none())
+        {
+            return Err(store_protocol::crypto::error());
+        }
+        self.register_metadata(id, token, endpoint, Some(connector_version))
+    }
+
+    fn register_metadata(
+        &self,
+        id: &str,
+        token: &str,
+        endpoint: Option<&str>,
+        connector_version: Option<Option<&str>>,
+    ) -> Result<()> {
         let endpoint = endpoint
             .map(store_protocol::upload::normalize_base_url)
             .transpose()?;
-        let db = self.db.lock().unwrap();
-        let node = db
+        let mut db = self.db.lock().unwrap();
+        let transaction = db.transaction().map_err(database_error)?;
+        let node = transaction
             .query_row(
                 "SELECT nonce,enabled FROM connectors WHERE id=?1",
                 [id],
@@ -269,11 +304,20 @@ impl Registry {
                 "Invalid Connector credentials",
             ));
         }
-        db.execute(
-            "UPDATE connectors SET base_url=?1 WHERE id=?2",
-            params![endpoint, id],
-        )
-        .map_err(database_error)?;
+        transaction
+            .execute(
+                "UPDATE connectors SET base_url=?1 WHERE id=?2",
+                params![endpoint, id],
+            )
+            .map_err(database_error)?;
+        if let Some(version) = connector_version {
+            transaction.execute(
+                "INSERT INTO connector_reports(connector_id,connector_version) VALUES(?1,?2)
+                ON CONFLICT(connector_id) DO UPDATE SET connector_version=excluded.connector_version",
+                params![id, version],
+            ).map_err(database_error)?;
+        }
+        transaction.commit().map_err(database_error)?;
         Ok(())
     }
 

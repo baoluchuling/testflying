@@ -5,6 +5,7 @@ import { bindForwarding } from "./forwarding.mjs";
 import { bindScreenshotSettings } from "./screenshot-settings.mjs";
 import { bindAccounts } from "./accounts.mjs";
 import { bindScreenshotSkill } from "./skills.mjs";
+import { nodeLabel, versionLabel } from "./versions.mjs";
 
 const $ = (id) => document.getElementById(id);
 const api = new URL("api/", window.location.href);
@@ -106,11 +107,18 @@ function renderScreenshotNodes(selected = "") {
   const select = $("screenshotNode");
   const choices = nodes.filter((node) => node.kind === "screenshot" && node.enabled);
   select.replaceChildren(...choices.map((node) =>
-    new Option(`${node.name} · ${node.connected ? "已连接" : "未连接"}`, node.connectorId)));
+    new Option(nodeLabel(node), node.connectorId)));
   if (!choices.length) select.add(new Option("暂无可用的截图节点", ""));
   if (choices.some((node) => node.connectorId === selected)) select.value = selected;
   $("screenshotDownload").disabled = !select.value;
+  updateScreenshotVersion();
 }
+
+function updateScreenshotVersion() {
+  const node = nodes.find((item) => item.connectorId === $("screenshotNode").value);
+  $("screenshotVersion").textContent = node ? versionLabel(node) : "请选择截图节点查看版本。";
+}
+$("screenshotNode").addEventListener("change", updateScreenshotVersion);
 
 async function screenshotAction(button, action) {
   const active = session;
@@ -163,7 +171,7 @@ function renderNodes(selected = "new") {
   select.replaceChildren(new Option("＋ 新建节点", "new"));
   for (const node of nodes) {
     if (node.kind === "screenshot") continue;
-    const option = new Option(`${node.name} · ${node.enabled ? (node.connected ? "已连接" : "未连接") : "已停用"}`, node.connectorId);
+    const option = new Option(nodeLabel(node), node.connectorId);
     option.disabled = !node.enabled;
     select.add(option);
   }
@@ -174,6 +182,8 @@ function renderNodes(selected = "new") {
 
 function updateFields() {
   const isNew = $("connector").value === "new";
+  const node = nodes.find((item) => item.connectorId === $("connector").value);
+  $("connectorVersion").textContent = node ? versionLabel(node) : "首次连接后显示节点上报版本。";
   const target = $("installTarget").value;
   const canUpgrade = !isNew && installationFiles(target).length > 0;
   if (!canUpgrade) $("upgrade").checked = false;

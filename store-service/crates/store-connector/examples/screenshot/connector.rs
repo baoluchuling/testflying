@@ -50,7 +50,7 @@ async fn connection(config: &Config, jobs: &watch::Sender<()>, log: &Log) -> Res
     let mut channel = timeout(Duration::from_secs(10), async {
         let mut handshake = crypto::handshake(&config.message_key, &config.connector_id, true)?;
         let registration =
-            serde_json::to_vec(&serde_json::json!({"connectorId":config.connector_id}))?;
+            serde_json::to_vec(&serde_json::json!({"connectorId":config.connector_id,"connectorVersion":env!("CARGO_PKG_VERSION")}))?;
         let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];
         let size = handshake
             .write_message(&registration, &mut buffer)
@@ -174,11 +174,11 @@ pub async fn run() -> Result<(), Failure> {
     log.expire_old_entries();
     log.event(
         None,
-        if once {
-            "connector_started mode=once"
-        } else {
-            "connector_started mode=service"
-        },
+        format!(
+            "service.started connectorVersion={} mode={}",
+            env!("CARGO_PKG_VERSION"),
+            if once { "once" } else { "service" }
+        ),
     );
     let config = Config::load(path).inspect_err(|_| log.event(None, "config_invalid"))?;
     let worker = Worker::new(&config, path)

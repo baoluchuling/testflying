@@ -11,13 +11,13 @@ from pathlib import Path
 import subprocess
 import tarfile
 import time
-import tomllib
 import zipfile
 
 from verify_store_refactor import PROJECT, managed_root, source_hashes
+from connector_release import connector_source_fingerprint, connector_version
 
 REPO = "baoluchuling/testflying"
-VERSION = "0.1.0"
+VERSION = connector_version()
 TAG = "store-connector-v" + VERSION
 _release_id: int | None = None
 TARGETS = {
@@ -134,7 +134,7 @@ def main() -> None:
     root = managed_root()
     tmp = root / "tmp"
     tmp.mkdir(exist_ok=True)
-    if tomllib.loads(source_file("Cargo.toml").decode())["workspace"]["package"]["version"] != VERSION:
+    if connector_version() != VERSION:
         raise RuntimeError("Review the release version and formal declarations")
     subprocess.run(["git", "diff", "--exit-code", "HEAD", "--", "."], cwd=PROJECT,
                    check=True, stdout=subprocess.DEVNULL)
@@ -150,6 +150,9 @@ def main() -> None:
     reports = {path: json.loads(source_file(path)) for _, path, _ in TARGETS.values()}
     if any(report["sourceHashes"] != baseline for report in reports.values()):
         raise RuntimeError("Build and current source hashes differ")
+    if any(report.get("connectorVersion") != VERSION or report.get("connectorSourceFingerprint")
+           != connector_source_fingerprint() for report in reports.values()):
+        raise RuntimeError("All platform Connector builds must have this release version and inputs")
     latest_before = api("releases/latest")["id"]
     release = release_for_tag(missing_ok=True)
     if release is not None and release["target_commitish"] != commit:

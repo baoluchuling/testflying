@@ -472,7 +472,7 @@ impl Transport {
         key: String,
         screenshot_registry: Option<&Registry>,
         catalog_registry: Option<(&Registry, &str)>,
-        register: impl FnOnce(Option<String>) -> Result<()> + Send,
+        register: impl FnOnce(Option<String>, Option<String>) -> Result<()> + Send,
     ) {
         let authenticated = tokio::time::timeout(Duration::from_secs(10), async {
             let mut handshake = crypto::handshake(&key, &id, false)?;
@@ -512,6 +512,7 @@ impl Transport {
             Ok((
                 channel,
                 endpoint,
+                registration.connector_version,
                 registration.logs_version == Some(1),
                 registration.store_versions_version == Some(1),
                 registration.async_store_images_supported,
@@ -522,6 +523,7 @@ impl Transport {
         let Ok(Ok((
             mut channel,
             endpoint,
+            connector_version,
             logs_supported,
             store_versions_supported,
             async_store_images_supported,
@@ -546,7 +548,7 @@ impl Transport {
                 self.connection_event(&id, "connector.handshake_failed", "duplicate_connection");
                 return;
             }
-            if register(endpoint).is_err() {
+            if register(endpoint, connector_version).is_err() {
                 self.connection_event(&id, "connector.handshake_failed", "registration_rejected");
                 return;
             }

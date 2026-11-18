@@ -34,6 +34,7 @@ const web = path.join(project, "crates/store-api/src/setup");
 const token = process.env.SETUP_ADMIN_TOKEN;
 const production = !!process.env.SETUP_BASE_URL;
 const nodes = [];
+const unknownVersion = { connectorVersion: null, latestConnectorVersion: "0.2.0", versionStatus: "unknown" };
 const integrationFixtures = [];
 const fixtureAdminToken = "fixture-admin-token";
 const fixtureIntegrationToken = "fixture-integration-token";
@@ -77,6 +78,7 @@ if (!production) {
   const assetPaths = {
     "": [path.join(web, "index.html"), "text/html"],
     "app.mjs": [path.join(web, "app.mjs"), "text/javascript"],
+    "versions.mjs": [path.join(web, "versions.mjs"), "text/javascript"],
     "accounts.mjs": [path.join(web, "accounts.mjs"), "text/javascript"],
     "skills.mjs": [path.join(web, "skills.mjs"), "text/javascript"],
     "integrations.mjs": [path.join(web, "integrations.mjs"), "text/javascript"],
@@ -281,14 +283,14 @@ if (!production) {
       }
       if (url.pathname === "/store-api/connector-setup/api/connectors" && req.method === "GET") {
         if (++listAttempts === 1) { res.writeHead(503).end("{}"); return; }
-        res.end(JSON.stringify({ connectors: nodes })); return;
+        res.end(JSON.stringify({ connectors: nodes.map((node) => ({...unknownVersion, ...node})) })); return;
       }
       if (url.pathname === "/store-api/connector-setup/api/connectors" && req.method === "POST") {
         let body = "";
         for await (const chunk of req) body += chunk;
         const data = JSON.parse(body);
         posts.push(data);
-        const node = { connectorId: randomUUID(), name: data.name, kind: data.kind ?? "store", enabled: true, connected: false, appCount: 0 };
+        const node = { ...unknownVersion, connectorId: randomUUID(), name: data.name, kind: data.kind ?? "store", enabled: true, connected: false, appCount: 0 };
         nodes.push(node);
         res.writeHead(201).end(JSON.stringify({ connector: node })); return;
       }
@@ -647,13 +649,19 @@ try {
     assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);
     checks.push("locking cancels a pending credential reveal and clears local files and secrets");
     checks.push("locking hides screenshot settings and clears all unsaved OSS and notification passwords");
-    const screenshotNode = { connectorId: randomUUID(), kind: "screenshot", name: "Fixture Screenshot Mac", enabled: true, connected: false };
+    const firstVersionNode = nodes.find((node) => node.connectorId === firstId);
+    Object.assign(firstVersionNode, {connectorVersion:"0.1.0", latestConnectorVersion:"0.2.0", versionStatus:"outdated", connected:true});
+    const screenshotNode = { ...unknownVersion, connectorVersion:"0.2.0", versionStatus:"current", connectorId: randomUUID(), kind: "screenshot", name: "Fixture Screenshot Mac", enabled: true, connected: false };
     nodes.push(screenshotNode);
     await unlock();
     await page.getByText("接入凭据", { exact: true }).click();
     assert.equal(await page.locator(`#connector option[value="${screenshotNode.connectorId}"]`).count(), 0);
     assert.equal(await page.locator(`#screenshotNode option[value="${screenshotNode.connectorId}"]`).textContent(),
-      "Fixture Screenshot Mac · 未连接");
+      "Fixture Screenshot Mac · 未连接 · 最后上报版本 0.2.0 · 最新版本 0.2.0 · 离线未核验（已是最新）");
+    assert.match(await page.locator("#screenshotVersion").textContent(), /离线未核验/);
+    await page.locator("#connector").selectOption(firstId);
+    assert.match(await page.locator("#connectorVersion").textContent(), /当前版本 0\.1\.0 · 最新版本 0\.2\.0 · 需要升级/);
+    assert.match(await page.locator(`#connector option[value="${firstId}"]`).textContent(), /需要升级/);
     checks.push("screenshot node is available in its own deployment panel and excluded from Store Connector downloads");
     await page.getByRole("button", { name: "取回 Token", exact: true }).click();
     await page.getByText("可以复制这枚接入 Token。", { exact: true }).waitFor();
@@ -670,7 +678,19 @@ try {
     await page.getByRole("button", { name: "刷新连接状态", exact: true }).click();
     await page.getByText("连接状态已刷新。", { exact: true }).waitFor();
     assert.equal(await page.locator(`#screenshotNode option[value="${screenshotNode.connectorId}"]`).textContent(),
-      "Fixture Screenshot Mac · 已连接");
+      "Fixture Screenshot Mac · 已连接 · 当前版本 0.2.0 · 最新版本 0.2.0 · 已是最新");
+    assert.match(await page.locator("#screenshotVersion").textContent(), /当前版本 0\.2\.0/);
+    screenshotNode.connectorVersion = "0.10.0"; screenshotNode.versionStatus = "newer";
+    await page.locator("#screenshotRefresh").click();
+    await page.getByText("连接状态已刷新。", {exact:true}).waitFor();
+    await page.waitForFunction(() => document.getElementById("screenshotVersion").textContent.includes("0.10.0"));
+    assert.match(await page.locator("#screenshotVersion").textContent(), /高于中心发布版本/);
+    screenshotNode.connectorVersion = null; screenshotNode.versionStatus = "unknown";
+    await page.locator("#screenshotRefresh").click();
+    await page.waitForFunction(() => document.getElementById("screenshotVersion").textContent.includes("当前版本 未知"));
+    assert.match(await page.locator("#screenshotVersion").textContent(), /需升级确认/);
+    assert.doesNotMatch(await page.locator("#screenshotVersion").textContent(), /已是最新/);
+    checks.push("store and screenshot selectors show current/latest versions and outdated/current/newer/unknown states; offline reports stay explicitly unverified");
     await page.locator("#screenshotName").fill("New Screenshot Mac");
     await page.getByRole("button", { name: "新建截图节点", exact: true }).click();
     await page.getByText("截图节点已创建，可以下载部署包。", { exact: true }).waitFor();
@@ -749,6 +769,9 @@ try {
     assert.equal(await firstGroup.locator(":scope > section").count(), 2);
     assert.match(await firstGroup.textContent(), /iOS 目录/);
     assert.match(await firstGroup.textContent(), /Android 目录/);
+    assert.match(await firstGroup.textContent(), /商店节点：.*当前版本 0\.1\.0 · 最新版本 0\.2\.0 · 需要升级/);
+    assert.match(await firstGroup.textContent(), /截图节点：.*当前版本 未知 · 最新版本 0\.2\.0 · 需升级确认/);
+    assert.match(await page.locator(`#accountScreenshotNode option[value="${screenshotNode.connectorId}"]`).textContent(), /需升级确认/);
     assert.equal((await firstGroup.textContent()).includes(await page.evaluate(() => new Date(1800000000 * 1000).toLocaleString())), true);
     assert.equal(await page.locator("#managedAccountForm, #managedAccount, #accountSave").count(), 0);
     assert.equal(await page.getByRole("button", {name:"绑定到此账号", exact:true}).count(), 0);

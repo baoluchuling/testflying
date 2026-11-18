@@ -174,6 +174,10 @@ POST 必填 `name`、`platform`、`storeConnectorId`，可选 `screenshotConnect
 
 ### 节点升级与目录发现
 
+商店与截图节点使用明确的程序版本号，本轮为 `0.2.0`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 需升级、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新，需安装一次新版。节点自行更新后重连即更新状态，安装包保持原节点身份和凭据。
+
+后续节点生产代码、依赖或安装脚本变化，必须先提升 `crates/store-connector/Cargo.toml` 的独立版本和 `store-protocol::release::CONNECTOR_VERSION`，并同步 Cargo.lock。固定发布守卫检查版本一致、禁止回退，并比较各平台上次发布的节点输入摘要；输入改变却未提升版本时构建直接失败。仅中心页面／接口文档改动可保留节点版本。商店三平台及 arm64 截图包必须使用同一版本与输入摘要才可部署；版本信息写入正式构建和发布报告。
+
 请在已有商店节点下载「仅升级程序」包并安装，保留本机配置、Apple 私钥和 Google 服务账号 JSON。升级后连接认证成功、每小时或管理员刷新会独立读取完整目录，不占用商店业务锁；同平台最小刷新间隔 60 秒并合并。旧节点无法上报目录；需要升级后成功上报目录才可自动归属应用，旧映射不再参与路由。截图节点协议不因账号目录改变，仍使用现有 arm64 包。
 
 Apple 目录来自 [App Store Connect GET /v1/apps](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps)。Google 目录来自 [Play Developer Reporting apps.search](https://developers.google.com/play/developer/reporting/reference/rest/v1beta1/apps/search)，需要启用 Google Play Developer Reporting API 并授予服务账号对应 Play 应用的访问权限，OAuth scope 为 `https://www.googleapis.com/auth/playdeveloperreporting`。Reporting 与 Publisher 使用独立 token 缓存，原 Publisher scope 和商店操作不变。Reporting 失败保留上次成功目录；从未成功上报的 Android 应用无法路由。中心只接收指纹和目录，不持有商店凭据。

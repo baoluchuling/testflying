@@ -21,12 +21,16 @@ def source_hashes() -> dict[str, str]:
                     PROJECT / "scripts/verify_connector_install.py",
                     PROJECT / "scripts/verify_setup_ui.py", PROJECT / "scripts/verify_setup_ui.mjs",
                     PROJECT / "scripts/managed_workspace.py",
+                    PROJECT / "AGENTS.md",
+                    PROJECT / "examples/connector.json", PROJECT / "examples/connector-google.json",
                     PROJECT / "deploy/testflying-prod-ca.crt",
                     PROJECT / "packaging/connector/start.cmd", PROJECT / "packaging/connector/start.sh",
                     PROJECT / "packaging/connector/install.cmd", PROJECT / "packaging/connector/install.ps1",
                     PROJECT / "packaging/connector/install.sh",
                     *crates.rglob("Cargo.toml"), *crates.rglob("*.rs")])
-    files = sorted(set(files + list((crates / "store-api/src/setup").rglob("*"))
+    files = sorted(set(files + list((PROJECT / "scripts").glob("*.py"))
+                       + list((crates / "store-api/src/setup").rglob("*"))
+                       + list((PROJECT / "packaging/connector").rglob("*"))
                        + list((PROJECT / "packaging/screenshot-connector").rglob("*"))
                        + list(crates.rglob("*.mjs"))))
     files = [path for path in files if path.is_file()]
@@ -43,6 +47,7 @@ def main() -> int:
            "CARGO_HOME": str(temporary / "cargo-home"), "CARGO_INCREMENTAL": "0",
            "CARGO_BUILD_JOBS": "4", "TMPDIR": str(temporary), "RUST_BACKTRACE": "1"}
     commands = [
+        [sys.executable, "-B", "scripts/test_connector_release.py"],
         ["node", "--test", "crates/store-api/tests/setup-package.test.mjs"],
         ["cargo", "build", "--locked", "--package", "store-connector"],
         [sys.executable, "-B", "scripts/verify_connector_install.py"],

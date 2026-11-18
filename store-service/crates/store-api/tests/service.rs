@@ -335,12 +335,31 @@ async fn ws_connect_catalog(
     key: &str,
     capable: bool,
 ) -> EncryptedSocket {
+    let mut socket = ws_begin_registration(base, id, token, key, capable, None).await;
+    confirm_registration(&mut socket).await;
+    let Message::Binary(reply) = socket.raw.next().await.unwrap().unwrap() else {
+        panic!("Expected confirmation");
+    };
+    assert_eq!(socket.channel.decrypt(&reply).unwrap().unwrap(), b"ready");
+    socket
+}
+async fn ws_begin_registration(
+    base: &str,
+    id: &str,
+    token: &str,
+    key: &str,
+    capable: bool,
+    version: Option<&str>,
+) -> EncryptedSocket {
     let mut request = format!("{}/v1/connectors/{id}/ws", base.replacen("http", "ws", 1))
         .into_client_request()
         .unwrap();
     request
         .headers_mut()
         .insert("authorization", format!("Bearer {token}").parse().unwrap());
+    request
+        .headers_mut()
+        .insert("x-forwarded-proto", "https".parse().unwrap());
     request.headers_mut().insert(
         "sec-websocket-protocol",
         crypto::SUBPROTOCOL.parse().unwrap(),
@@ -348,11 +367,13 @@ async fn ws_connect_catalog(
     let mut raw = connect_async(request).await.unwrap().0;
     let mut handshake = crypto::handshake(key, id, true).unwrap();
     let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];
+    let mut registration =
+        json!({"connectorId":id,"baseUrl":null,"appCatalogVersion":if capable {Some(1)}else{None}});
+    if let Some(version) = version {
+        registration["connectorVersion"] = json!(version);
+    }
     let size = handshake
-        .write_message(
-            &serde_json::to_vec(&json!({"connectorId":id,"baseUrl":null,"appCatalogVersion":if capable {Some(1)}else{None}})).unwrap(),
-            &mut buffer,
-        )
+        .write_message(&serde_json::to_vec(&registration).unwrap(), &mut buffer)
         .unwrap();
     raw.send(Message::Binary(buffer[..size].to_vec().into()))
         .await
@@ -361,15 +382,200 @@ async fn ws_connect_catalog(
         panic!("Expected handshake");
     };
     handshake.read_message(&reply, &mut buffer).unwrap();
-    let mut channel = crypto::Channel::new(handshake).unwrap();
-    for record in channel.encrypt(b"confirm").unwrap() {
-        raw.send(Message::Binary(record.into())).await.unwrap();
-    }
-    let Message::Binary(reply) = raw.next().await.unwrap().unwrap() else {
-        panic!("Expected confirmation");
-    };
-    assert_eq!(channel.decrypt(&reply).unwrap().unwrap(), b"ready");
+    let channel = crypto::Channel::new(handshake).unwrap();
     EncryptedSocket { raw, channel }
+}
+async fn confirm_registration(socket: &mut EncryptedSocket) {
+    for record in socket.channel.encrypt(b"confirm").unwrap() {
+        socket
+            .raw
+            .send(Message::Binary(record.into()))
+            .await
+            .unwrap();
+    }
+}
+
+async fn finish_registration(socket: &mut EncryptedSocket) {
+    confirm_registration(socket).await;
+    let Message::Binary(reply) = socket.raw.next().await.unwrap().unwrap() else {
+        panic!("Expected ready");
+    };
+    assert_eq!(socket.channel.decrypt(&reply).unwrap().unwrap(), b"ready");
+}
+
+async fn wait_disconnected(state: &ApiState, id: &str) {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while state.transport.connected(id) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn reported_versions_are_authenticated_persistent_and_legacy_reconnects_clear_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("registry.sqlite");
+    let registry = Registry::open(&path, SIGNING).unwrap();
+    let node = registry.create(input()).unwrap();
+    let id = &node.connector_id;
+    let token = registry.token(&node);
+    assert!(registry.get(id).unwrap().connector_version.is_none());
+    registry
+        .register_connection(id, &token, Some("http://127.0.0.1:1234"), Some("0.10.0"))
+        .unwrap();
+    for (secret, version) in [
+        ("wrong-token", "0.2.0"),
+        (&token[..], "4294967296.0.0"),
+        (&token[..], "0.02.0"),
+    ] {
+        assert!(registry
+            .register_connection(id, secret, None, Some(version))
+            .is_err());
+        let persisted = registry.get(id).unwrap();
+        assert_eq!(persisted.connector_version.as_deref(), Some("0.10.0"));
+        assert_eq!(persisted.base_url.as_deref(), Some("http://127.0.0.1:1234"));
+    }
+    // Endpoint-only configuration never invents or replaces an authenticated version report.
+    registry.register_endpoint(id, &token, None).unwrap();
+    drop(registry);
+    let reopened = Registry::open(&path, SIGNING).unwrap();
+    assert_eq!(
+        reopened.get(id).unwrap().connector_version.as_deref(),
+        Some("0.10.0")
+    );
+    let state = ApiState::new(
+        reopened,
+        ADMIN.into(),
+        CLIENT.into(),
+        "http://127.0.0.1:8200".into(),
+        PathBuf::from("nonexistent-test-releases"),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    let (_, view) = call(
+        store_api::router(state.clone()),
+        "GET",
+        &format!("/v1/connectors/{id}"),
+        ADMIN,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(view["connected"], false);
+    assert_eq!(view["connectorVersion"], "0.10.0");
+    assert_eq!(view["versionStatus"], "newer");
+    state
+        .registry
+        .register_connection(id, &token, None, None)
+        .unwrap();
+    assert!(state.registry.get(id).unwrap().connector_version.is_none());
+}
+
+#[tokio::test]
+async fn encrypted_version_reports_require_confirmation_and_duplicate_or_stale_sessions_cannot_change_them(
+) {
+    let state = state(Duration::from_secs(2));
+    let node = state.registry.create(input()).unwrap();
+    let id = &node.connector_id;
+    let token = state.registry.token(&node);
+    let key = state.registry.purpose_key(&node, "message");
+    let (base, server) = serve(store_api::router(state.clone())).await;
+    let mut first = ws_begin_registration(&base, id, &token, &key, false, Some("0.1.0")).await;
+    let mut duplicate = ws_begin_registration(&base, id, &token, &key, false, Some("0.10.0")).await;
+    assert!(state.registry.get(id).unwrap().connector_version.is_none());
+    assert!(!state.transport.connected(id));
+    finish_registration(&mut first).await;
+    confirm_registration(&mut duplicate).await;
+    let rejected = tokio::time::timeout(Duration::from_secs(2), duplicate.raw.next())
+        .await
+        .unwrap();
+    assert!(!matches!(rejected, Some(Ok(Message::Binary(_)))));
+    assert_eq!(
+        state.registry.get(id).unwrap().connector_version.as_deref(),
+        Some("0.1.0")
+    );
+    first.close(None).await.unwrap();
+    wait_disconnected(&state, id).await;
+    let (_, view) = call(
+        store_api::router(state.clone()),
+        "GET",
+        &format!("/v1/connectors/{id}"),
+        ADMIN,
+        Value::Null,
+    )
+    .await;
+    assert_eq!(view["connected"], false);
+    assert_eq!(view["connectorVersion"], "0.1.0");
+    assert_eq!(
+        view["latestConnectorVersion"],
+        store_protocol::release::CONNECTOR_VERSION
+    );
+    assert_eq!(view["versionStatus"], "outdated");
+
+    // A registration payload alone has no effect, even with valid current credentials.
+    let mut incomplete = ws_begin_registration(&base, id, &token, &key, false, Some("0.3.0")).await;
+    incomplete.close(None).await.unwrap();
+    assert_eq!(
+        state.registry.get(id).unwrap().connector_version.as_deref(),
+        Some("0.1.0")
+    );
+    let mut stale = ws_begin_registration(&base, id, &token, &key, false, Some("0.4.0")).await;
+    state.registry.rotate(id).unwrap();
+    confirm_registration(&mut stale).await;
+    let rejected = tokio::time::timeout(Duration::from_secs(2), stale.raw.next())
+        .await
+        .unwrap();
+    assert!(!matches!(rejected, Some(Ok(Message::Binary(_)))));
+    assert_eq!(
+        state.registry.get(id).unwrap().connector_version.as_deref(),
+        Some("0.1.0")
+    );
+    assert!(!state.transport.connected(id));
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn store_and_screenshot_node_views_compare_numeric_versions_and_accept_legacy_nodes() {
+    let state = state(Duration::from_secs(2));
+    let (base, server) = serve(store_api::router(state.clone())).await;
+    for kind in [
+        store_api::registry::ConnectorKind::Store,
+        store_api::registry::ConnectorKind::Screenshot,
+    ] {
+        let node = state.registry.create_with_kind(input(), kind).unwrap();
+        let id = &node.connector_id;
+        let token = state.registry.token(&node);
+        let key = state.registry.purpose_key(&node, "message");
+        for (version, status) in [
+            (Some("0.10.0"), "newer"),
+            (Some(store_protocol::release::CONNECTOR_VERSION), "current"),
+            (None, "unknown"),
+        ] {
+            let mut socket = ws_begin_registration(&base, id, &token, &key, false, version).await;
+            finish_registration(&mut socket).await;
+            let (_, view) = call(
+                store_api::router(state.clone()),
+                "GET",
+                &format!("/v1/connectors/{id}"),
+                ADMIN,
+                Value::Null,
+            )
+            .await;
+            assert_eq!(view["connected"], true);
+            assert_eq!(view["connectorVersion"], json!(version));
+            assert_eq!(view["versionStatus"], status);
+            socket.close(None).await.unwrap();
+            wait_disconnected(&state, id).await;
+            assert_eq!(
+                state.registry.get(id).unwrap().connector_version.as_deref(),
+                version
+            );
+        }
+    }
+    server.abort();
+    let _ = server.await;
 }
 async fn next_request(socket: &mut EncryptedSocket) -> StoreRequest {
     loop {
@@ -1071,9 +1277,30 @@ async fn real_connector_active_loop_and_api_round_trip() {
     let (base, server) = serve(store_api::router(state.clone())).await;
     let config:ConnectorConfig=serde_json::from_value(json!({"connectorId":node.connector_id,"token":token,"messageKey":state.registry.purpose_key(&node,"message"),"uploadKey":state.registry.purpose_key(&node,"upload"),"serverUrl":base,"provider":{"mode":"mock"}})).unwrap();
     let executor = Executor::new(config).unwrap();
+    let (_, health) = call(
+        store_connector::http_router(executor.clone()),
+        "GET",
+        "/health",
+        "",
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        health["connectorVersion"],
+        store_protocol::release::CONNECTOR_VERSION
+    );
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let connector = tokio::spawn(store_connector::run_active(executor.clone(), stopped));
     wait_connected(&state, &node.connector_id).await;
+    assert_eq!(
+        state
+            .registry
+            .get(&node.connector_id)
+            .unwrap()
+            .connector_version
+            .as_deref(),
+        Some(store_protocol::release::CONNECTOR_VERSION)
+    );
     let response = reqwest::Client::builder()
         .no_proxy()
         .build()

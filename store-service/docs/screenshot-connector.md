@@ -16,6 +16,8 @@ Content-Type: application/json
 
 管理员也可通过 HTTPS 调用 `GET /v1/connectors/{connectorId}/screenshot-installer` 下载部署 ZIP。ZIP 内包含 worker、启动脚本、公开 CA、说明和带当前节点 Token 的 `connector.json`，请私下交给对应的 Mac。
 
+从程序 `0.2.0` 起，节点在连接中心时上报程序版本，后台显示当前版本、最新版本及是否需要升级。离线保留最后确认版本；旧程序未上报时显示未知，需要先升级一次。以后程序、依赖或安装脚本有变化必须提升程序版本，构建流程会阻止沿用旧号。这里的程序版本与下方自动更新的 Skill 整包 SHA 版本分别管理。
+
 已有和新发放的接入 Token 均可调用全部启用的截图节点。接入系统用同一枚 Token 调用商店和截图接口，并用发起任务的 Token 查询任务状态。通用商店 Token 无法派截图任务。 [接入凭据管理](connector-setup.md)
 
 ## 截图 Skill 自动更新

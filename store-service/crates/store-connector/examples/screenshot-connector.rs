@@ -3,6 +3,10 @@
 mod connector;
 
 fn main() -> std::process::ExitCode {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--version")) {
+        println!("screenshot-connector {}", env!("CARGO_PKG_VERSION"));
+        return std::process::ExitCode::SUCCESS;
+    }
     #[cfg(unix)]
     let result = connector::run();
     #[cfg(not(unix))]

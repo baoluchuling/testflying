@@ -17,29 +17,22 @@ import urllib.parse
 import zipfile
 
 from verify_store_refactor import PROJECT, managed_root, source_hashes
+from connector_release import connector_source_fingerprint, connector_version
 
 
-def existing_connector_source_matches(relative: str, digest: str) -> bool:
-    contents = (PROJECT / relative).read_bytes()
-    if hashlib.sha256(contents).hexdigest() == digest:
-        return True
-    # The screenshot example alone uses these dev-dependencies. Require every
-    # other line and every resolved package to match the existing store builds.
-    if relative == "crates/store-connector/Cargo.toml":
-        normal, separator, dev = contents.partition(b"[dev-dependencies]\n")
-        for line in (b'libc = "0.2"\n', b"tempfile.workspace = true\n", b"uuid.workspace = true\n"):
-            dev = dev.replace(line, b"", 1)
-        contents = normal + separator + dev
-    elif relative == "Cargo.lock":
-        sections = contents.split(b"\n[[package]]\n")
-        for index, section in enumerate(sections):
-            if section.startswith(b'name = "store-connector"\n'):
-                for line in (b' "libc",\n', b' "tempfile",\n', b' "uuid",\n'):
-                    section = section.replace(line, b"", 1)
-                sections[index] = section
-                break
-        contents = b"\n[[package]]\n".join(sections)
-    return hashlib.sha256(contents).hexdigest() == digest
+def verified_connector_output(report: dict, relative: str, version: str,
+                              fingerprint: str, project: Path = PROJECT) -> dict:
+    output = report.get("outputs", {}).get(relative)
+    if (report.get("connectorVersion") != version
+            or report.get("connectorSourceFingerprint") != fingerprint
+            or not isinstance(output, dict)
+            or output.get("connectorVersion") != version
+            or output.get("connectorSourceFingerprint") != fingerprint):
+        raise RuntimeError("All Connector packages, including screenshots, must use the current version and inputs")
+    path = project / relative
+    if not path.is_file() or path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest() != output.get("sha256"):
+        raise RuntimeError("Connector package checksum mismatch")
+    return output
 
 
 def main() -> None:
@@ -115,6 +108,10 @@ print(json.dumps(out))
         raise RuntimeError("Push the deployment commit first")
     build = json.loads((PROJECT / "docs" / ("deployment-build.json" if replace_connectors else "setup-api-build.json")).read_text())
     verified = json.loads((PROJECT / "docs/verification.json").read_text())
+    release_version = connector_version()
+    release_fingerprint = connector_source_fingerprint()
+    if build.get("connectorVersion") != release_version or build.get("connectorSourceFingerprint") != release_fingerprint:
+        raise RuntimeError("API build has inconsistent Connector release metadata")
     if source_hashes() != build["sourceHashes"] or source_hashes() != verified["sourceHashes"]:
         raise RuntimeError("API sources differ from the verified release")
     api = PROJECT / "releases/linux-amd64/store-api"
@@ -123,8 +120,13 @@ print(json.dumps(out))
         raise RuntimeError("Linux API checksum mismatch")
     worker_relative = "releases/darwin-arm64/screenshot-connector"
     worker = build["outputs"].get(worker_relative)
-    if worker and hashlib.sha256((PROJECT / worker_relative).read_bytes()).hexdigest() != worker["sha256"]:
-        raise RuntimeError("macOS Screenshot Connector checksum mismatch")
+    published_worker = verified_connector_output(
+        json.loads((PROJECT / "docs/deployment-build.json").read_text()),
+        worker_relative, release_version, release_fingerprint)
+    if replace_connectors and worker is None:
+        raise RuntimeError("Connector rollout requires a rebuilt Screenshot Connector")
+    if worker is not None:
+        worker = verified_connector_output(build, worker_relative, release_version, release_fingerprint)
     snapshot = json.loads(remote("""
 import os,json,hashlib,subprocess
 e=open('/etc/testflying-store-api/service.env','rb').read()
@@ -143,6 +145,8 @@ print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdig
  'binaries':hashes,'available':int(subprocess.check_output(['df','--output=avail','-B1','/opt']).decode().splitlines()[-1])}))
 """))
     routing_before = routing_snapshot() if documents_only else None
+    if worker is None and snapshot["screenshotConnectorSha256"] != published_worker["sha256"]:
+        raise RuntimeError("Published Screenshot Connector differs from its verified release")
     if snapshot["available"] <= 21474836480:
         raise RuntimeError("Server free-space reserve is insufficient")
     replacements = {}
@@ -151,23 +155,18 @@ print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdig
                                 ("windows-amd64", "windows-release-build.json")]:
         old = json.loads((PROJECT / "docs" / report_name).read_text())
         binary_name = "store-connector.exe" if target.startswith("windows") else "store-connector"
+        relative = f"releases/{target}/{binary_name}"
+        output = verified_connector_output(old, relative, release_version, release_fingerprint)
         if replace_connectors:
             if snapshot["binaries"][target] != previous_publication["storeConnectorPublication"]["downloadVerified"][target]:
                 raise RuntimeError("Published Connector differs from the previous verified publication")
             if old["sourceHashes"] != verified["sourceHashes"]:
                 raise RuntimeError("Connector replacement sources differ from the verified center release")
-            relative = f"releases/{target}/{binary_name}"
-            expected = old["outputs"][relative]["sha256"]
-            if hashlib.sha256((PROJECT / relative).read_bytes()).hexdigest() != expected:
-                raise RuntimeError("Connector replacement checksum mismatch")
+            expected = output["sha256"]
             replacements[target] = {"relative": relative, "sha256": expected, "name": binary_name}
             continue
         if snapshot["binaries"][target] != old["outputs"][f"releases/{target}/{binary_name}"]["sha256"]:
             raise RuntimeError("An existing Connector binary changed")
-        for relative, digest in old["sourceHashes"].items():
-            if relative.startswith(("crates/store-protocol/", "crates/store-provider/", "crates/store-connector/")) or relative in ("Cargo.toml", "Cargo.lock"):
-                if not existing_connector_source_matches(relative, digest):
-                    raise RuntimeError("Connector source compatibility changed")
     source_archive = git("archive", "--format=tar", "--prefix=source/", commit + ":store-service")
     archive = io.BytesIO()
     with tarfile.open(fileobj=archive, mode="w") as output:
@@ -366,7 +365,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                   "center startup and subsequent HTTP requests recorded")
             check(request("/v1/logs", snapshot["token"])[0] == 401,
                   "business credentials cannot read administrator logs")
-            for asset in ("logs.mjs", "app.mjs", "accounts.mjs", "skills.mjs", "packager.mjs", "index.html", "style.css", "forwarding.mjs", "screenshot-settings.mjs"):
+            for asset in ("logs.mjs", "app.mjs", "accounts.mjs", "versions.mjs", "skills.mjs", "packager.mjs", "index.html", "style.css", "forwarding.mjs", "screenshot-settings.mjs"):
                 path = "/connector-setup/" + ("" if asset == "index.html" else asset)
                 status, content = request(path)
                 check(status == 200 and content == (PROJECT / "crates/store-api/src/setup" / asset).read_bytes(),
@@ -380,6 +379,13 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                     break
                 time.sleep(0.5)
             check(recovered, "previously connected nodes recovered after center restart")
+            status, body = request("/v1/connectors", snapshot["admin"])
+            node_versions = json.loads(body).get("connectors", [])
+            check(status == 200 and all(node.get("latestConnectorVersion") == release_version
+                  and node.get("versionStatus") in ("current", "outdated", "newer", "unknown")
+                  and ((node.get("connectorVersion") is None) == (node.get("versionStatus") == "unknown"))
+                  for node in node_versions),
+                  "authenticated node version fields distinguish unknown old programs from published version")
             docs = "/v1/store-management/api-docs"
             for asset in ("start.cmd", "install.ps1", "install.sh"):
                 status, content = request("/connector-setup/" + asset)
@@ -530,6 +536,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                       "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                       "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],
                       "apiSha256": expected_api, "connectorBinarySha256": expected_connectors,
+                      "connectorVersion": release_version, "connectorSourceFingerprint": release_fingerprint,
                       "screenshotConnectorSha256": worker["sha256"] if worker else snapshot["screenshotConnectorSha256"],
                       "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
@@ -541,7 +548,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                 report["accountMigration"] = account_migration
             if "storeConnectorPublication" in previous_report:
                 report["storeConnectorPublication"] = previous_report["storeConnectorPublication"]
-            for key in ("screenshotSkillPublication", "screenshotSkillLiveTest"):
+            for key in ("screenshotSkillPublication", "screenshotSkillLiveTest", "accountScreenshotBinding"):
                 if key in previous_report:
                     report[key] = previous_report[key]
             if replacements:

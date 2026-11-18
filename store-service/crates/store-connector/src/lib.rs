@@ -296,7 +296,7 @@ pub fn http_router(executor: Arc<Executor>) -> Router {
     Router::new()
         .route(
             "/health",
-            get(|| async { Json(json!({"status":"ok","asyncStoreImagesSupported":true})) }),
+            get(|| async { Json(json!({"status":"ok","asyncStoreImagesSupported":true,"connectorVersion":env!("CARGO_PKG_VERSION")})) }),
         )
         .route("/v1/execute", post(http_execute))
         .route("/v1/diagnostics/logs", post(http_logs))
@@ -550,7 +550,7 @@ async fn connection(
             true,
         )?;
         let registration = serde_json::to_vec(
-            &json!({"connectorId":executor.config.connector_id,"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1,"appCatalogVersion":1,"asyncStoreImagesSupported":true}),
+            &json!({"connectorId":executor.config.connector_id,"connectorVersion":env!("CARGO_PKG_VERSION"),"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1,"appCatalogVersion":1,"asyncStoreImagesSupported":true}),
         )
         .map_err(|_| crypto::error())?;
         let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];

@@ -13,6 +13,7 @@ import subprocess
 import sys
 
 from verify_store_refactor import PROJECT, managed_root, source_hashes
+from connector_release import guard_connector_release
 
 
 def main() -> None:
@@ -22,10 +23,18 @@ def main() -> None:
     windows = sys.argv[1:] == ["windows"]
     screenshots = sys.argv[1:] in (["api-screenshots"], ["all"])
     api_only = sys.argv[1:] in (["api"], ["api-screenshots"])
+    baseline = source_hashes()
+    previous_reports = ([PROJECT / "docs/windows-release-build.json"] if windows else
+                        [PROJECT / "docs/deployment-build.json"])
+    if api_only:
+        previous_reports.append(PROJECT / "docs/windows-release-build.json")
+    # This must precede source copies, toolchain downloads and compilation.
+    connector_metadata = guard_connector_release(previous_reports, api_only=api_only)
+    if source_hashes() != baseline:
+        raise RuntimeError("Source changed during Connector version validation")
     target_triple = "x86_64-pc-windows-gnu" if windows else "x86_64-unknown-linux-musl"
     tmp = root / "tmp"
     tmp.mkdir(exist_ok=True)
-    baseline = source_hashes()
     source = tmp / "source"
     for relative in baseline:
         if relative.startswith("scripts/"):
@@ -137,11 +146,15 @@ def main() -> None:
                             "bytes": target.stat().st_size, "format": description.split(": ", 1)[-1]}
         if windows:
             hashes[relative]["importedDlls"] = imports
+        if "connector" in Path(relative).name:
+            hashes[relative].update({key: connector_metadata[key] for key in
+                                    ("connectorVersion", "connectorSourceFingerprint")})
     report = {"runId": root.name,
               "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
               "sourceCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=PROJECT, text=True).strip(),
               "sourceHashes": baseline, "toolchain": "Rust 1.94.0 / cargo-zigbuild 0.20.1 / Zig 0.14.1",
-              "outputs": hashes, "cleanup": "See the supervisor cleanup report for this runId"}
+              "outputs": hashes, **connector_metadata,
+              "cleanup": "See the supervisor cleanup report for this runId"}
     report_name = "windows-release-build.json" if windows else ("setup-api-build.json" if api_only else "deployment-build.json")
     (PROJECT / "docs" / report_name).write_text(json.dumps(report, indent=2) + "\n")
     print("Published formal release files", flush=True)

@@ -32,7 +32,7 @@
         <section class="card">
           <div class="section-title"><div><h3>账号与节点配置</h3><p class="muted">在这里创建商店账号并安装节点。同一个账号可配置 iOS、Android 两个平台，应用由商店接口自动发现。</p></div></div>
           <div class="grid">
-            <div><label for="connector">使用节点</label><select id="connector"><option value="new">＋ 新建节点</option></select></div>
+            <div><label for="connector">使用节点</label><select id="connector"><option value="new">＋ 新建节点</option></select><p id="connectorVersion" class="hint" aria-live="polite"></p></div>
             <div><label for="installTarget">安装系统</label><select id="installTarget"><option value="windows-amd64">Windows · x64</option><option value="linux-amd64">Linux · x64</option><option value="darwin-arm64">macOS · Apple Silicon</option></select></div>
           </div>
           <div id="nameRow"><label for="connectorName">新节点名称</label><input id="connectorName" maxlength="160" value="双平台商店节点" required autocomplete="off"></div>
@@ -175,6 +175,7 @@
         </form>
         <label for="screenshotNode">截图节点</label>
         <select id="screenshotNode"></select>
+        <p id="screenshotVersion" class="hint" aria-live="polite"></p>
         <button id="screenshotDownload" type="button" disabled>下载 macOS 部署包</button>
         <button id="screenshotRefresh" type="button" class="quiet">刷新连接状态</button>
         <p id="screenshotStatus" role="status" aria-live="polite"></p>

@@ -10,6 +10,10 @@ use tokio::sync::watch;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut arguments = env::args_os().skip(1);
     let first = arguments.next();
+    if first.as_deref() == Some(std::ffi::OsStr::new("--version")) {
+        println!("store-connector {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     if first.as_deref() == Some(std::ffi::OsStr::new("--prepare-install")) {
         let paths: Vec<_> = arguments.map(std::path::PathBuf::from).collect();
         if paths.len() != 3 {
@@ -30,7 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(log) = &log {
         log.event(
             "service.started",
-            json!({"retentionDays":7,"build":env!("CARGO_PKG_VERSION")}),
+            json!({"retentionDays":7,"build":env!("CARGO_PKG_VERSION"),"connectorVersion":env!("CARGO_PKG_VERSION")}),
         );
         println!("Store Connector logs: {}", log.directory().display());
     }
