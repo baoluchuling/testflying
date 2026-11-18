@@ -1,11 +1,11 @@
 {
-  "runId": "9dbda3eab41c4d3aa722dbd5445ced01",
+  "runId": "1f3b84186cb344ba9e0aeb01957375a8",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-18T03:33:35.905748+00:00",
-  "deploymentCommit": "12ac91a8c5cdfd2ad99f9601abe4ed26c7f8f40a",
-  "binarySourceCommit": "a7f644fd268275cee059fdfe090d947c0bd997bc",
-  "apiSha256": "0fc1b9c4088ae3ca1c0d85f3fd4261de9e32c78aa20b396751a94a3ea51dc16e",
+  "finishedAt": "2026-11-18T04:21:39.516675+00:00",
+  "deploymentCommit": "7a159dbb9cdd91b1a1e5fdc321d074dae77067c4",
+  "binarySourceCommit": "3ea5f7ddd22ea8879f378d1748472230b80652b9",
+  "apiSha256": "183104396566d1a4886064995a098ed6d95f48e99432598c9a84a1503f05fedc",
   "connectorBinarySha256": {
     "linux-amd64": "34eff9b49e995dc28621acf408450b54af47cc03f0ca5e277c935aa558d379d9",
     "darwin-arm64": "d7feb4868eed526de0b751f94ab5343b787adacacc45755a3b0eb1e9e7396f79",
@@ -35,13 +35,6 @@
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
-    "existing Connector inventory available for download verification",
-    "linux-amd64 updated installation package available",
-    "linux-amd64 downloaded native installer preparation program verified",
-    "darwin-arm64 updated installation package available",
-    "darwin-arm64 downloaded native installer preparation program verified",
-    "windows-amd64 updated installation package available",
-    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
     "http eleven store, two node, six screenshot and four account endpoints plus two upload helpers",
     "http exact four account endpoints and cached directory contract",
@@ -72,6 +65,7 @@
     "read-only migration preserves screenshotSkillSha256",
     "read-only migration preserves screenshotSkillActive",
     "read-only migration preserves applicationSwitches",
+    "read-only migration preserves accountScreenshotBindings",
     "preexisting account IDs, names, node relations and enabled states preserved",
     "transactional account migration marker recorded",
     "administrator account migration inventory readable",
@@ -106,7 +100,8 @@
     "exact catalog route or expected blocked result /v1/apps/ios/com.cfs.pagealoud.ios/screenshot-connector",
     "directory-only ownership and application switch /v1/apps/ios/com.ios.earnnovel.cash",
     "exact catalog route or expected blocked result /v1/apps/ios/com.ios.earnnovel.cash/connector",
-    "exact catalog route or expected blocked result /v1/apps/ios/com.ios.earnnovel.cash/screenshot-connector"
+    "exact catalog route or expected blocked result /v1/apps/ios/com.ios.earnnovel.cash/screenshot-connector",
+    "administrator account list exposes account-wide screenshot settings after migration"
   ],
   "testNodesCreated": 0,
   "appBindingsWritten": 0,
@@ -206,7 +201,7 @@
     "preservedHashes": {
       "legacyStoreSha256": "49035fb6fc9e8f3f95ddfba7debd098d109ed9d3738bae32064ce86aa37583ec",
       "legacyScreenshotSha256": "72fb10769a422cdf03da4cc4af25bfa3ed8410ff4f58b6c8670377dcbc94254a",
-      "connectorIdentitySha256": "943f12c5986d4aa74200a713789f13c9834cede30a11684f915f48a5594e1a0b",
+      "connectorIdentitySha256": "99c65dabfaa70e2bded2438086b9560e7bf484c0f0796fba099503e2c8f45f7b",
       "integrationsSha256": "6e3dba445355d9dbc3f6369bcde33d5e3afe54cb086503c0ec4b9db46837900c",
       "integrationGrantsSha256": "d8bf10be532dcd546f6ac23f5829b2b040896a39161e662fc70e7bd511a94591",
       "screenshotSettingsSha256": "c622c41911c96741bd51174de128133555f09842bedbf6daf3904936a33ae75b"
@@ -396,5 +391,12 @@
     "callbackNetwork": {
       "connected": true
     }
+  },
+  "accountScreenshotBinding": {
+    "selectorSourceCommit": "3ea5f7ddd22ea8879f378d1748472230b80652b9",
+    "adminListVerified": true,
+    "explicitBindingCount": 0,
+    "productionBindingsWritten": 0,
+    "requiresNodeUpgrade": false
   }
 }
