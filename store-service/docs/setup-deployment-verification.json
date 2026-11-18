@@ -1,11 +1,11 @@
 {
-  "runId": "8acac2945ba2408bbb5e3763d143790d",
+  "runId": "958761f8c23444d086141759811683fb",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-18T09:48:03.647675+00:00",
-  "deploymentCommit": "52b8dec1c9740dd1ad103ed8c86411c55f025c8a",
-  "binarySourceCommit": "4e039dd0fb5878192cc5fbb189ce21ca47860349",
-  "apiSha256": "f88e7a4a4d25357f966037ce78be3083231a9f310baa077fc577e58c59110a94",
+  "finishedAt": "2026-11-18T10:59:07.956730+00:00",
+  "deploymentCommit": "39eb282705a96b9bc65ba01fb941db39b79c13ed",
+  "binarySourceCommit": "de1c76d79bc4373550f67fa0688ad85480bd9544",
+  "apiSha256": "46aee353285102620f7057e0758030b91ce6e951dfeb559eb30415ef2bd42e6e",
   "connectorBinarySha256": {
     "linux-amd64": "e0549bb5b1a4b9c7bd9f028ede113d226d98d70c5572eba45388dcb7d1fc3255",
     "darwin-arm64": "59cbe28920c89354b59d072f5b13f52a6d00258d68fbf08e03a0952331dfdf2d",
@@ -19,8 +19,7 @@
     "readOnly": true,
     "actualFirebaseAccountsQueried": false,
     "automaticMembershipChanges": false,
-    "publicCoreEndpointCountUnchanged": true,
-    "routesVerifiedWithoutProviderAccess": true
+    "publicCoreEndpointCountUnchanged": true
   },
   "screenshotConnectorSha256": "39156555daa83948f931558e40fb4645a605e2dc359339145a8b2665f7103e60",
   "screenshotUploadConfigured": false,
@@ -52,13 +51,6 @@
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
-    "existing Connector inventory available for download verification",
-    "linux-amd64 updated installation package available",
-    "linux-amd64 downloaded native installer preparation program verified",
-    "darwin-arm64 updated installation package available",
-    "darwin-arm64 downloaded native installer preparation program verified",
-    "windows-amd64 updated installation package available",
-    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
     "http eleven store, two node, six screenshot and four account endpoints plus two upload helpers",
     "http exact four account endpoints and cached directory contract",
@@ -90,8 +82,12 @@
     "read-only migration preserves screenshotSkillActive",
     "read-only migration preserves applicationSwitches",
     "read-only migration preserves accountScreenshotBindings",
+    "read-only migration preserves accountAppRemovals",
     "preexisting account IDs, names, node relations and enabled states preserved",
     "transactional account migration marker recorded",
+    "Android manual directory migration recorded",
+    "preexisting application names, identifiers and store IDs preserved",
+    "existing Android apps retained across future discovery",
     "administrator account migration inventory readable",
     "administrator Skill publication inventory readable",
     "Skill inventory mirrors HTTPS developer session route",
@@ -248,6 +244,9 @@
     "migrationMarkers": [
       [
         "accounts_v1"
+      ],
+      [
+        "android_manual_apps_v1"
       ]
     ],
     "migrationIssues": [],
@@ -437,26 +436,54 @@
     "productionBindingsWritten": 0,
     "requiresNodeUpgrade": false
   },
-  "nodeVersionCompatibility": {
-    "runId": "8acac2945ba2408bbb5e3763d143790d",
-    "remoteNodeInstallationsPerformed": 0,
-    "versionDoesNotGateBusiness": true,
-    "storeNodes": [
+  "androidManualDirectory": {
+    "runId": "958761f8c23444d086141759811683fb",
+    "androidOnly": true,
+    "addAndRemove": true,
+    "existingApplicationDataPreserved": true,
+    "removedApplicationsNotRestoredByReports": true,
+    "connectorUpgradeRequired": false,
+    "actualStoreCallsPerformed": false,
+    "readOnlyOptionsChecks": [
       {
-        "connectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
-        "name": "\u6307\u95f4\u4e92\u52a8",
-        "connected": true,
-        "connectorVersion": null,
-        "latestConnectorVersion": "0.2.1",
-        "versionStatus": "unknown"
+        "directoryId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
+        "expectedMethod": "POST",
+        "methodAdvertised": true
       },
       {
-        "connectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
-        "name": "\u6c5f\u897f\u805a\u6587",
-        "connected": true,
-        "connectorVersion": null,
-        "latestConnectorVersion": "0.2.1",
-        "versionStatus": "unknown"
+        "directoryId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
+        "expectedMethod": "DELETE",
+        "methodAdvertised": true
+      },
+      {
+        "directoryId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
+        "expectedMethod": "POST",
+        "methodAdvertised": true
+      },
+      {
+        "directoryId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
+        "expectedMethod": "DELETE",
+        "methodAdvertised": true
+      },
+      {
+        "directoryId": "5fc49492-4157-4fac-b253-5248756b5aeb",
+        "expectedMethod": "POST",
+        "methodAdvertised": true
+      },
+      {
+        "directoryId": "5fc49492-4157-4fac-b253-5248756b5aeb",
+        "expectedMethod": "DELETE",
+        "methodAdvertised": true
+      },
+      {
+        "directoryId": "5fc49492-4157-4fac-b253-5248756b5aeb",
+        "expectedMethod": "POST",
+        "methodAdvertised": true
+      },
+      {
+        "directoryId": "5fc49492-4157-4fac-b253-5248756b5aeb",
+        "expectedMethod": "DELETE",
+        "methodAdvertised": true
       }
     ]
   }
