@@ -17,13 +17,15 @@ tokio::task_local! { static CONTEXT: Meta; }
 #[derive(Clone)]
 pub(crate) struct Meta(Value);
 impl Meta {
-    pub(crate) fn for_request(request: &StoreRequest) -> Self {
-        let id = &request.request_id;
-        let id = if id.len() == 36 && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
-            id.clone()
+    fn request_id(id: &str) -> String {
+        if id.len() == 36 && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+            id.to_owned()
         } else {
             format!("sha256:{}", hex::encode(Sha256::digest(id.as_bytes())))
-        };
+        }
+    }
+    pub(crate) fn for_request(request: &StoreRequest) -> Self {
+        let id = Self::request_id(&request.request_id);
         Self(
             json!({"requestId":id,"platform":request.platform,"operation":request.operation,
             "identifier":store_protocol::validate_identifier(&request.bundle_identifier).ok().map(|_|&request.bundle_identifier)}),
@@ -364,6 +366,18 @@ pub(crate) async fn scope<T>(
     CONTEXT.scope(Meta::for_request(request), future).await
 }
 
+/// Correlate discovery with the existing catalog report without logging account data.
+pub async fn catalog_scope<T>(
+    report_id: &str,
+    platform: Platform,
+    future: impl std::future::Future<Output = T>,
+) -> T {
+    let meta = Meta(
+        json!({"requestId":Meta::request_id(report_id),"platform":platform,"operation":"account_catalog"}),
+    );
+    CONTEXT.scope(meta, future).await
+}
+
 pub(crate) struct HttpGuard {
     log: Option<Arc<Log>>,
     meta: Option<Meta>,
@@ -449,6 +463,8 @@ fn path_template(path: &str) -> String {
             } else if matches!(
                 part,
                 "v1" | "v3"
+                    | "v1beta1"
+                    | "apps:search"
                     | "androidpublisher"
                     | "applications"
                     | "edits"

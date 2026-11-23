@@ -127,6 +127,7 @@ fn known_code(code: &str) -> bool {
             | "ENTITY_ERROR.RELATIONSHIP.INVALID"
             | "STATE_ERROR.INVALID_STATE"
             | "FORBIDDEN_ERROR"
+            | "NOT_AUTHORIZED"
             | "UNEXPECTED_ERROR"
     )
 }

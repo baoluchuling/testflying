@@ -39,7 +39,13 @@ async fn discover(executor: Arc<Executor>, platform: Platform) -> CatalogReport 
     if executor.config.platform_mode.supports(platform) {
         // Identity is local credential state, independent of OAuth/enumeration success.
         report.account_fingerprint = executor.gateway.account_fingerprint(platform);
-        match executor.gateway.account_catalog(platform).await {
+        match diagnostics::catalog_scope(
+            &report.report_id,
+            platform,
+            executor.gateway.account_catalog(platform),
+        )
+        .await
+        {
             Ok(catalog) => {
                 report.status = CatalogStatus::Ready;
                 report.account_fingerprint = Some(catalog.fingerprint);
@@ -102,7 +108,7 @@ pub(super) fn start(
                     let Some(Ok((i, report))) = result else { return; };
                     running[i] = false;
                     executor.catalog.lock().await.reports[i] = Some(report.clone());
-                    if let Some(log) = &executor.log { log.event("catalog.completed", json!({"platform":report.platform,"status":report.status,"errorCode":report.error_code})); }
+                    if let Some(log) = &executor.log { log.event("catalog.completed", json!({"requestId":report.report_id,"platform":report.platform,"status":report.status,"errorCode":report.error_code})); }
                     if reports.send(reply(report)).await.is_err() { return; }
                 }
             }

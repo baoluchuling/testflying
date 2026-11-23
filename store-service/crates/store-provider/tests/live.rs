@@ -538,6 +538,117 @@ fn catalog_page(platform: Platform, suffix: &str, next: Option<&str>) -> Value {
         Platform::Android => json!({"apps":[catalog_app(platform,suffix)],"nextPageToken":next}),
     }
 }
+
+fn catalog_log_entries(log: &store_provider::diagnostics::Log) -> (Vec<Value>, String) {
+    let mut entries = Vec::new();
+    let mut raw = String::new();
+    for file in std::fs::read_dir(log.directory()).unwrap() {
+        let content = std::fs::read_to_string(file.unwrap().path()).unwrap();
+        raw.push_str(&content);
+        entries.extend(
+            content
+                .lines()
+                .skip(1)
+                .map(|line| serde_json::from_str::<Value>(line).unwrap()),
+        );
+    }
+    (entries, raw)
+}
+
+#[tokio::test]
+async fn catalog_failures_log_http_and_parse_stages_without_private_response_or_token() {
+    for (case, stage, reason) in [
+        ("unauthorized", "apps_response", "http_error"),
+        ("forbidden", "apps_response", "http_error"),
+        ("invalid_json", "apps_response", "invalid_json"),
+        (
+            "missing_field",
+            "application_fields",
+            "missing_bundle_identifier",
+        ),
+        ("duplicate", "validation", "invalid_app_catalog"),
+        ("cross_origin", "pagination", "untrusted_next_page"),
+        ("oversize", "apps_response", "body_size_limit"),
+    ] {
+        let keys = Keys::new();
+        let fake = Fake::new(move |r| {
+            assert_eq!(r.method, "GET");
+            match case {
+                "unauthorized" | "forbidden" => (
+                    if case == "unauthorized" {StatusCode::UNAUTHORIZED} else {StatusCode::FORBIDDEN},
+                    vec![], serde_json::to_vec(&json!({"errors":[{"code":if case=="unauthorized" {"NOT_AUTHORIZED"} else {"FORBIDDEN_ERROR"},"detail":"private-response-text"}]})).unwrap()),
+                "invalid_json" => (StatusCode::OK, vec![], b"private-invalid-json".to_vec()),
+                "missing_field" => ok(json!({"data":[{"id":"private-id","attributes":{"name":"private-name"}}]})),
+                "duplicate" => ok(json!({"data":[catalog_app(Platform::Ios,"private-app"),catalog_app(Platform::Ios,"private-app")]})),
+                "cross_origin" => ok(json!({"data":[],"links":{"next":"https://private-host.invalid/v1/apps?private-cursor"}})),
+                "oversize" => (StatusCode::OK,vec![],vec![b' ';2*1024*1024+1]),
+                _ => unreachable!(),
+            }
+        }).await;
+        let path = keys.dir.path().join("connector.json");
+        std::fs::write(&path, "{}").unwrap();
+        let log = store_provider::diagnostics::Log::for_config(&path, "catalog-node").unwrap();
+        let gateway = Gateway::with_log(keys.config(&fake.url), None, Some(log.clone())).unwrap();
+        let report_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        let error = store_provider::diagnostics::catalog_scope(
+            report_id,
+            Platform::Ios,
+            gateway.account_catalog(Platform::Ios),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "catalog_discovery_failed");
+        let (entries, raw) = catalog_log_entries(&log);
+        let failure = entries
+            .iter()
+            .rev()
+            .find(|entry| entry["event"] == "catalog.failed")
+            .unwrap();
+        assert_eq!(failure["details"]["stage"], stage, "{case}");
+        assert_eq!(failure["details"]["reason"], reason, "{case}");
+        let http = entries
+            .iter()
+            .rev()
+            .find(|entry| entry["event"] == "upstream.completed")
+            .unwrap();
+        assert_eq!(http["details"]["step"], "catalog_apps");
+        assert_eq!(
+            http["details"]["status"],
+            if case == "unauthorized" {
+                401
+            } else if case == "forbidden" {
+                403
+            } else {
+                200
+            }
+        );
+        if matches!(case, "unauthorized" | "forbidden") {
+            let vendor = entries
+                .iter()
+                .rev()
+                .find(|entry| entry["event"] == "upstream.error")
+                .unwrap();
+            assert_eq!(
+                vendor["details"]["vendor"]["code"],
+                if case == "unauthorized" {
+                    "NOT_AUTHORIZED"
+                } else {
+                    "FORBIDDEN_ERROR"
+                }
+            );
+        }
+        for entry in entries.iter().filter(|entry| entry["event"].is_string()) {
+            assert_eq!(entry["requestId"], report_id);
+            assert_eq!(entry["platform"], "ios");
+            assert_eq!(entry["operation"], "account_catalog");
+        }
+        assert!(!raw.contains("private-"), "{case}");
+        for record in fake.records() {
+            assert!(!raw.contains(record.headers["authorization"].to_str().unwrap()));
+        }
+        assert!(!raw.contains("BEGIN PRIVATE KEY"));
+    }
+}
 #[tokio::test]
 async fn catalog_absent_credentials_and_mock_are_safe_without_network() {
     let gateway = Gateway::new(ProviderConfig::default()).unwrap();
@@ -563,6 +674,140 @@ async fn catalog_absent_credentials_and_mock_are_safe_without_network() {
             .code,
         "catalog_unsupported"
     );
+}
+
+#[tokio::test]
+async fn catalog_oauth_diagnostics_and_concurrent_platform_scopes_are_isolated() {
+    let fake = Fake::new(|r| {
+        if r.uri == "/token" {
+            return (
+                StatusCode::FORBIDDEN,
+                vec![],
+                br#"{"error":"invalid_grant","error_description":"private-oauth-description"}"#
+                    .to_vec(),
+            );
+        }
+        ok(catalog_page(Platform::Ios, "private-app", None))
+    })
+    .await;
+    let keys = Keys::new();
+    let path = keys.dir.path().join("connector.json");
+    std::fs::write(&path, "{}").unwrap();
+    let log = store_provider::diagnostics::Log::for_config(&path, "catalog-node").unwrap();
+    let gateway = Gateway::with_log(keys.config(&fake.url), None, Some(log.clone())).unwrap();
+    let ios_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let android_id = "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee";
+    let (ios, android) = tokio::join!(
+        store_provider::diagnostics::catalog_scope(
+            ios_id,
+            Platform::Ios,
+            gateway.account_catalog(Platform::Ios)
+        ),
+        store_provider::diagnostics::catalog_scope(
+            android_id,
+            Platform::Android,
+            gateway.account_catalog(Platform::Android)
+        )
+    );
+    assert_eq!(ios.unwrap().apps.len(), 1);
+    assert_eq!(android.unwrap_err().code, "catalog_discovery_failed");
+    let (entries, raw) = catalog_log_entries(&log);
+    let oauth = entries
+        .iter()
+        .find(|entry| {
+            entry["event"] == "upstream.error" && entry["details"]["step"] == "oauth_token"
+        })
+        .unwrap();
+    assert_eq!(oauth["requestId"], android_id);
+    assert_eq!(oauth["details"]["status"], 403);
+    assert_eq!(oauth["details"]["vendor"]["code"], "invalid_grant");
+    assert!(entries
+        .iter()
+        .any(|entry| entry["event"] == "catalog.failed"
+            && entry["details"]["stage"] == "reporting_oauth_response"));
+    assert!(entries
+        .iter()
+        .any(|entry| entry["event"] == "catalog.finished"
+            && entry["requestId"] == ios_id
+            && entry["details"]["appCount"] == 1));
+    for entry in entries.iter().filter(|entry| entry["event"].is_string()) {
+        assert_eq!(
+            entry["requestId"],
+            if entry["platform"] == "ios" {
+                ios_id
+            } else {
+                android_id
+            }
+        );
+    }
+    for secret in [
+        "private-",
+        "fake-issuer",
+        "fake-key",
+        "fake@example.test",
+        "BEGIN PRIVATE KEY",
+        "grant_type",
+        "assertion",
+    ] {
+        assert!(!raw.contains(secret), "{secret}");
+    }
+    assert_eq!(fake.records().len(), 2);
+}
+
+#[tokio::test]
+async fn catalog_logs_connection_failures_and_successful_pagination_without_cursors() {
+    let keys = Keys::new();
+    let fake = Fake::new(|r| {
+        ok(catalog_page(
+            Platform::Ios,
+            if r.uri.contains("private-cursor") {
+                "two"
+            } else {
+                "one"
+            },
+            if r.uri.contains("private-cursor") {
+                None
+            } else {
+                Some("/v1/apps?cursor=private-cursor")
+            },
+        ))
+    })
+    .await;
+    let path = keys.dir.path().join("connector.json");
+    std::fs::write(&path, "{}").unwrap();
+    let log = store_provider::diagnostics::Log::for_config(&path, "catalog-node").unwrap();
+    let gateway = Gateway::with_log(keys.config(&fake.url), None, Some(log.clone())).unwrap();
+    assert_eq!(
+        gateway
+            .account_catalog(Platform::Ios)
+            .await
+            .unwrap()
+            .apps
+            .len(),
+        2
+    );
+    let (entries, raw) = catalog_log_entries(&log);
+    assert!(entries.iter().any(|e| e["event"] == "catalog.page"
+        && e["details"]["page"] == 2
+        && e["details"]["appCount"] == 2));
+    assert!(!raw.contains("private-cursor"));
+    let gateway =
+        Gateway::with_log(keys.config("http://127.0.0.1:0"), None, Some(log.clone())).unwrap();
+    assert_eq!(
+        gateway
+            .account_catalog(Platform::Ios)
+            .await
+            .unwrap_err()
+            .code,
+        "catalog_discovery_failed"
+    );
+    let (entries, _) = catalog_log_entries(&log);
+    assert!(entries
+        .iter()
+        .any(|e| e["event"] == "upstream.completed" && e["details"]["error"] == "connect_failed"));
+    assert!(entries
+        .iter()
+        .any(|e| e["event"] == "catalog.failed" && e["details"]["stage"] == "apps_request"));
 }
 #[tokio::test]
 async fn catalog_two_pages_are_complete_and_fingerprints_are_opaque() {
