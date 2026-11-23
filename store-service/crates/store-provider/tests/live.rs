@@ -560,6 +560,7 @@ async fn catalog_failures_log_http_and_parse_stages_without_private_response_or_
     for (case, stage, reason) in [
         ("unauthorized", "apps_response", "http_error"),
         ("forbidden", "apps_response", "http_error"),
+        ("agreements", "apps_response", "http_error"),
         ("invalid_json", "apps_response", "invalid_json"),
         (
             "missing_field",
@@ -574,9 +575,13 @@ async fn catalog_failures_log_http_and_parse_stages_without_private_response_or_
         let fake = Fake::new(move |r| {
             assert_eq!(r.method, "GET");
             match case {
-                "unauthorized" | "forbidden" => (
+                "unauthorized" | "forbidden" | "agreements" => (
                     if case == "unauthorized" {StatusCode::UNAUTHORIZED} else {StatusCode::FORBIDDEN},
-                    vec![], serde_json::to_vec(&json!({"errors":[{"code":if case=="unauthorized" {"NOT_AUTHORIZED"} else {"FORBIDDEN_ERROR"},"detail":"private-response-text"}]})).unwrap()),
+                    vec![], serde_json::to_vec(&json!({"errors":[{"code": match case {
+                        "unauthorized" => "NOT_AUTHORIZED",
+                        "agreements" => "FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED",
+                        _ => "FORBIDDEN_ERROR"
+                    },"title":"private-response-title","detail":"private-response-text"}]})).unwrap()),
                 "invalid_json" => (StatusCode::OK, vec![], b"private-invalid-json".to_vec()),
                 "missing_field" => ok(json!({"data":[{"id":"private-id","attributes":{"name":"private-name"}}]})),
                 "duplicate" => ok(json!({"data":[catalog_app(Platform::Ios,"private-app"),catalog_app(Platform::Ios,"private-app")]})),
@@ -616,13 +621,13 @@ async fn catalog_failures_log_http_and_parse_stages_without_private_response_or_
             http["details"]["status"],
             if case == "unauthorized" {
                 401
-            } else if case == "forbidden" {
+            } else if matches!(case, "forbidden" | "agreements") {
                 403
             } else {
                 200
             }
         );
-        if matches!(case, "unauthorized" | "forbidden") {
+        if matches!(case, "unauthorized" | "forbidden" | "agreements") {
             let vendor = entries
                 .iter()
                 .rev()
@@ -630,12 +635,20 @@ async fn catalog_failures_log_http_and_parse_stages_without_private_response_or_
                 .unwrap();
             assert_eq!(
                 vendor["details"]["vendor"]["code"],
-                if case == "unauthorized" {
-                    "NOT_AUTHORIZED"
-                } else {
-                    "FORBIDDEN_ERROR"
+                match case {
+                    "unauthorized" => "NOT_AUTHORIZED",
+                    "agreements" => "FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED",
+                    _ => "FORBIDDEN_ERROR",
                 }
             );
+            if case == "agreements" {
+                let summary = &vendor["details"]["vendor"];
+                assert_eq!(summary["classification"], "agreements_required");
+                assert_eq!(summary["errors"][0]["code"], summary["code"]);
+                assert_eq!(summary["errorCount"], 1);
+                assert_eq!(summary["errorsTruncated"], false);
+                assert_eq!(summary["rawMessagesOmitted"], true);
+            }
         }
         for entry in entries.iter().filter(|entry| entry["event"].is_string()) {
             assert_eq!(entry["requestId"], report_id);

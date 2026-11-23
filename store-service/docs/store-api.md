@@ -217,7 +217,7 @@ Firebase 错误只返回固定安全码：`firebase_not_configured`（503，Goog
 
 ### 节点升级与目录发现
 
-商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.2`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
+商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.3`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
 
 后续节点生产代码、依赖或安装脚本变化，必须先提升 `crates/store-connector/Cargo.toml` 的独立版本和 `store-protocol::release::CONNECTOR_VERSION`，并同步 Cargo.lock。固定发布守卫检查版本一致、禁止回退，并比较各平台上次发布的节点输入摘要；输入改变却未提升版本时构建直接失败。仅中心页面／接口文档改动可保留节点版本。商店三平台及 arm64 截图包必须使用同一版本与输入摘要才可部署；版本信息写入正式构建和发布报告。
 
@@ -930,6 +930,10 @@ STORE_API_TOKEN="$INTEGRATION_TOKEN" python3 examples/upload-image.py \
 文案仅记已知字段字符数/字节数/SHA-256；不记录文案原文、Token、Cookie、JWT、私钥、账号正文、图片字节、完整 URL、查询或签名上传链接。HTTP 失败不会保存未经脱敏的商店响应正文。调用方超时后，已启动任务的最终执行和清理结果仍会记录。
 
 新版在 `upstream.error` 中增加 `details.vendor`：仅提取允许的 Apple/Google/OAuth 标准错误码、标准字段名和固定原因分类（如 `changes_in_review`、`review_flag_required`、`app_not_published`、`permission_denied`）。错误正文最多读取 64 KiB，仅在内存分析，不记录原始 message/detail；无法识别时标记 `unclassified`。`errorBodyRead` 为 complete、truncated 或 incomplete。旧请求丢失的商店响应正文无法补回，下载文件也不能凭空确定其具体原因。
+
+从节点 `0.2.3` 起，Apple 标准命名空间内的错误子码按有界格式校验后保留，不再逐个枚举子码。例如 `FORBIDDEN.REQUIRED_AGREEMENTS_MISSING_OR_EXPIRED`、`FORBIDDEN_ERROR.PLA_NOT_VALID` 不会被过滤为 null。`vendor.errors` 最多包含 8 条摘要，每条有 `code`、`codeStatus`（accepted／rejected／missing）、标准 `field`、`classification`、固定中文 `explanation`；`errorCount` 和 `errorsTruncated` 表示总数及是否省略后续条目。顶层 `code/field/classification` 继续对应首条错误，兼容原有读取方式。
+
+`explanationSource=local_classification` 表示说明由本地安全分类生成，**不是 Apple 原始消息**。`rawMessagesOmitted=true` 表示未记录原始 title/detail；应用名、文案、邮箱、URL、Token、密钥不会从这些消息进入日志。协议、密钥撤销、鉴权、权限及限流有独立原因；未识别原因仍保留合规子码并明确标记，不能仅凭 403 判断密钥损坏或协议异常。仍使用原有七天日志保留策略；旧节点需升级后重新请求才能取得新日志。
 
 从节点 `0.2.2` 起，自动查询账号应用目录也复用上述上游日志。`operation=account_catalog`、`platform` 和 `requestId`（本次目录上报 ID）串起 `catalog.started`、`upstream.started/completed/error`、`catalog.page`、`catalog.failed`、`catalog.finished`；节点既有 `catalog.completed` 的 details 同样包含 requestId。应用列表 HTTP 步骤为 `catalog_apps`，Google Reporting 授权步骤为 `oauth_token`。可查看 `details.status`、耗时及脱敏 vendor 错误码；没有 HTTP 响应时查看 timeout／connect_failed／request_failed。
 
