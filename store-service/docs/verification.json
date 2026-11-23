@@ -314,5 +314,196 @@
     "Cross-platform CI",
     "Deployment"
   ],
-  "cleanup": "See the supervisor cleanup report for this runId"
+  "cleanup": "See the supervisor cleanup report for this runId",
+  "deploymentDiagnostics": [
+    {
+      "failedDeploymentRunId": "d20037ac4e9343188b7b511615f53fa2",
+      "readOnly": true,
+      "runId": "25737fd4c9654c2db77247265e9a09d3",
+      "current": "/opt/testflying-store-api/versions/3e224a89c08cac1c9d99121894273ba67addb9bf",
+      "appsNow": 19,
+      "lastVerifiedApps": 18,
+      "addedSinceLastVerified": [
+        [
+          "b43ce0fd-03c1-414c-8c6a-060ba890aa11",
+          "write.read.story.webnovel.book.anystories"
+        ]
+      ],
+      "missingSinceLastVerified": [],
+      "stableAcross10Seconds": true,
+      "accounts": [
+        {
+          "id": "153551f8-8856-40ff-a3a6-f6d4f7e62bd4",
+          "platform": "ios",
+          "storeConnectorId": "2f76961c-c6e6-481a-855b-01841c1f7aef",
+          "catalogStatus": "ready",
+          "catalogError": null,
+          "lastCatalogAt": 1795418047
+        },
+        {
+          "id": "1b109fa0-2900-4922-a186-ff635daeb59b",
+          "platform": "ios",
+          "storeConnectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+          "catalogStatus": "ready",
+          "catalogError": null,
+          "lastCatalogAt": 1795418047
+        },
+        {
+          "id": "5fc49492-4157-4fac-b253-5248756b5aeb",
+          "platform": "android",
+          "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+          "catalogStatus": "failed",
+          "catalogError": "catalog_discovery_failed",
+          "lastCatalogAt": null
+        },
+        {
+          "id": "9273266c-30c6-4ff5-a05f-f11388d7583b",
+          "platform": "android",
+          "storeConnectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+          "catalogStatus": "failed",
+          "catalogError": "catalog_discovery_failed",
+          "lastCatalogAt": null
+        },
+        {
+          "id": "9ec09461-99fc-4f6c-8415-d5b676ddf19d",
+          "platform": "android",
+          "storeConnectorId": "2a7da2bd-3381-41f2-ad32-55620dae695c",
+          "catalogStatus": "unsupported",
+          "catalogError": "catalog_unsupported",
+          "lastCatalogAt": null
+        },
+        {
+          "id": "b43ce0fd-03c1-414c-8c6a-060ba890aa11",
+          "platform": "ios",
+          "storeConnectorId": "420accdf-d5a6-468e-b20a-1fd9642eb78a",
+          "catalogStatus": "ready",
+          "catalogError": null,
+          "lastCatalogAt": 1795418318
+        },
+        {
+          "id": "c180cfa4-b06e-45eb-882e-9e5601af9b66",
+          "platform": "ios",
+          "storeConnectorId": "2a7da2bd-3381-41f2-ad32-55620dae695c",
+          "catalogStatus": "ready",
+          "catalogError": null,
+          "lastCatalogAt": 1795418047
+        },
+        {
+          "id": "d4484176-a743-43f6-920b-f9e8860ec59f",
+          "platform": "ios",
+          "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+          "catalogStatus": "ready",
+          "catalogError": null,
+          "lastCatalogAt": 1795418047
+        },
+        {
+          "id": "e2f4e88a-53a5-4365-b74f-4f03c98cec01",
+          "platform": "android",
+          "storeConnectorId": "2f76961c-c6e6-481a-855b-01841c1f7aef",
+          "catalogStatus": "unsupported",
+          "catalogError": "catalog_unsupported",
+          "lastCatalogAt": null
+        },
+        {
+          "id": "fa618279-9b9f-4e6a-88e3-2e71f3e1272a",
+          "platform": "android",
+          "storeConnectorId": "420accdf-d5a6-468e-b20a-1fd9642eb78a",
+          "catalogStatus": "unsupported",
+          "catalogError": "catalog_unsupported",
+          "lastCatalogAt": null
+        }
+      ],
+      "nodes": [
+        {
+          "connectorId": "340cd42e-9041-475a-bed2-bcbddb66e88a",
+          "name": "Read-ASAP",
+          "kind": "screenshot",
+          "connected": true,
+          "connectorVersion": "0.2.1",
+          "latestConnectorVersion": "0.2.2"
+        },
+        {
+          "connectorId": "420accdf-d5a6-468e-b20a-1fd9642eb78a",
+          "name": "Read-ASAP",
+          "kind": "store",
+          "connected": true,
+          "connectorVersion": "0.2.3",
+          "latestConnectorVersion": "0.2.2"
+        },
+        {
+          "connectorId": "2a7da2bd-3381-41f2-ad32-55620dae695c",
+          "name": "\u514d\u8d39",
+          "kind": "store",
+          "connected": true,
+          "connectorVersion": "0.2.1",
+          "latestConnectorVersion": "0.2.2"
+        },
+        {
+          "connectorId": "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
+          "name": "\u514d\u8d39",
+          "kind": "screenshot",
+          "connected": true,
+          "connectorVersion": "0.2.1",
+          "latestConnectorVersion": "0.2.2"
+        },
+        {
+          "connectorId": "cc91558b-5ea1-4bb9-8c95-6b3a322549a6",
+          "name": "\u56de\u97f3ACT",
+          "kind": "screenshot",
+          "connected": false,
+          "connectorVersion": null,
+          "latestConnectorVersion": "0.2.2"
+        },
+        {
+          "connectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+          "name": "\u6307\u5c16\u4e92\u52a8",
+          "kind": "screenshot",
+          "connected": true,
+          "connectorVersion": null,
+          "latestConnectorVersion": "0.2.2"
+        },
+        {
+          "connectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+          "name": "\u6307\u95f4\u4e92\u52a8",
+          "kind": "store",
+          "connected": true,
+          "connectorVersion": null,
+          "latestConnectorVersion": "0.2.2"
+        },
+        {
+          "connectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+          "name": "\u6c5f\u897f\u805a\u6587",
+          "kind": "screenshot",
+          "connected": false,
+          "connectorVersion": null,
+          "latestConnectorVersion": "0.2.2"
+        },
+        {
+          "connectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+          "name": "\u6c5f\u897f\u805a\u6587",
+          "kind": "store",
+          "connected": true,
+          "connectorVersion": "0.2.1",
+          "latestConnectorVersion": "0.2.2"
+        },
+        {
+          "connectorId": "2f76961c-c6e6-481a-855b-01841c1f7aef",
+          "name": "\u817e\u5353",
+          "kind": "store",
+          "connected": true,
+          "connectorVersion": "0.2.1",
+          "latestConnectorVersion": "0.2.2"
+        },
+        {
+          "connectorId": "5a4e66c4-0d05-477f-9aec-f755b472ab35",
+          "name": "\u817e\u5353",
+          "kind": "screenshot",
+          "connected": true,
+          "connectorVersion": null,
+          "latestConnectorVersion": "0.2.2"
+        }
+      ],
+      "catalogLogs": null
+    }
+  ]
 }
