@@ -1,27 +1,27 @@
 {
-  "runId": "ac697e836c8349a5844a4dfbdfab4eed",
+  "runId": "126c531f388f45a4aede1b87677814fc",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-18T11:14:12.330409+00:00",
-  "deploymentCommit": "97d7529c817cf740e15a1e247a17769f0e370fbe",
-  "binarySourceCommit": "726d6eb75825b9e386253089e24446e365d1f749",
-  "apiSha256": "e2b59648c199704013b1f56042677c0c55faf675a5dd0f7a3b0eec95e45b4589",
+  "finishedAt": "2026-11-23T04:52:58.171526+00:00",
+  "deploymentCommit": "3e224a89c08cac1c9d99121894273ba67addb9bf",
+  "binarySourceCommit": "d118ee5edee4135cba86235ecf3df308c548b970",
+  "apiSha256": "83f06a87bf7a628a4b875f42877936ccefebe3469b68ddc6890f4f1205147986",
   "connectorBinarySha256": {
-    "linux-amd64": "e0549bb5b1a4b9c7bd9f028ede113d226d98d70c5572eba45388dcb7d1fc3255",
-    "darwin-arm64": "59cbe28920c89354b59d072f5b13f52a6d00258d68fbf08e03a0952331dfdf2d",
-    "windows-amd64": "a863025d1c83ea204bdb4439f16cdff0178e4ca0ad543f66c44175adc835b8e6"
+    "linux-amd64": "0a9ba9348bc3d965d5b1a7ecdab9052c643754dd2b3fd46e2835efd397016104",
+    "darwin-arm64": "ef6a2228d72f79ea278f2e7f221c11e692ca2b414f985e1d078234b1ed756ce5",
+    "windows-amd64": "2f67ef2c0b50ca793492819631c07f051493c03846fd0b5e4271a21e4fe18a2e"
   },
-  "connectorVersion": "0.2.1",
-  "connectorSourceFingerprint": "efdac6d78a11c51461b2e5b38048ec8a5d26078e4518b03fd3d0ff474b2a3395",
+  "connectorVersion": "0.2.2",
+  "connectorSourceFingerprint": "3e798fc4df11a87f50e36636ad400be6101283f23ed190b6fa28b65506ec7eba",
   "firebaseDiagnostics": {
     "minimumConnectorVersion": "0.2.1",
-    "publishedConnectorVersion": "0.2.1",
+    "publishedConnectorVersion": "0.2.2",
     "readOnly": true,
     "actualFirebaseAccountsQueried": false,
     "automaticMembershipChanges": false,
     "publicCoreEndpointCountUnchanged": true
   },
-  "screenshotConnectorSha256": "39156555daa83948f931558e40fb4645a605e2dc359339145a8b2665f7103e60",
+  "screenshotConnectorSha256": "cb0ac28aca4d8b95474990ec89f58416ecb3d7dd1a0c3b329f48303a2191eeec",
   "screenshotUploadConfigured": false,
   "checks": [
     "node connection inventory readable before rollout",
@@ -51,6 +51,13 @@
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
+    "existing Connector inventory available for download verification",
+    "linux-amd64 updated installation package available",
+    "linux-amd64 downloaded native installer preparation program verified",
+    "darwin-arm64 updated installation package available",
+    "darwin-arm64 downloaded native installer preparation program verified",
+    "windows-amd64 updated installation package available",
+    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
     "http eleven store, two node, six screenshot and four account endpoints plus two upload helpers",
     "http exact four account endpoints and cached directory contract",
@@ -97,10 +104,16 @@
     "business token cannot manage Skill versions",
     "developer account inventory mirrors administrator relations",
     "public cached account inventory omits node IDs and secrets",
+    "cached account app schema includes separate screenshot resolution b43ce0fd-03c1-414c-8c6a-060ba890aa11",
+    "cached account app schema includes separate screenshot resolution fa618279-9b9f-4e6a-88e3-2e71f3e1272a",
+    "cached account app schema includes separate screenshot resolution 9ec09461-99fc-4f6c-8415-d5b676ddf19d",
+    "cached account app schema includes separate screenshot resolution c180cfa4-b06e-45eb-882e-9e5601af9b66",
     "cached account app schema includes separate screenshot resolution 1b109fa0-2900-4922-a186-ff635daeb59b",
     "cached account app schema includes separate screenshot resolution 9273266c-30c6-4ff5-a05f-f11388d7583b",
     "cached account app schema includes separate screenshot resolution 5fc49492-4157-4fac-b253-5248756b5aeb",
     "cached account app schema includes separate screenshot resolution d4484176-a743-43f6-920b-f9e8860ec59f",
+    "cached account app schema includes separate screenshot resolution 153551f8-8856-40ff-a3a6-f6d4f7e62bd4",
+    "cached account app schema includes separate screenshot resolution e2f4e88a-53a5-4365-b74f-4f03c98cec01",
     "directory-only ownership and application switch /v1/apps/android/app.snapflix.android",
     "exact catalog route or expected blocked result /v1/apps/android/app.snapflix.android/connector",
     "exact catalog route or expected blocked result /v1/apps/android/app.snapflix.android/screenshot-connector",
@@ -113,21 +126,48 @@
     "directory-only ownership and application switch /v1/apps/android/com.app.android.qw.readink",
     "exact catalog route or expected blocked result /v1/apps/android/com.app.android.qw.readink/connector",
     "exact catalog route or expected blocked result /v1/apps/android/com.app.android.qw.readink/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/android/com.novelago.android.app",
+    "exact catalog route or expected blocked result /v1/apps/android/com.novelago.android.app/connector",
+    "exact catalog route or expected blocked result /v1/apps/android/com.novelago.android.app/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/android/com.novelduo.android",
+    "exact catalog route or expected blocked result /v1/apps/android/com.novelduo.android/connector",
+    "exact catalog route or expected blocked result /v1/apps/android/com.novelduo.android/screenshot-connector",
     "directory-only ownership and application switch /v1/apps/ios/app.readpod.ios",
     "exact catalog route or expected blocked result /v1/apps/ios/app.readpod.ios/connector",
     "exact catalog route or expected blocked result /v1/apps/ios/app.readpod.ios/screenshot-connector",
     "directory-only ownership and application switch /v1/apps/ios/app.snapflix.ios",
     "exact catalog route or expected blocked result /v1/apps/ios/app.snapflix.ios/connector",
     "exact catalog route or expected blocked result /v1/apps/ios/app.snapflix.ios/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/ios/com.anyreels.ios.app",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.anyreels.ios.app/connector",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.anyreels.ios.app/screenshot-connector",
     "directory-only ownership and application switch /v1/apps/ios/com.cfs.amberia",
     "exact catalog route or expected blocked result /v1/apps/ios/com.cfs.amberia/connector",
     "exact catalog route or expected blocked result /v1/apps/ios/com.cfs.amberia/screenshot-connector",
     "directory-only ownership and application switch /v1/apps/ios/com.cfs.pagealoud.ios",
     "exact catalog route or expected blocked result /v1/apps/ios/com.cfs.pagealoud.ios/connector",
     "exact catalog route or expected blocked result /v1/apps/ios/com.cfs.pagealoud.ios/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/ios/com.drama.pockit.ios",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.drama.pockit.ios/connector",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.drama.pockit.ios/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/ios/com.fm.cast.ios",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.fm.cast.ios/connector",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.fm.cast.ios/screenshot-connector",
     "directory-only ownership and application switch /v1/apps/ios/com.ios.earnnovel.cash",
     "exact catalog route or expected blocked result /v1/apps/ios/com.ios.earnnovel.cash/connector",
-    "exact catalog route or expected blocked result /v1/apps/ios/com.ios.earnnovel.cash/screenshot-connector"
+    "exact catalog route or expected blocked result /v1/apps/ios/com.ios.earnnovel.cash/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/ios/com.lightin.ios.app",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.lightin.ios.app/connector",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.lightin.ios.app/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/ios/com.readlark.ios",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.readlark.ios/connector",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.readlark.ios/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/ios/com.supernovel.ios",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.supernovel.ios/connector",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.supernovel.ios/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/ios/com.xbooks.ios.www",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.xbooks.ios.www/connector",
+    "exact catalog route or expected blocked result /v1/apps/ios/com.xbooks.ios.www/screenshot-connector"
   ],
   "testNodesCreated": 0,
   "appBindingsWritten": 0,
@@ -227,7 +267,7 @@
     "preservedHashes": {
       "legacyStoreSha256": "49035fb6fc9e8f3f95ddfba7debd098d109ed9d3738bae32064ce86aa37583ec",
       "legacyScreenshotSha256": "72fb10769a422cdf03da4cc4af25bfa3ed8410ff4f58b6c8670377dcbc94254a",
-      "connectorIdentitySha256": "99c65dabfaa70e2bded2438086b9560e7bf484c0f0796fba099503e2c8f45f7b",
+      "connectorIdentitySha256": "7aa715d8d616380e965f382ab3d22adbea52a8637db4d98cfee5c668b9eae060",
       "integrationsSha256": "6e3dba445355d9dbc3f6369bcde33d5e3afe54cb086503c0ec4b9db46837900c",
       "integrationGrantsSha256": "d8bf10be532dcd546f6ac23f5829b2b040896a39161e662fc70e7bd511a94591",
       "screenshotSettingsSha256": "c622c41911c96741bd51174de128133555f09842bedbf6daf3904936a33ae75b"
@@ -242,8 +282,8 @@
         1
       ]
     ],
-    "accountsBefore": 4,
-    "accountsAfter": 4,
+    "accountsBefore": 10,
+    "accountsAfter": 10,
     "migrationMarkers": [
       [
         "accounts_v1"
@@ -255,24 +295,7 @@
         "android_manual_apps_v1"
       ]
     ],
-    "legacyAndroidRestored": [
-      {
-        "accountId": "5fc49492-4157-4fac-b253-5248756b5aeb",
-        "bundleIdentifier": "com.app.android.qw.newreadink"
-      },
-      {
-        "accountId": "5fc49492-4157-4fac-b253-5248756b5aeb",
-        "bundleIdentifier": "com.app.android.qw.readink"
-      },
-      {
-        "accountId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
-        "bundleIdentifier": "app.snapflix.android"
-      },
-      {
-        "accountId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
-        "bundleIdentifier": "com.amberia.android"
-      }
-    ],
+    "legacyAndroidRestored": [],
     "migrationIssues": [],
     "accountMigrationErrors": [],
     "verifiedOriginalRoutes": [
@@ -306,7 +329,7 @@
         "ownershipError": null,
         "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "storeError": null,
-        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "screenshotConnectorId": "cc91558b-5ea1-4bb9-8c95-6b3a322549a6",
         "screenshotError": null
       },
       {
@@ -317,7 +340,29 @@
         "ownershipError": null,
         "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "storeError": null,
-        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "screenshotConnectorId": "cc91558b-5ea1-4bb9-8c95-6b3a322549a6",
+        "screenshotError": null
+      },
+      {
+        "platform": "android",
+        "bundleIdentifier": "com.novelago.android.app",
+        "accountId": "5fc49492-4157-4fac-b253-5248756b5aeb",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "storeError": null,
+        "screenshotConnectorId": "cc91558b-5ea1-4bb9-8c95-6b3a322549a6",
+        "screenshotError": null
+      },
+      {
+        "platform": "android",
+        "bundleIdentifier": "com.novelduo.android",
+        "accountId": "e2f4e88a-53a5-4365-b74f-4f03c98cec01",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "2f76961c-c6e6-481a-855b-01841c1f7aef",
+        "storeError": null,
+        "screenshotConnectorId": "5a4e66c4-0d05-477f-9aec-f755b472ab35",
         "screenshotError": null
       },
       {
@@ -328,7 +373,7 @@
         "ownershipError": null,
         "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "storeError": null,
-        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "screenshotConnectorId": "cc91558b-5ea1-4bb9-8c95-6b3a322549a6",
         "screenshotError": null
       },
       {
@@ -340,6 +385,17 @@
         "storeConnectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
         "storeError": null,
         "screenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        "screenshotError": null
+      },
+      {
+        "platform": "ios",
+        "bundleIdentifier": "com.anyreels.ios.app",
+        "accountId": "c180cfa4-b06e-45eb-882e-9e5601af9b66",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "2a7da2bd-3381-41f2-ad32-55620dae695c",
+        "storeError": null,
+        "screenshotConnectorId": "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
         "screenshotError": null
       },
       {
@@ -366,6 +422,28 @@
       },
       {
         "platform": "ios",
+        "bundleIdentifier": "com.drama.pockit.ios",
+        "accountId": "c180cfa4-b06e-45eb-882e-9e5601af9b66",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "2a7da2bd-3381-41f2-ad32-55620dae695c",
+        "storeError": null,
+        "screenshotConnectorId": "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
+        "screenshotError": null
+      },
+      {
+        "platform": "ios",
+        "bundleIdentifier": "com.fm.cast.ios",
+        "accountId": "c180cfa4-b06e-45eb-882e-9e5601af9b66",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "2a7da2bd-3381-41f2-ad32-55620dae695c",
+        "storeError": null,
+        "screenshotConnectorId": "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
+        "screenshotError": null
+      },
+      {
+        "platform": "ios",
         "bundleIdentifier": "com.ios.earnnovel.cash",
         "accountId": "1b109fa0-2900-4922-a186-ff635daeb59b",
         "ownershipStatus": 200,
@@ -374,17 +452,61 @@
         "storeError": null,
         "screenshotConnectorId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
         "screenshotError": null
+      },
+      {
+        "platform": "ios",
+        "bundleIdentifier": "com.lightin.ios.app",
+        "accountId": "c180cfa4-b06e-45eb-882e-9e5601af9b66",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "2a7da2bd-3381-41f2-ad32-55620dae695c",
+        "storeError": null,
+        "screenshotConnectorId": "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
+        "screenshotError": null
+      },
+      {
+        "platform": "ios",
+        "bundleIdentifier": "com.readlark.ios",
+        "accountId": "153551f8-8856-40ff-a3a6-f6d4f7e62bd4",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "2f76961c-c6e6-481a-855b-01841c1f7aef",
+        "storeError": null,
+        "screenshotConnectorId": "5a4e66c4-0d05-477f-9aec-f755b472ab35",
+        "screenshotError": null
+      },
+      {
+        "platform": "ios",
+        "bundleIdentifier": "com.supernovel.ios",
+        "accountId": "153551f8-8856-40ff-a3a6-f6d4f7e62bd4",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "2f76961c-c6e6-481a-855b-01841c1f7aef",
+        "storeError": null,
+        "screenshotConnectorId": "5a4e66c4-0d05-477f-9aec-f755b472ab35",
+        "screenshotError": null
+      },
+      {
+        "platform": "ios",
+        "bundleIdentifier": "com.xbooks.ios.www",
+        "accountId": "c180cfa4-b06e-45eb-882e-9e5601af9b66",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "2a7da2bd-3381-41f2-ad32-55620dae695c",
+        "storeError": null,
+        "screenshotConnectorId": "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
+        "screenshotError": null
       }
     ],
     "unavailableOrInconsistentBeforeRollout": []
   },
   "storeConnectorPublication": {
-    "runId": "8acac2945ba2408bbb5e3763d143790d",
-    "sourceCommit": "52b8dec1c9740dd1ad103ed8c86411c55f025c8a",
+    "runId": "126c531f388f45a4aede1b87677814fc",
+    "sourceCommit": "3e224a89c08cac1c9d99121894273ba67addb9bf",
     "downloadVerified": {
-      "linux-amd64": "e0549bb5b1a4b9c7bd9f028ede113d226d98d70c5572eba45388dcb7d1fc3255",
-      "darwin-arm64": "59cbe28920c89354b59d072f5b13f52a6d00258d68fbf08e03a0952331dfdf2d",
-      "windows-amd64": "a863025d1c83ea204bdb4439f16cdff0178e4ca0ad543f66c44175adc835b8e6"
+      "linux-amd64": "0a9ba9348bc3d965d5b1a7ecdab9052c643754dd2b3fd46e2835efd397016104",
+      "darwin-arm64": "ef6a2228d72f79ea278f2e7f221c11e692ca2b414f985e1d078234b1ed756ce5",
+      "windows-amd64": "2f67ef2c0b50ca793492819631c07f051493c03846fd0b5e4271a21e4fe18a2e"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
@@ -460,55 +582,76 @@
     "productionBindingsWritten": 0,
     "requiresNodeUpgrade": false
   },
-  "androidManualDirectory": {
-    "runId": "ac697e836c8349a5844a4dfbdfab4eed",
-    "androidOnly": true,
-    "addAndRemove": true,
-    "existingApplicationDataPreserved": true,
-    "removedApplicationsNotRestoredByReports": true,
-    "connectorUpgradeRequired": false,
-    "actualStoreCallsPerformed": false,
-    "readOnlyOptionsChecks": [
+  "catalogDiagnostics": {
+    "runId": "126c531f388f45a4aede1b87677814fc",
+    "minimumConnectorVersion": "0.2.2",
+    "usesExistingHttpLogs": true,
+    "requestIdMatchesCatalogReport": true,
+    "nodeLogRetentionDays": 7,
+    "remoteNodeInstallationsPerformed": 0,
+    "actualStoreCallsPerformedByChecks": false,
+    "readAsap": {
+      "connectorId": "420accdf-d5a6-468e-b20a-1fd9642eb78a",
+      "name": "Read-ASAP",
+      "kind": "store",
+      "connected": true,
+      "enabled": true,
+      "connectorVersion": "0.2.1",
+      "latestConnectorVersion": "0.2.2",
+      "versionStatus": "outdated"
+    },
+    "storeNodes": [
       {
-        "directoryId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
-        "expectedMethod": "POST",
-        "methodAdvertised": true
+        "connectorId": "420accdf-d5a6-468e-b20a-1fd9642eb78a",
+        "name": "Read-ASAP",
+        "kind": "store",
+        "connected": true,
+        "enabled": true,
+        "connectorVersion": "0.2.1",
+        "latestConnectorVersion": "0.2.2",
+        "versionStatus": "outdated"
       },
       {
-        "directoryId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
-        "expectedMethod": "DELETE",
-        "methodAdvertised": true
+        "connectorId": "2a7da2bd-3381-41f2-ad32-55620dae695c",
+        "name": "\u514d\u8d39",
+        "kind": "store",
+        "connected": true,
+        "enabled": true,
+        "connectorVersion": "0.2.1",
+        "latestConnectorVersion": "0.2.2",
+        "versionStatus": "outdated"
       },
       {
-        "directoryId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
-        "expectedMethod": "POST",
-        "methodAdvertised": true
+        "connectorId": "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "name": "\u6307\u95f4\u4e92\u52a8",
+        "kind": "store",
+        "connected": true,
+        "enabled": true,
+        "connectorVersion": null,
+        "latestConnectorVersion": "0.2.2",
+        "versionStatus": "unknown"
       },
       {
-        "directoryId": "9273266c-30c6-4ff5-a05f-f11388d7583b",
-        "expectedMethod": "DELETE",
-        "methodAdvertised": true
+        "connectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "name": "\u6c5f\u897f\u805a\u6587",
+        "kind": "store",
+        "connected": true,
+        "enabled": true,
+        "connectorVersion": "0.2.1",
+        "latestConnectorVersion": "0.2.2",
+        "versionStatus": "outdated"
       },
       {
-        "directoryId": "5fc49492-4157-4fac-b253-5248756b5aeb",
-        "expectedMethod": "POST",
-        "methodAdvertised": true
-      },
-      {
-        "directoryId": "5fc49492-4157-4fac-b253-5248756b5aeb",
-        "expectedMethod": "DELETE",
-        "methodAdvertised": true
-      },
-      {
-        "directoryId": "5fc49492-4157-4fac-b253-5248756b5aeb",
-        "expectedMethod": "POST",
-        "methodAdvertised": true
-      },
-      {
-        "directoryId": "5fc49492-4157-4fac-b253-5248756b5aeb",
-        "expectedMethod": "DELETE",
-        "methodAdvertised": true
+        "connectorId": "2f76961c-c6e6-481a-855b-01841c1f7aef",
+        "name": "\u817e\u5353",
+        "kind": "store",
+        "connected": true,
+        "enabled": true,
+        "connectorVersion": "0.2.1",
+        "latestConnectorVersion": "0.2.2",
+        "versionStatus": "outdated"
       }
-    ]
+    ],
+    "oldNodesRemainCompatible": true
   }
 }
