@@ -1,6 +1,6 @@
 {
-  "runId": "25996e4315eb406586d3979dde9cf0e1",
-  "finishedAt": "2026-11-23T04:41:21.723731+00:00",
+  "runId": "47dc7446f41a47c69600c831dde7ea6a",
+  "finishedAt": "2026-11-23T07:10:16.420732+00:00",
   "checks": [
     {
       "command": [
@@ -78,29 +78,29 @@
       ],
       "exitCode": 0,
       "testSummaries": [
-        "test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s",
+        "test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
-        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s",
+        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s",
         "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.26s",
-        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.75s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
         "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
-        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.13s",
-        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s",
-        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
-        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.27s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.27s",
+        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.49s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.98s",
         "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
-        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
         "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
-        "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.03s",
-        "test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.45s",
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.11s",
+        "test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 157.97s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
@@ -119,7 +119,7 @@
       ],
       "exitCode": 0,
       "testSummaries": [
-        "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.20s"
+        "test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.69s"
       ]
     },
     {
@@ -175,10 +175,10 @@
       "testSummaries": []
     }
   ],
-  "testsPassed": 247,
+  "testsPassed": 251,
   "sourceHashes": {
     "AGENTS.md": "5c1e89b90e98da4bfed20e0106010e23811eb1932ad1956c29caaec6f1b9cb32",
-    "Cargo.lock": "68c34a1c360a0e767e1a40e55e304a7b720038e0e3fe09568157c7755dbe910a",
+    "Cargo.lock": "6aeaaef44921170a3c11d447bdc581b09022e1a08c936a980c07bec326b6df9c",
     "Cargo.toml": "fd87675617bd5deda3fe4e5fb91d81b194a43536aed5a43234b68c7592778db9",
     "crates/store-api/Cargo.toml": "6db7663897951522df2e4b33823756791192496a2458f4a4ec4c644ef6ea1bd2",
     "crates/store-api/src/accounts.rs": "825a008cf9837123028df17b2d9ad110d5fab4d4b359eba69338dedaf645889d",
@@ -237,7 +237,7 @@
     "crates/store-api/tests/store_jobs.rs": "a11546b385cc1d1b4e4d1f53faaf55ab87bf9a29d55ab43dd877ce8e438e7722",
     "crates/store-api/tests/support/mod.rs": "4ffee413b253548e079e10e327515bfb8b52ad5adff36fac19a0b81fb553da55",
     "crates/store-api/tests/uploads.rs": "f295d3cef48bbfdb94e84ed56e14b51174bc2157f2780370c45e9860bf55af8d",
-    "crates/store-connector/Cargo.toml": "253d550260dd584e234581f4c3e5593f34e87330fa928b4b194dec712e9eba96",
+    "crates/store-connector/Cargo.toml": "14b4318060a84fea857dfacce06646d1fd6e3b816f170d57dc28561a702b1bdb",
     "crates/store-connector/examples/screenshot/connector.rs": "9a57b76e69e3e897a54967cbb2c25dc1e0018bb37a0d2bbda9cb2a0cde78be80",
     "crates/store-connector/examples/screenshot/diagnostic.rs": "ef916e1312de2e90c9b6a0ef766e0f1b81004640099aa34c14fcd0d83cc67ca4",
     "crates/store-connector/examples/screenshot/goal.rs": "c214216b2ee7b516449e53aa89b5dd757603d870f301dd81f412711d58a479a1",
@@ -257,7 +257,7 @@
     "crates/store-protocol/src/firebase.rs": "329b5b39d34f5b5d755612884297a62d313124de1725cc198574cab1ce1764ac",
     "crates/store-protocol/src/lib.rs": "b189bd334d2cf91e982f706cbcddce0efcef530f56e8854c46d203946ffe1bee",
     "crates/store-protocol/src/logs.rs": "043a96392e0cc76537be1396d28a984813ac86602f1203a394a74604fb63ba76",
-    "crates/store-protocol/src/release.rs": "98dc61222935a0bc723dc373b36e2e108c40e805020a28b26f5f1f52995091a4",
+    "crates/store-protocol/src/release.rs": "4b14bc9fc36c2c96fc3ebdf3a8a74f32f45d330e9d4623fd67f09827bda47b5e",
     "crates/store-protocol/src/screenshot.rs": "18c7075b978f2d4d6b26cca7839c8e4df2877dd158bfc4c4b8f8dc2b1cba863c",
     "crates/store-protocol/src/skill.rs": "6a19feeb4467164e22328d6588f87fe81eda3b9ab9b93860ee2199877ff7eda5",
     "crates/store-protocol/src/upload.rs": "da23d9a5a4060c0bb6afc8e9f1d86a54e9858bce3c2f8ecd072185a4e9b43d9d",
@@ -276,12 +276,12 @@
     "crates/store-provider/src/images.rs": "c109857ca946c7944279c74fed301e9216da217ff74f56ffa22f903f9a03d666",
     "crates/store-provider/src/lib.rs": "821ff25c4d92b09b4c341e26e0151889be4dd9396c07597827b05028999df75e",
     "crates/store-provider/src/reviews.rs": "f4dd91ff8620eea070cc8a97bfc5d0cab08bf56583d706009793ed5327393f3b",
-    "crates/store-provider/src/upstream_error.rs": "a44a839a9a02ce4dfb76943f070d03a2ed04605a8fc688f6717d75cdf1c2fc03",
+    "crates/store-provider/src/upstream_error.rs": "f8a9046c7fb35e0854775fe8d8189f0ef0103467c96323849b17e721564f682c",
     "crates/store-provider/src/validation.rs": "1dc036d75232ef1f95cc6491d8cd9407ce302bf759676013b95d04dc959cf293",
-    "crates/store-provider/tests/live.rs": "6358697918dfd1f7b8f2951b3d8a62b2d41284960c7675aeb2665b12e8814faa",
+    "crates/store-provider/tests/live.rs": "483ef27ae7fc6aa53d4cd987c2aa22b5773f1b0bbf493195bff5ec334ce62b7b",
     "deploy/testflying-prod-ca.crt": "d6a6874992dd6197da68c43037ab176cd3d7f7ce7be2966706293dc499443296",
     "docs/openapi.yaml": "117921cb07674e945469f370250f4f7f357e3ba97eb255c821c3806d56ef8756",
-    "docs/store-api.md": "29e7de8dd7c87ca1de3af48d95df24d5100d130b7a32327fe35bd023df54c012",
+    "docs/store-api.md": "b65a8ff76ce1c25e71c63c3232e66542fa1ec41e0fdb2d08a188d0665a87066b",
     "examples/connector-google.json": "0844ade027845ef768343bcb65415c5114b082133a382448905b2a74f8c8e709",
     "examples/connector.json": "1e294f020302b6585f830ab79f07325acbe10b77ef42a6c14b9f81fe99edc89c",
     "packaging/connector/README.md": "711bef5e0a758d0d7a857326e9ab1c1973ae8ff930d2590eea593e5a09aeefad",
@@ -314,19 +314,5 @@
     "Cross-platform CI",
     "Deployment"
   ],
-  "cleanup": "See the supervisor cleanup report for this runId",
-  "connectorVersion": "0.2.2",
-  "connectorSourceFingerprint": "3e798fc4df11a87f50e36636ad400be6101283f23ed190b6fa28b65506ec7eba",
-  "connectorProgramVersionProbe": {
-    "store-connector": "store-connector 0.2.2",
-    "screenshot-connector": "screenshot-connector 0.2.2"
-  },
-  "catalogDiagnostics": {
-    "minimumConnectorVersion": "0.2.2",
-    "usesExistingHttpLogs": true,
-    "reportIdScope": true,
-    "responseBodiesRemainPrivate": true,
-    "actualStoreCallsPerformed": false,
-    "staticRemotePythonScriptsParsed": 6
-  }
+  "cleanup": "See the supervisor cleanup report for this runId"
 }
