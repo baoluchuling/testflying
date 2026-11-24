@@ -5,6 +5,7 @@ export function bindAccounts(request, getSession) {
   let accounts = [], nodes = [], directories = new Map(), bindings = new Map(), selected = "", epoch = 0, busy = false;
   const mixed = "__mixed__";
   const drafts = new Map();
+  const screenshotDrafts = new Map();
   function groups() {
     const result = new Map(nodes.filter((node) => node.kind === "store").map((node) => [node.connectorId, []]));
     for (const account of accounts) {
@@ -19,8 +20,10 @@ export function bindAccounts(request, getSession) {
   };
   function controls() {
     for (const control of $("accountsWorkspace").querySelectorAll("button, input, select")) control.disabled = busy;
-    const picker = $("accountScreenshotNode"), save = $("accountScreenshotSave");
-    if (save && picker) save.disabled = busy || picker.value === mixed || (picker.value !== "" && !nodes.some((node) => node.connectorId === picker.value && node.kind === "screenshot" && node.enabled));
+    for (const platform of ["ios", "android"]) {
+      const picker = $(`accountScreenshotNode-${platform}`), save = $(`accountScreenshotSave-${platform}`);
+      if (save && picker) save.disabled = busy || picker.value === mixed || (picker.value !== "" && !nodes.some((node) => node.connectorId === picker.value && node.kind === "screenshot" && node.enabled));
+    }
   }
   function paragraph(parent, text) {
     const element = document.createElement("p"); element.className = "account-metadata"; element.textContent = text; parent.append(element);
@@ -40,32 +43,38 @@ export function bindAccounts(request, getSession) {
       const group = document.createElement("section"); group.className = "account"; group.dataset.storeConnectorId = nodeId;
       const title = document.createElement("h3"); title.textContent = nodes.find((node) => node.connectorId === nodeId)?.name || sections[0]?.name || nodeId; group.append(title);
       paragraph(group, `商店节点：${label(nodeId)}`);
-      const bindingLabel = document.createElement("label"); bindingLabel.htmlFor = "accountScreenshotNode"; bindingLabel.textContent = "账号截图节点（iOS / Android 共用）";
-      const picker = document.createElement("select"); picker.id = "accountScreenshotNode";
-      const addOption = (value, text, disabled = false) => {
-        const option = document.createElement("option"); option.value = value; option.textContent = text; option.disabled = disabled; picker.append(option);
-      };
-      const previous = new Set(sections.map((account) => account.screenshotConnectorId ?? null));
-      const conflict = previous.size > 1 || sections.some((account) => account.migrationError?.startsWith("legacy_screenshot_"));
-      const value = bindings.has(nodeId) ? bindings.get(nodeId) : conflict ? mixed : [...previous][0] ?? "";
-      if (value === mixed) addOption(mixed, "历史配置不一致，请选择统一的截图节点", true);
-      addOption("", "不配置截图节点");
-      for (const node of nodes.filter((item) => item.kind === "screenshot" && item.enabled)) addOption(node.connectorId, label(node.connectorId));
-      if (value && value !== mixed && !nodes.some((node) => node.connectorId === value && node.kind === "screenshot" && node.enabled)) addOption(value, `${label(value)} · 当前不可用`, true);
-      picker.value = value || "";
-      const save = document.createElement("button"); save.id = "accountScreenshotSave"; save.type = "button"; save.textContent = "保存截图节点";
-      picker.addEventListener("change", controls);
-      save.addEventListener("click", () => {
-        const connectorId = picker.value || null;
-        if (connectorId === mixed) return;
-        perform(async (active, current) => {
-          await request(active, `accounts/store-connectors/${encodeURIComponent(nodeId)}/screenshot-connector`, { method: "PUT", body: { connectorId } });
-          await load(active, current);
-          return "账号截图节点已保存，iOS 和 Android 共用此配置。已创建任务不受影响。";
+      for (const platform of ["ios", "android"]) {
+        const platformLabel = platform === "ios" ? "iOS" : "Android", key = `${nodeId}/${platform}`;
+        const bindingLabel = document.createElement("label"); bindingLabel.htmlFor = `accountScreenshotNode-${platform}`; bindingLabel.textContent = `${platformLabel} 截图节点`;
+        const picker = document.createElement("select"); picker.id = `accountScreenshotNode-${platform}`;
+        const addOption = (value, text, disabled = false) => {
+          const option = document.createElement("option"); option.value = value; option.textContent = text; option.disabled = disabled; picker.append(option);
+        };
+        const account = sections.find((item) => item.platform === platform);
+        const previous = new Set(sections.map((item) => item.screenshotConnectorId ?? null));
+        const conflict = account?.migrationError?.startsWith("legacy_screenshot_");
+        const initial = conflict ? mixed : bindings.has(key) ? bindings.get(key) : bindings.has(nodeId) ? bindings.get(nodeId) : account ? account.screenshotConnectorId : previous.size === 1 ? [...previous][0] : "";
+        const value = screenshotDrafts.has(key) ? screenshotDrafts.get(key) : initial;
+        if (value === mixed) addOption(mixed, "历史配置有冲突，请为此平台选择截图节点", true);
+        addOption("", "不配置截图节点");
+        for (const node of nodes.filter((item) => item.kind === "screenshot" && item.enabled)) addOption(node.connectorId, label(node.connectorId));
+        if (value && value !== mixed && !nodes.some((node) => node.connectorId === value && node.kind === "screenshot" && node.enabled)) addOption(value, `${label(value)} · 当前不可用`, true);
+        picker.value = value || "";
+        const save = document.createElement("button"); save.id = `accountScreenshotSave-${platform}`; save.type = "button"; save.textContent = `保存 ${platformLabel} 截图节点`;
+        picker.addEventListener("change", () => { screenshotDrafts.set(key, picker.value); controls(); });
+        save.addEventListener("click", () => {
+          const connectorId = picker.value || null;
+          if (connectorId === mixed) return;
+          perform(async (active, current) => {
+            await request(active, `accounts/store-connectors/${encodeURIComponent(nodeId)}/screenshot-connector`, { method: "PUT", body: { platform, connectorId } });
+            screenshotDrafts.delete(key);
+            await load(active, current);
+            return `${platformLabel} 截图节点已保存，已创建任务不受影响。`;
+          });
         });
-      });
-      group.append(bindingLabel, picker, save);
-      if (!sections.length) paragraph(group, "尚无平台目录。商店节点上报后会自动显示应用，并沿用此截图节点配置。");
+        group.append(bindingLabel, picker, save);
+      }
+      if (!sections.length) paragraph(group, "尚无平台目录。可先分别配置 iOS 和 Android 截图节点，目录上报后沿用对应平台的选择。");
       for (const account of sections.sort((a, b) => b.platform.localeCompare(a.platform))) {
         const section = document.createElement("section"); section.dataset.accountId = account.id;
         const heading = document.createElement("h4"); heading.textContent = account.platform === "ios" ? "iOS 目录" : "Android 目录"; section.append(heading);
@@ -138,6 +147,7 @@ export function bindAccounts(request, getSession) {
     if (current !== epoch || active.signal.aborted) return;
     nodes = inventory.connectors; accounts = result.accounts;
     bindings = new Map((result.screenshotBindings || []).map((binding) => [binding.storeConnectorId, binding.connectorId]));
+    for (const binding of result.platformScreenshotBindings || []) bindings.set(`${binding.storeConnectorId}/${binding.platform}`, binding.connectorId);
     const grouped = groups();
     if (!grouped.has(selected)) selected = grouped.keys().next().value || "";
     directories = new Map(); render();
@@ -177,7 +187,7 @@ export function bindAccounts(request, getSession) {
     show() { $("accountsWorkspace").hidden = false; $("accountsWorkspace").open = true; perform(load); },
     reset() {
       epoch++; busy = false; accounts = []; nodes = []; directories = new Map(); bindings = new Map(); selected = "";
-      drafts.clear();
+      drafts.clear(); screenshotDrafts.clear();
       $("accountsWorkspace").hidden = true; $("accountsWorkspace").open = false;
       $("accountMigrationIssues").textContent = ""; $("accountsStatus").textContent = ""; render();
     },

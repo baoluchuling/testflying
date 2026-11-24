@@ -170,9 +170,15 @@ Android 移除应用：管理员 `DELETE /v1/accounts/{accountId}/apps/{bundleId
 
 应用开关：管理员 `PUT /v1/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding`，JSON `{"enabled":false}` 或 `{"enabled":true}`，成功 204。后台 HTTPS session 镜像为 `/connector-setup/api/accounts/{accountId}/apps/{platform}/{bundleIdentifier}/forwarding`。平台目录必须仍包含该应用，否则返回 `409 app_catalog_changed`，请重新读取。启用不会绕过重复归属、账号停用或身份变化校验。业务和接入 Token 无权修改应用开关。已通过转发校验的请求继续处理；关闭后新进入的请求被阻止。旧商店及截图 DELETE 均返回 `410 manual_binding_removed`，不修改目录或开关。
 
-账号截图节点：管理员 `PUT /v1/accounts/store-connectors/{storeConnectorId}/screenshot-connector`，HTTPS session 镜像 `/connector-setup/api/accounts/store-connectors/{storeConnectorId}/screenshot-connector`。正文必填 `{"connectorId":"截图节点 UUID"}` 或显式 `{"connectorId":null}`，成功 `200 {"storeConnectorId":"商店节点 UUID","connectorId":"截图节点 UUID 或 null","updatedAccounts":2}`（此处 null 是 JSON null，不是字符串）。商店节点 ID 对应逻辑账号，非平台目录 ID。整组 iOS／Android 目录在同一事务中更新，未来首次上报的平台继承该配置；显式 null 清空该账号截图路由。目标须为已启用截图节点，允许离线，也可由多个账号共用。商店节点暂停不影响配置截图链路。应用归属、应用开关及已创建任务的执行节点保持原样。业务／接入 Token 无权修改，缺失字段、未知字段及错误类型返回 422。历史平台配置不一致时后台要求明确选择，不自动覆盖。
+账号截图节点：管理员 `PUT /v1/accounts/store-connectors/{storeConnectorId}/screenshot-connector`，HTTPS session 镜像 `/connector-setup/api/accounts/store-connectors/{storeConnectorId}/screenshot-connector`。正文 `{"platform":"ios","connectorId":"截图节点 UUID"}` 单独配置 iOS，`platform:"android"` 单独配置 Android；显式 `connectorId:null` 仅清空该平台，不回退到另一平台。成功返回 `200 {"storeConnectorId":"商店节点 UUID","platform":"ios","connectorId":"截图节点 UUID 或 null","updatedAccounts":1}`（null 为 JSON null）。可在平台目录首次上报前预配置，未来目录继承本平台选择。
+
+兼容旧调用：省略 `platform` 的 `{"connectorId":"UUID"}` 或 `{"connectorId":null}` 仍原子更新两个平台，响应省略 platform，updatedAccounts 为实际更新目录数。`platform:null`、未知平台、缺失 connectorId、未知字段及错误类型返回 422。商店节点 ID 对应逻辑账号，非平台目录 ID。目标须为已启用截图节点，允许离线，也可由多个账号共用。商店节点暂停不影响配置截图链路。应用归属、应用开关及已创建任务的执行节点保持原样；业务／接入 Token 无权修改。
+
+升级拆分时，现有共用选择（包括显式不配置）复制为 iOS、Android 各自的初始值；只有一个平台目录也为两个平台保留该选择。历史平台值不一致时保留各自选择和错误提示，不任意合并。之后分别保存、清空和刷新；重连、目录上报和中心重启不会将已分开的选择重新合并。后台两个平台选择框独立保存，保存一方保留另一方尚未提交的选择。仅需更新中心，商店和截图节点程序无需升级。
 
 管理员 GET `/v1/accounts` 另返回 `screenshotBindings:[{"storeConnectorId":"商店节点 UUID","connectorId":null}]`，仅包含显式账号级配置；没有映射时沿用既有平台配置。公共账号列表不暴露此信息。
+
+管理员列表增加 `platformScreenshotBindings:[{"storeConnectorId":"商店节点 UUID","platform":"ios","connectorId":null}]`，供开发后台读取平台独立配置；旧 screenshotBindings 保留兼容，不能用它判断拆分后每个平台的当前节点。公共账号列表不返回这两个配置字段。技术接口 PATCH `/v1/accounts/{accountId}` 的 screenshotConnectorId 以及按平台＋包名初始化截图配置，仅作用于该平台。
 
 管理员 GET／POST `/v1/accounts`、PATCH `/v1/accounts/{accountId}`、GET `/v1/accounts/{accountId}/apps`、POST `/v1/accounts/{accountId}/refresh` 保留作技术配置接口，沿用管理员鉴权及 HTTPS session 镜像。目录页面读取缓存、操作应用开关及账号截图节点；创建账号和上传两平台凭据仍在上方合并后的「账号与节点配置」卡片进行。
 

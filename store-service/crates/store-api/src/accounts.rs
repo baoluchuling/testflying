@@ -24,8 +24,19 @@ pub(super) fn management_routes(path: &str) -> Router<Arc<ApiState>> {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ScreenshotInput {
+    #[serde(default, deserialize_with = "optional_platform")]
+    platform: Option<Platform>,
     #[serde(deserialize_with = "required_nullable")]
     connector_id: Option<String>,
+}
+fn optional_platform<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<Platform>, D::Error> {
+    match Value::deserialize(deserializer)?.as_str() {
+        Some("ios") => Ok(Some(Platform::Ios)),
+        Some("android") => Ok(Some(Platform::Android)),
+        _ => Err(serde::de::Error::custom("platform must be ios or android")),
+    }
 }
 fn required_nullable<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
@@ -37,10 +48,16 @@ async fn set_screenshot(
     Path(store): Path<String>,
     Json(input): Json<ScreenshotInput>,
 ) -> Result<Json<Value>> {
-    Ok(Json(state.registry.set_store_account_screenshot(
-        &store,
-        input.connector_id.as_deref(),
-    )?))
+    Ok(Json(match input.platform {
+        Some(platform) => state.registry.set_platform_screenshot(
+            &store,
+            platform,
+            input.connector_id.as_deref(),
+        )?,
+        None => state
+            .registry
+            .set_store_account_screenshot(&store, input.connector_id.as_deref())?,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -96,7 +113,7 @@ fn public_view(account: Account) -> Value {
 
 async fn list(State(state): State<Arc<ApiState>>) -> Result<Json<Value>> {
     Ok(Json(
-        json!({"accounts":state.registry.accounts()?,"migrationIssues":state.registry.account_migration_issues()?,"screenshotBindings":state.registry.store_account_screenshot_bindings()?}),
+        json!({"accounts":state.registry.accounts()?,"migrationIssues":state.registry.account_migration_issues()?,"screenshotBindings":state.registry.store_account_screenshot_bindings()?,"platformScreenshotBindings":state.registry.platform_screenshot_bindings()?}),
     ))
 }
 

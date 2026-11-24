@@ -44,6 +44,290 @@ fn binding_values(registry: &Registry, store: &str) -> Vec<Option<String>> {
         .collect()
 }
 
+fn platform_choice(registry: &Registry, store: &str, platform: Platform) -> Option<String> {
+    registry
+        .accounts()
+        .unwrap()
+        .into_iter()
+        .find(|a| a.store_connector_id == store && a.platform == platform)
+        .unwrap()
+        .screenshot_connector_id
+}
+
+#[test]
+fn split_migration_copies_current_choice_to_both_platforms_and_never_overwrites_later_edits() {
+    for legacy in ["global", "single", "same", "clear", "different"] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("registry.sqlite");
+        let registry = Registry::open(&path, KEY).unwrap();
+        let store = node(&registry, "Legacy store", ConnectorKind::Store);
+        let first = node(&registry, "Original screenshot", ConnectorKind::Screenshot);
+        let second = node(&registry, "Other screenshot", ConnectorKind::Screenshot);
+        support::catalog(&registry, &store.connector_id, Platform::Ios, &[APP]);
+        if legacy != "single" {
+            support::catalog(&registry, &store.connector_id, Platform::Android, &[APP]);
+        }
+        if legacy == "global" || legacy == "clear" {
+            registry
+                .set_store_account_screenshot(
+                    &store.connector_id,
+                    (legacy == "global").then_some(first.connector_id.as_str()),
+                )
+                .unwrap();
+        }
+        let db = rusqlite::Connection::open(&path).unwrap();
+        if legacy == "same" {
+            db.execute(
+                "UPDATE accounts SET screenshot_connector_id=?1 WHERE store_connector_id=?2",
+                rusqlite::params![first.connector_id, store.connector_id],
+            )
+            .unwrap();
+        }
+        if legacy == "single" || legacy == "different" {
+            db.execute("UPDATE accounts SET screenshot_connector_id=CASE WHEN platform='ios' THEN ?1 ELSE ?2 END WHERE store_connector_id=?3",rusqlite::params![first.connector_id,second.connector_id,store.connector_id]).unwrap();
+        }
+        let ios = registry
+            .accounts()
+            .unwrap()
+            .into_iter()
+            .find(|a| a.platform == Platform::Ios)
+            .unwrap();
+        registry
+            .set_app_enabled(&ios.id, Platform::Ios, APP, false)
+            .unwrap();
+        db.execute("INSERT INTO screenshot_jobs(id,connector_id,integration_id,profile,prompt,status,created_at,deadline,skill_manifest) VALUES('old-task',?1,'old-caller','','original','running',1,2,'{}')",[&first.connector_id]).unwrap();
+        // Reproduce the old schema instead of treating newly written platform rows as legacy.
+        db.execute_batch("DROP TABLE platform_screenshot_bindings; DELETE FROM account_migrations WHERE name='platform_screenshots_v1';").unwrap();
+        registry.set_enabled(&first.connector_id, false).unwrap();
+        drop(registry);
+        let registry = Registry::open(&path, KEY).unwrap();
+        let expected_ios = (legacy != "clear").then_some(first.connector_id.clone());
+        let expected_android = if legacy == "different" {
+            Some(second.connector_id.clone())
+        } else {
+            expected_ios.clone()
+        };
+        let settings = registry.platform_screenshot_bindings().unwrap();
+        for (platform, expected) in [("ios", &expected_ios), ("android", &expected_android)] {
+            assert_eq!(
+                settings.iter().find(|s| s["platform"] == platform).unwrap()["connectorId"],
+                json!(expected),
+                "{legacy}"
+            );
+        }
+        support::catalog(&registry, &store.connector_id, Platform::Android, &[APP]);
+        assert_eq!(
+            platform_choice(&registry, &store.connector_id, Platform::Ios),
+            expected_ios,
+            "{legacy}"
+        );
+        assert_eq!(
+            platform_choice(&registry, &store.connector_id, Platform::Android),
+            expected_android,
+            "{legacy}"
+        );
+        assert_eq!(registry.account_apps(&ios.id).unwrap()[0]["enabled"], false);
+        assert_eq!(
+            db.query_row(
+                "SELECT connector_id FROM screenshot_jobs WHERE id='old-task'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            first.connector_id
+        );
+        registry
+            .set_platform_screenshot(
+                &store.connector_id,
+                Platform::Ios,
+                Some(&second.connector_id),
+            )
+            .unwrap();
+        let split = registry.platform_screenshot_bindings().unwrap();
+        drop(registry);
+        let reopened = Registry::open(&path, KEY).unwrap();
+        assert_eq!(reopened.platform_screenshot_bindings().unwrap(), split);
+        assert_eq!(
+            platform_choice(&reopened, &store.connector_id, Platform::Android),
+            expected_android
+        );
+    }
+}
+
+#[test]
+fn platform_changes_clear_and_future_discovery_do_not_change_the_other_platform() {
+    let registry = registry();
+    let store = node(&registry, "Store", ConnectorKind::Store);
+    let first = node(&registry, "First", ConnectorKind::Screenshot);
+    let second = node(&registry, "Second", ConnectorKind::Screenshot);
+    registry
+        .set_store_account_screenshot(&store.connector_id, Some(&first.connector_id))
+        .unwrap();
+    // Configure Android before it has even reported a directory.
+    registry
+        .set_platform_screenshot(&store.connector_id, Platform::Android, None)
+        .unwrap();
+    group(&registry, &store);
+    assert_eq!(
+        platform_choice(&registry, &store.connector_id, Platform::Ios),
+        Some(first.connector_id.clone())
+    );
+    assert_eq!(
+        platform_choice(&registry, &store.connector_id, Platform::Android),
+        None
+    );
+    let ios = registry
+        .accounts()
+        .unwrap()
+        .into_iter()
+        .find(|a| a.platform == Platform::Ios)
+        .unwrap();
+    registry
+        .patch_account(
+            &ios.id,
+            patch(json!({"screenshotConnectorId":second.connector_id})),
+        )
+        .unwrap();
+    assert_eq!(
+        platform_choice(&registry, &store.connector_id, Platform::Ios),
+        Some(second.connector_id.clone())
+    );
+    assert_eq!(
+        platform_choice(&registry, &store.connector_id, Platform::Android),
+        None
+    );
+    group(&registry, &store);
+    assert_eq!(
+        platform_choice(&registry, &store.connector_id, Platform::Android),
+        None
+    );
+    let before = registry.platform_screenshot_bindings().unwrap();
+    registry.set_enabled(&first.connector_id, false).unwrap();
+    for id in [&first.connector_id, &store.connector_id, "missing"] {
+        assert!(registry
+            .set_platform_screenshot(&store.connector_id, Platform::Ios, Some(id))
+            .is_err());
+        assert_eq!(registry.platform_screenshot_bindings().unwrap(), before);
+    }
+    // Old callers without a platform still explicitly request one shared setting.
+    registry
+        .set_store_account_screenshot(&store.connector_id, Some(&second.connector_id))
+        .unwrap();
+    assert_eq!(
+        binding_values(&registry, &store.connector_id),
+        vec![Some(second.connector_id); 2]
+    );
+}
+
+#[tokio::test]
+async fn platform_api_validates_auth_and_routes_the_same_package_to_distinct_nodes() {
+    let state = state();
+    let store = node(&state.registry, "Store", ConnectorKind::Store);
+    let first = node(&state.registry, "iOS Mac", ConnectorKind::Screenshot);
+    let second = node(&state.registry, "Android Mac", ConnectorKind::Screenshot);
+    group(&state.registry, &store);
+    state
+        .registry
+        .set_store_account_screenshot(&store.connector_id, Some(&first.connector_id))
+        .unwrap();
+    let app = store_api::router(state.clone());
+    for prefix in ["/v1/accounts", "/connector-setup/api/accounts"] {
+        let path = format!(
+            "{prefix}/store-connectors/{}/screenshot-connector",
+            store.connector_id
+        );
+        let before = state.registry.platform_screenshot_bindings().unwrap();
+        for platform in [json!(null), json!("windows"), json!(3)] {
+            assert_eq!(
+                call(
+                    &app,
+                    "PUT",
+                    &path,
+                    ADMIN,
+                    json!({"platform":platform,"connectorId":second.connector_id}),
+                    None,
+                    false
+                )
+                .await
+                .status(),
+                422
+            );
+        }
+        for token in ["", BUSINESS] {
+            assert_eq!(
+                call(
+                    &app,
+                    "PUT",
+                    &path,
+                    token,
+                    json!({"platform":"android","connectorId":second.connector_id}),
+                    None,
+                    false
+                )
+                .await
+                .status(),
+                401
+            );
+        }
+        assert_eq!(
+            state.registry.platform_screenshot_bindings().unwrap(),
+            before
+        );
+        let response = value(
+            call(
+                &app,
+                "PUT",
+                &path,
+                ADMIN,
+                json!({"platform":"android","connectorId":second.connector_id}),
+                None,
+                false,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(response["platform"], "android");
+        assert_eq!(response["updatedAccounts"], 1);
+        assert_eq!(
+            platform_choice(&state.registry, &store.connector_id, Platform::Ios),
+            Some(first.connector_id.clone())
+        );
+    }
+    for (platform, expected) in [
+        ("ios", &first.connector_id),
+        ("android", &second.connector_id),
+    ] {
+        let response = value(
+            call(
+                &app,
+                "GET",
+                &format!("/v1/apps/{platform}/{APP}/screenshot-connector"),
+                ADMIN,
+                Value::Null,
+                None,
+                false,
+            )
+            .await,
+        )
+        .await;
+        assert_eq!(response["connector"]["connectorId"], *expected);
+    }
+    let public = value(
+        call(
+            &app,
+            "GET",
+            "/v1/store-management/accounts",
+            BUSINESS,
+            Value::Null,
+            None,
+            false,
+        )
+        .await,
+    )
+    .await;
+    assert!(public.get("platformScreenshotBindings").is_none());
+}
+
 #[test]
 fn group_updates_and_clear_are_atomic_allow_shared_offline_mac_and_paused_store() {
     let directory = tempfile::tempdir().unwrap();
@@ -235,7 +519,8 @@ fn legacy_unique_platform_inherits_but_catalog_arrival_does_not_resolve_conflict
 }
 
 #[test]
-fn platform_patch_changes_whole_group_and_move_or_create_respects_destination_configuration() {
+fn platform_patch_changes_only_its_platform_and_move_or_create_respects_destination_configuration()
+{
     let registry = registry();
     let source = node(&registry, "Source", ConnectorKind::Store);
     let destination = node(&registry, "Destination", ConnectorKind::Store);
@@ -255,8 +540,12 @@ fn platform_patch_changes_whole_group_and_move_or_create_respects_destination_co
         )
         .unwrap();
     assert_eq!(
-        binding_values(&registry, &source.connector_id),
-        vec![Some(mac.connector_id.clone()); 2]
+        platform_choice(&registry, &source.connector_id, Platform::Ios),
+        Some(mac.connector_id.clone())
+    );
+    assert_eq!(
+        platform_choice(&registry, &source.connector_id, Platform::Android),
+        None
     );
     registry
         .patch_account(&ios.id, patch(json!({"screenshotConnectorId":null})))
@@ -581,8 +870,12 @@ async fn compatibility_initialization_sets_group_but_respects_explicit_clear_and
         200
     );
     assert_eq!(
-        binding_values(&state.registry, &store.connector_id),
-        vec![Some(first.connector_id.clone()); 2]
+        platform_choice(&state.registry, &store.connector_id, Platform::Ios),
+        Some(first.connector_id.clone())
+    );
+    assert_eq!(
+        platform_choice(&state.registry, &store.connector_id, Platform::Android),
+        None
     );
     state
         .registry

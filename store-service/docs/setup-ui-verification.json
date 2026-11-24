@@ -1,5 +1,5 @@
 {
-  "runId": "aea887e3445c43769ef14b3372ab0453",
+  "runId": "fde7f7994fcd46c5866f7dbd4f57358f",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -38,7 +38,7 @@
     "administrator publishes complete Skill ZIPs, safely handles invalid packages, reads immutable versions and rolls back without reinstalling; long hashes fit mobile layout",
     "Android directory adds and removes applications, retains failed-input drafts and confirms removal; iOS exposes neither action",
     "account selector renders and fetches only the chosen account's iOS/Android apps; selection survives directory refresh; no account creation or manual app binding",
-    "account screenshot binding updates both platforms, accepts an offline Mac, preserves forwarding switches and other accounts, supports explicit clearing and blocks saving mixed legacy settings until a choice",
+    "platform screenshot selections initially retain the shared choice, save and clear independently, retain the other unsaved draft, accept offline Macs and preserve forwarding switches, other accounts and per-platform conflict handling",
     "unlocked admin can provision a screenshot node and download its macOS deployment ZIP",
     "locking aborts an in-flight screenshot settings refresh and prevents a late response from restoring the form",
     "refresh restores the HTTPS session and clears local files without writing to web storage",
@@ -46,13 +46,13 @@
     "mobile layout has no horizontal overflow",
     "no provider credential fields or files are uploaded and CSP passes"
   ],
-  "windowsExecutableSha256": "a863025d1c83ea204bdb4439f16cdff0178e4ca0ad543f66c44175adc835b8e6",
+  "windowsExecutableSha256": "de441264c888ed0585a325e7d527dfb5069bad2001b780e267dc9418f0ec3c7e",
   "credentialFilesUploaded": false,
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "6533eed1-b95d-4857-891f-92bbfdaf646c",
-    "791ae7d8-9c85-4682-9753-34c772f0f909"
+    "6ea170b8-6b9c-4513-bd9b-a9cdc5f9bef5",
+    "76361fc0-6b1b-4ff1-aa1c-ffc33ddf66ed"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0,

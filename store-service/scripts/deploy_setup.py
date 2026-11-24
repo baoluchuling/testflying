@@ -20,6 +20,24 @@ from verify_store_refactor import PROJECT, managed_root, source_hashes
 from connector_release import connector_source_fingerprint, connector_version
 
 
+def expected_platform_screenshots(snapshot: dict) -> list[list]:
+    if ["platform_screenshots_v1"] in snapshot["migrationMarkers"]:
+        return snapshot["platformScreenshotBindings"]
+    explicit = dict(snapshot["accountScreenshotBindings"])
+    expected = []
+    for store, mode, _enabled in snapshot["connectors"]:
+        if mode == "screenshot":
+            continue
+        accounts = [row for row in snapshot["accounts"] if row[3] == store]
+        first = accounts[0][4] if accounts else None
+        consistent = all(row[4] == first and row[6] is None for row in accounts)
+        for platform in ("ios", "android"):
+            own = next((row[4] for row in accounts if row[2] == platform), None)
+            selected = explicit[store] if store in explicit else first if consistent else own
+            expected.append([store, platform, selected, int(store in explicit)])
+    return sorted(expected)
+
+
 def verified_connector_output(report: dict, relative: str, version: str,
                               fingerprint: str, project: Path = PROJECT) -> dict:
     output = report.get("outputs", {}).get(relative)
@@ -87,6 +105,7 @@ out={'legacyStoreBindings':store,'legacyScreenshotBindings':shot,
  'screenshotSkillSha256':digest(skill_rows),
  'screenshotSkillActive':rows('screenshot_skill_current','*','1'),
  'accountScreenshotBindings':rows('store_account_screenshot_bindings','store_connector_id,screenshot_connector_id','1'),
+ 'platformScreenshotBindings':rows('platform_screenshot_bindings','store_connector_id,platform,screenshot_connector_id,explicit','1,2'),
  'accountApps':rows('account_apps','account_id,bundle_identifier','1,2'),
  'accountAppDetails':rows('account_apps','account_id,bundle_identifier,name,store_app_id','1,2'),
  'accountAppSources':rows('account_apps','account_id,bundle_identifier,source','1,2') if 'source' in {r[1] for r in db.execute('PRAGMA table_info(account_apps)')} else [],
@@ -505,6 +524,10 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                       "Android manual directory migration recorded")
                 check(["android_legacy_bindings_v1"] in routing_after["migrationMarkers"],
                       "legacy Android directory backfill marker recorded")
+                check(["platform_screenshots_v1"] in routing_after["migrationMarkers"],
+                      "platform screenshot migration marker recorded")
+                check(routing_after["platformScreenshotBindings"] == expected_platform_screenshots(routing_before),
+                      "both platform selections retain the previous screenshot choice without changing split settings")
                 check({tuple(row) for row in routing_after["accountApps"]}
                       == {tuple(row) for row in routing_before["accountApps"] + expected_legacy_android},
                       "application membership changes only by audited legacy Android additions")
@@ -580,6 +603,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                     "migrationIssues": account_inventory["migrationIssues"],
                     "accountMigrationErrors": [{"accountId": account["id"], "code": account["migrationError"]}
                                                for account in account_by_id.values() if account["migrationError"]],
+                    "platformScreenshotBindings": routing_after["platformScreenshotBindings"],
                     "verifiedOriginalRoutes": verified_routes, "unavailableOrInconsistentBeforeRollout": routing_excluded,
                 }
             previous_report = json.loads(report_path.read_text())

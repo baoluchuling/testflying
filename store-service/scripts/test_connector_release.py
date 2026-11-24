@@ -189,6 +189,22 @@ class ConnectorReleaseTests(unittest.TestCase):
             release._git_source(self.project, "HEAD", release.MANIFEST)
 
 
+class PlatformScreenshotRolloutTests(unittest.TestCase):
+    def test_rollout_retains_both_initial_choices_and_existing_splits(self):
+        from deploy_setup import expected_platform_screenshots
+        base = {"migrationMarkers": [], "platformScreenshotBindings": [],
+                "accountScreenshotBindings": [], "connectors": [["store", "auto", 1]],
+                "accounts": [["ios-id", "name", "ios", "store", "mac", 1, None]]}
+        self.assertEqual(expected_platform_screenshots(base),
+                         [["store", "android", "mac", 0], ["store", "ios", "mac", 0]])
+        base["accountScreenshotBindings"] = [["store", None]]
+        self.assertEqual(expected_platform_screenshots(base),
+                         [["store", "android", None, 1], ["store", "ios", None, 1]])
+        base["migrationMarkers"] = [["platform_screenshots_v1"]]
+        base["platformScreenshotBindings"] = [["store", "android", None, 1], ["store", "ios", "other", 1]]
+        self.assertEqual(expected_platform_screenshots(base), base["platformScreenshotBindings"])
+
+
 if __name__ == "__main__":
     managed_root()
     unittest.main()

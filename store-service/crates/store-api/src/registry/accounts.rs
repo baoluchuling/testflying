@@ -163,6 +163,42 @@ pub(super) fn create_schema(db: &mut Connection) -> Result<()> {
         )
         .map_err(database_error)?;
     }
+    tx.execute_batch(
+        "CREATE TABLE IF NOT EXISTS platform_screenshot_bindings (
+      store_connector_id TEXT NOT NULL REFERENCES connectors(id),
+      platform TEXT NOT NULL CHECK(platform IN ('ios','android')),
+      screenshot_connector_id TEXT REFERENCES connectors(id),
+      explicit INTEGER NOT NULL DEFAULT 0 CHECK(explicit IN (0,1)),
+      PRIMARY KEY(store_connector_id,platform));",
+    )
+    .map_err(database_error)?;
+    let split: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM account_migrations WHERE name='platform_screenshots_v1')",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(database_error)?;
+    if !split {
+        let stores: Vec<String> = {
+            let mut statement = tx
+                .prepare("SELECT id FROM connectors WHERE mode!='screenshot'")
+                .map_err(database_error)?;
+            let rows = statement
+                .query_map([], |r| r.get(0))
+                .map_err(database_error)?;
+            rows.collect::<std::result::Result<_, _>>()
+                .map_err(database_error)?
+        };
+        for store in stores {
+            seed_platform_screenshots(&tx, &store)?;
+        }
+        tx.execute(
+            "INSERT INTO account_migrations VALUES('platform_screenshots_v1')",
+            [],
+        )
+        .map_err(database_error)?;
+    }
     tx.commit().map_err(database_error)
 }
 
@@ -274,18 +310,79 @@ fn screenshot_conflict() -> StoreError {
     StoreError::new(
         409,
         "account_screenshot_conflict",
-        "Configure the logical account Screenshot Connector explicitly",
+        "Configure this account platform's Screenshot Connector explicitly",
     )
 }
 
-fn explicit_screenshot(db: &Connection, store: &str) -> Result<Option<Option<String>>> {
+fn legacy_explicit_screenshot(db: &Connection, store: &str) -> Result<Option<Option<String>>> {
     db.query_row("SELECT screenshot_connector_id FROM store_account_screenshot_bindings WHERE store_connector_id=?1",[store],|row|row.get(0)).optional().map_err(database_error)
+}
+
+fn explicit_screenshot(
+    db: &Connection,
+    store: &str,
+    platform: Platform,
+) -> Result<Option<Option<String>>> {
+    let value = db.query_row("SELECT screenshot_connector_id,explicit FROM platform_screenshot_bindings WHERE store_connector_id=?1 AND platform=?2", params![store,platform.to_string()], |row| Ok((row.get::<_,Option<String>>(0)?,row.get::<_,bool>(1)?))).optional().map_err(database_error)?;
+    match value {
+        Some((selected, explicit)) => Ok((explicit || selected.is_some()).then_some(selected)),
+        None => legacy_explicit_screenshot(db, store),
+    }
+}
+
+/// Copy the current shared choice before either platform can be edited. Do not
+/// validate availability: disabled/offline selections and explicit clears survive.
+fn seed_platform_screenshots(db: &Connection, store: &str) -> Result<()> {
+    let explicit = legacy_explicit_screenshot(db, store)?;
+    let mut statement = db.prepare("SELECT platform,screenshot_connector_id,migration_error FROM accounts WHERE store_connector_id=?1").map_err(database_error)?;
+    let rows = statement
+        .query_map([store], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .map_err(database_error)?;
+    let accounts = rows
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(database_error)?;
+    let common = accounts.first().and_then(|(_, value, _)| value.clone());
+    let consistent = accounts
+        .iter()
+        .all(|(_, value, issue)| value == &common && issue.is_none());
+    for platform in [Platform::Ios, Platform::Android] {
+        let selected = if let Some(value) = &explicit {
+            value.clone()
+        } else if consistent {
+            common.clone()
+        } else {
+            accounts
+                .iter()
+                .find(|(p, _, _)| p == &platform.to_string())
+                .and_then(|(_, v, _)| v.clone())
+        };
+        db.execute(
+            "INSERT OR IGNORE INTO platform_screenshot_bindings(store_connector_id,platform,screenshot_connector_id,explicit) VALUES(?1,?2,?3,?4)",
+            params![store, platform.to_string(), selected, explicit.is_some()],
+        )
+        .map_err(database_error)?;
+    }
+    Ok(())
 }
 
 /// Configuration inheritance is independent of current node availability. A saved
 /// target becoming disabled must not silently clear it when a new platform arrives.
-fn inherited_screenshot(db: &Connection, store: &str) -> Result<Option<String>> {
-    if let Some(configured) = explicit_screenshot(db, store)? {
+fn inherited_screenshot(
+    db: &Connection,
+    store: &str,
+    platform: Platform,
+) -> Result<Option<String>> {
+    let configured: Option<Option<String>> = db.query_row("SELECT screenshot_connector_id FROM platform_screenshot_bindings WHERE store_connector_id=?1 AND platform=?2",params![store,platform.to_string()],|row|row.get(0)).optional().map_err(database_error)?;
+    if let Some(selected) = configured {
+        return Ok(selected);
+    }
+    if let Some(configured) = explicit_screenshot(db, store, platform)? {
         return Ok(configured);
     }
     let mut statement=db.prepare("SELECT screenshot_connector_id,migration_error FROM accounts WHERE store_connector_id=?1").map_err(database_error)?;
@@ -320,8 +417,25 @@ fn set_group_screenshot(db: &Connection, store: &str, screenshot: Option<&str>) 
         node(db, id, true)?;
     }
     db.execute("INSERT INTO store_account_screenshot_bindings(store_connector_id,screenshot_connector_id) VALUES(?1,?2) ON CONFLICT(store_connector_id) DO UPDATE SET screenshot_connector_id=excluded.screenshot_connector_id",params![store,screenshot]).map_err(database_error)?;
-    let updated=db.execute("UPDATE accounts SET screenshot_connector_id=?2,migration_error=CASE WHEN migration_error LIKE 'legacy_screenshot_%' THEN NULL ELSE migration_error END WHERE store_connector_id=?1",params![store,screenshot]).map_err(database_error)?;
-    db.execute("DELETE FROM account_migration_issues WHERE code LIKE 'legacy_screenshot_%' AND EXISTS(SELECT 1 FROM accounts a JOIN account_bindings b ON b.account_id=a.id WHERE a.store_connector_id=?1 AND b.platform=account_migration_issues.platform AND b.bundle_identifier=account_migration_issues.bundle_identifier)",[store]).map_err(database_error)?;
+    let updated = set_platform_screenshot(db, store, Platform::Ios, screenshot)?
+        + set_platform_screenshot(db, store, Platform::Android, screenshot)?;
+    Ok(updated)
+}
+
+fn set_platform_screenshot(
+    db: &Connection,
+    store: &str,
+    platform: Platform,
+    screenshot: Option<&str>,
+) -> Result<usize> {
+    store_identity(db, store)?;
+    if let Some(id) = screenshot {
+        node(db, id, true)?;
+    }
+    seed_platform_screenshots(db, store)?;
+    db.execute("INSERT INTO platform_screenshot_bindings(store_connector_id,platform,screenshot_connector_id,explicit) VALUES(?1,?2,?3,1) ON CONFLICT(store_connector_id,platform) DO UPDATE SET screenshot_connector_id=excluded.screenshot_connector_id,explicit=1",params![store,platform.to_string(),screenshot]).map_err(database_error)?;
+    let updated = db.execute("UPDATE accounts SET screenshot_connector_id=?3,migration_error=CASE WHEN migration_error LIKE 'legacy_screenshot_%' THEN NULL ELSE migration_error END WHERE store_connector_id=?1 AND platform=?2",params![store,platform.to_string(),screenshot]).map_err(database_error)?;
+    db.execute("DELETE FROM account_migration_issues WHERE code LIKE 'legacy_screenshot_%' AND platform=?2 AND EXISTS(SELECT 1 FROM accounts a JOIN account_bindings b ON b.account_id=a.id WHERE a.store_connector_id=?1 AND a.platform=?2 AND b.platform=account_migration_issues.platform AND b.bundle_identifier=account_migration_issues.bundle_identifier)",params![store,platform.to_string()]).map_err(database_error)?;
     Ok(updated)
 }
 
@@ -426,6 +540,30 @@ pub(super) fn app_count(db: &Connection, id: &str, screenshot: bool) -> Result<u
 }
 
 impl Registry {
+    pub fn platform_screenshot_bindings(&self) -> Result<Vec<Value>> {
+        let db = self.db.lock().unwrap();
+        let mut statement = db.prepare("SELECT store_connector_id,platform,screenshot_connector_id FROM platform_screenshot_bindings ORDER BY store_connector_id,platform").map_err(database_error)?;
+        let rows = statement.query_map([], |r| Ok(json!({"storeConnectorId":r.get::<_,String>(0)?,"platform":r.get::<_,String>(1)?,"connectorId":r.get::<_,Option<String>>(2)?}))).map_err(database_error)?;
+        rows.collect::<std::result::Result<_, _>>()
+            .map_err(database_error)
+    }
+
+    pub fn set_platform_screenshot(
+        &self,
+        store: &str,
+        platform: Platform,
+        screenshot: Option<&str>,
+    ) -> Result<Value> {
+        let mut db = self.db.lock().unwrap();
+        let tx = db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(database_error)?;
+        let updated = set_platform_screenshot(&tx, store, platform, screenshot)?;
+        tx.commit().map_err(database_error)?;
+        Ok(
+            json!({"storeConnectorId":store,"platform":platform,"connectorId":screenshot,"updatedAccounts":updated}),
+        )
+    }
     pub fn store_account_screenshot_bindings(&self) -> Result<Vec<Value>> {
         let db = self.db.lock().unwrap();
         let mut statement=db.prepare("SELECT store_connector_id,screenshot_connector_id FROM store_account_screenshot_bindings ORDER BY store_connector_id").map_err(database_error)?;
@@ -488,8 +626,8 @@ impl Registry {
                 "This platform and Store Connector already have an account",
             ));
         }
-        let explicit = explicit_screenshot(&tx, &input.store_connector_id)?;
-        let inherited = inherited_screenshot(&tx, &input.store_connector_id)?;
+        let explicit = explicit_screenshot(&tx, &input.store_connector_id, input.platform)?;
+        let inherited = inherited_screenshot(&tx, &input.store_connector_id, input.platform)?;
         let screenshot = match input.screenshot_connector_id.as_deref() {
             Some(id)
                 if explicit
@@ -505,7 +643,12 @@ impl Registry {
         let id = Uuid::new_v4().to_string();
         tx.execute("INSERT INTO accounts(id,name,platform,store_connector_id,screenshot_connector_id) VALUES(?1,?2,?3,?4,?5)",params![id,input.name.trim(),input.platform.to_string(),input.store_connector_id,screenshot]).map_err(database_error)?;
         if input.screenshot_connector_id.is_some() && explicit.is_none() {
-            set_group_screenshot(&tx, &input.store_connector_id, screenshot.as_deref())?;
+            set_platform_screenshot(
+                &tx,
+                &input.store_connector_id,
+                input.platform,
+                screenshot.as_deref(),
+            )?;
         }
         let result = account(&tx, &id)?;
         tx.commit().map_err(database_error)?;
@@ -532,8 +675,8 @@ impl Registry {
                 ));
             }
             if store != &old.store_connector_id {
-                let explicit = explicit_screenshot(&tx, store)?;
-                let inherited = inherited_screenshot(&tx, store)?;
+                let explicit = explicit_screenshot(&tx, store, old.platform)?;
+                let inherited = inherited_screenshot(&tx, store, old.platform)?;
                 let screenshot = match &input.screenshot_connector_id {
                     Some(requested)
                         if explicit
@@ -563,7 +706,7 @@ impl Registry {
                 .store_connector_id
                 .as_deref()
                 .unwrap_or(&old.store_connector_id);
-            set_group_screenshot(&tx, store, screenshot.as_deref())?;
+            set_platform_screenshot(&tx, store, old.platform, screenshot.as_deref())?;
         }
         if let Some(name) = &input.name {
             tx.execute(
@@ -643,7 +786,7 @@ impl Registry {
             )
             .map_err(database_error)?;
         if !exists {
-            let (screenshot, issue) = match inherited_screenshot(&tx, node_id) {
+            let (screenshot, issue) = match inherited_screenshot(&tx, node_id, report.platform) {
                 Ok(screenshot) => (screenshot, None),
                 Err(error)
                     if matches!(
@@ -884,15 +1027,15 @@ impl Registry {
                     "Screenshot bindings require verified account membership",
                 ));
             }
-            if explicit_screenshot(&tx, &value.store_connector_id)?
+            if explicit_screenshot(&tx, &value.store_connector_id, platform)?
                 .is_some_and(|configured| configured.as_deref() != Some(node_id))
-                || inherited_screenshot(&tx, &value.store_connector_id)?
+                || inherited_screenshot(&tx, &value.store_connector_id, platform)?
                     .as_deref()
                     .is_some_and(|configured| configured != node_id)
             {
                 return Err(screenshot_conflict());
             }
-            set_group_screenshot(&tx, &value.store_connector_id, Some(node_id))?;
+            set_platform_screenshot(&tx, &value.store_connector_id, platform, Some(node_id))?;
             tx.execute("INSERT INTO account_bindings(platform,bundle_identifier) VALUES(?1,?2) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET screenshot_disabled=0",params![platform.to_string(),identifier]).map_err(database_error)?;
             tx.execute("INSERT INTO screenshot_app_bindings(platform,bundle_identifier,connector_id) VALUES(?1,?2,?3) ON CONFLICT(platform,bundle_identifier) DO UPDATE SET connector_id=excluded.connector_id",params![platform.to_string(),identifier,node_id]).map_err(database_error)?;
             tx.commit().map_err(database_error)?;

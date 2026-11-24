@@ -343,15 +343,15 @@ async fn screenshot_discovery_and_app_bindings_route_precisely_without_touching_
         send(&app, "PUT", android, &token, json!({"connectorId":mac_b}))
             .await
             .status(),
-        409
+        200
     );
-    // Compatibility initialization belongs to the logical Store account: a
-    // second platform may confirm the same Mac but cannot override the group.
+    // Compatibility initialization now belongs to this account platform. The
+    // Android choice may differ from iOS, but cannot overwrite its own selection.
     assert_eq!(
         send(&app, "PUT", android, &token, json!({"connectorId":mac_a}))
             .await
             .status(),
-        200
+        409
     );
     assert_eq!(
         send(
@@ -410,7 +410,7 @@ async fn screenshot_discovery_and_app_bindings_route_precisely_without_touching_
     other["platform"] = json!("android");
     assert_eq!(
         value(send(&app, "POST", "/v1/screenshot-jobs", &token, other).await).await["connectorId"],
-        mac_a
+        mac_b
     );
     assert_eq!(
         send(&app, "PUT", ios, &token, json!({"connectorId":mac_b}))

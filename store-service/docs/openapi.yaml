@@ -127,13 +127,23 @@ components:
         apps: {type: array, items: {$ref: '#/components/schemas/AccountApp'}}
     AccountList:
       type: object
-      required: [accounts, migrationIssues, screenshotBindings]
+      required: [accounts, migrationIssues, screenshotBindings, platformScreenshotBindings]
       properties:
         accounts: {type: array, items: {$ref: '#/components/schemas/Account'}}
         screenshotBindings:
           type: array
           description: Explicit logical-account screenshot settings, including null. Absent groups retain legacy platform settings.
           items: {$ref: '#/components/schemas/AccountScreenshotBinding'}
+        platformScreenshotBindings:
+          type: array
+          description: Independent iOS and Android selections. Initial values copy the previous shared setting, including explicit null.
+          items:
+            allOf:
+              - {$ref: '#/components/schemas/AccountScreenshotBinding'}
+              - type: object
+                required: [platform]
+                properties:
+                  platform: {type: string, enum: [ios, android]}
         migrationIssues:
           type: array
           items:
@@ -154,6 +164,7 @@ components:
       additionalProperties: false
       required: [connectorId]
       properties:
+        platform: {type: string, enum: [ios, android], description: Save only this platform. Omit for the legacy atomic update of both platforms; null is invalid.}
         connectorId: {type: [string, 'null'], format: uuid, description: Enabled screenshot node UUID, or explicit null to clear the account screenshot route. Offline nodes are allowed.}
     AccountScreenshotResult:
       allOf:
@@ -161,6 +172,7 @@ components:
         - type: object
           required: [updatedAccounts]
           properties:
+            platform: {type: string, enum: [ios, android], description: Present when updating one platform.}
             updatedAccounts: {type: integer, minimum: 0}
     AccountResponse:
       type: object
@@ -582,8 +594,8 @@ paths:
     parameters:
       - {name: storeConnectorId, in: path, required: true, schema: {type: string, format: uuid}}
     put:
-      summary: Configure the screenshot node for an entire store account
-      description: Atomically applies to both platform directories and future arrivals. Store node may be paused; target must be an enabled screenshot node, which may be offline or shared. Null clears only screenshot routing. Existing jobs, app ownership and forwarding switches are unchanged. Business and integration tokens are forbidden.
+      summary: Configure the screenshot node for a store account platform
+      description: With platform ios or android, updates only that platform and its future directory. Omitting platform preserves the legacy atomic update of both platforms. Initial platform selections copy the previous shared choice. Store node may be paused; target must be an enabled screenshot node, which may be offline or shared. Null connectorId clears only the requested screenshot route. Existing jobs, app ownership and forwarding switches are unchanged. Business and integration tokens are forbidden.
       security: [{adminToken: []}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/AccountScreenshotInput'}}}}
       responses:
