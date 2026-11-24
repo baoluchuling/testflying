@@ -1,34 +1,44 @@
 {
-  "runId": "1fbe4a10129c4681b9b43a80f5b0afee",
+  "runId": "f08e78f641fb425785c8b978c14a413d",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-24T04:57:13.834083+00:00",
-  "deploymentCommit": "ae83adf79483e45209f9c9490c5367dd2d7a438c",
-  "binarySourceCommit": "da53a042cf78d704a4a211573ad389e49e989d3d",
-  "apiSha256": "80f90ac1111ed4f7274bec4fcc4710c95adab74f8bb6f8ebbada004b8e72d968",
+  "finishedAt": "2026-11-24T10:16:40.155327+00:00",
+  "deploymentCommit": "b3ae45bd65b099591f49d132e97132c939905572",
+  "binarySourceCommit": "697f25f34ebed64e4951c76eaa82486b34bf6b97",
+  "apiSha256": "575ecba7ee06e8429544d09e8f5636867f7365fb459e4a8d2728cb7db57588bc",
   "connectorBinarySha256": {
-    "linux-amd64": "dbe8abb88620281a50046272d6870075b1b4c68249ba556e77b2f66a5d02909d",
-    "darwin-arm64": "b7a91fb2152117eb33ef18439bc07642ec05d11dd6688e5e1181208c1be9660c",
-    "windows-amd64": "de441264c888ed0585a325e7d527dfb5069bad2001b780e267dc9418f0ec3c7e"
+    "linux-amd64": "24cc1c53590b68916f3cea4797653d5eedb3b1ffaefb39c4291548a144648e6b",
+    "darwin-arm64": "cfdc99eda8fea3631ed048ba96f2c65c7098d4fd84889ac404b67978afad60db",
+    "windows-amd64": "76baef1bd801aa155880b6160bc48edaa6c199bb2fd39f8c1102116833eb492e"
   },
-  "connectorVersion": "0.2.3",
-  "connectorSourceFingerprint": "384c2b4b4455a4aa50e8a83a367d2e811de6ba6e319ba22c9c9ac23d4a0846bd",
+  "connectorVersion": "0.2.4",
+  "connectorSourceFingerprint": "76804ad38026fd17804c0d95880e98c37a5dce54c835be3839153c5aea3bea00",
   "firebaseDiagnostics": {
     "minimumConnectorVersion": "0.2.1",
-    "publishedConnectorVersion": "0.2.3",
+    "publishedConnectorVersion": "0.2.4",
     "readOnly": true,
     "actualFirebaseAccountsQueried": false,
     "automaticMembershipChanges": false,
     "publicCoreEndpointCountUnchanged": true
   },
-  "screenshotConnectorSha256": "85efdc19409bd967ee54d3db3049de5ee9bfb27b548115aeab31bbaeadbcf336",
+  "screenshotConnectorSha256": "6e4bbf8794c313d05b3bfdb6116d07872337d01660b44906af4850599b534d9c",
   "screenshotUploadConfigured": false,
+  "screenshotExecution": {
+    "perImageMinutes": 15,
+    "preparationMinutes": 30,
+    "timingProtocol": 1,
+    "deliveryGraceSeconds": 360,
+    "productionScreenshotTasksCreated": 0
+  },
   "checks": [
     "node connection inventory readable before rollout",
     "existing integration inventory readable before rollout",
     "existing credential retrieved for continuity check",
     "HTTP health after API-only rollout",
     "HTTPS health with certificate verification",
+    "administrator can read bounded dynamic screenshot execution budget",
+    "screenshot budget mirrors HTTPS developer session route",
+    "business credentials cannot read screenshot execution and destination settings",
     "seven-day persistent center log store available",
     "center startup and subsequent HTTP requests recorded",
     "business credentials cannot read administrator logs",
@@ -51,6 +61,13 @@
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
+    "existing Connector inventory available for download verification",
+    "linux-amd64 updated installation package available",
+    "linux-amd64 downloaded native installer preparation program verified",
+    "darwin-arm64 updated installation package available",
+    "darwin-arm64 downloaded native installer preparation program verified",
+    "windows-amd64 updated installation package available",
+    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
     "http eleven store, two node, six screenshot and four account endpoints plus two upload helpers",
     "http exact four account endpoints and cached directory contract",
@@ -308,7 +325,7 @@
       [
         "2a7da2bd-3381-41f2-ad32-55620dae695c",
         "android",
-        "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
+        null,
         1
       ],
       [
@@ -320,7 +337,7 @@
       [
         "2f76961c-c6e6-481a-855b-01841c1f7aef",
         "android",
-        "5a4e66c4-0d05-477f-9aec-f755b472ab35",
+        "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
         1
       ],
       [
@@ -338,13 +355,13 @@
       [
         "3854384b-1d91-4d58-aec8-ea4ec225aaf5",
         "ios",
-        "340cd42e-9041-475a-bed2-bcbddb66e88a",
+        null,
         1
       ],
       [
         "420accdf-d5a6-468e-b20a-1fd9642eb78a",
         "android",
-        "340cd42e-9041-475a-bed2-bcbddb66e88a",
+        null,
         1
       ],
       [
@@ -356,7 +373,7 @@
       [
         "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "android",
-        "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "340cd42e-9041-475a-bed2-bcbddb66e88a",
         1
       ],
       [
@@ -409,7 +426,7 @@
         "ownershipError": null,
         "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "storeError": null,
-        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "screenshotConnectorId": "340cd42e-9041-475a-bed2-bcbddb66e88a",
         "screenshotError": null
       },
       {
@@ -420,7 +437,7 @@
         "ownershipError": null,
         "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "storeError": null,
-        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "screenshotConnectorId": "340cd42e-9041-475a-bed2-bcbddb66e88a",
         "screenshotError": null
       },
       {
@@ -431,7 +448,7 @@
         "ownershipError": null,
         "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "storeError": null,
-        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        "screenshotConnectorId": "340cd42e-9041-475a-bed2-bcbddb66e88a",
         "screenshotError": null
       },
       {
@@ -442,7 +459,7 @@
         "ownershipError": null,
         "storeConnectorId": "2f76961c-c6e6-481a-855b-01841c1f7aef",
         "storeError": null,
-        "screenshotConnectorId": "5a4e66c4-0d05-477f-9aec-f755b472ab35",
+        "screenshotConnectorId": "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
         "screenshotError": null
       },
       {
@@ -603,12 +620,12 @@
     "unavailableOrInconsistentBeforeRollout": []
   },
   "storeConnectorPublication": {
-    "runId": "7cc781fb4ad746478a415a91f685bac0",
-    "sourceCommit": "5d3130b13fdb1a126b1a4c96f07e872c70d5b8ef",
+    "runId": "f08e78f641fb425785c8b978c14a413d",
+    "sourceCommit": "b3ae45bd65b099591f49d132e97132c939905572",
     "downloadVerified": {
-      "linux-amd64": "dbe8abb88620281a50046272d6870075b1b4c68249ba556e77b2f66a5d02909d",
-      "darwin-arm64": "b7a91fb2152117eb33ef18439bc07642ec05d11dd6688e5e1181208c1be9660c",
-      "windows-amd64": "de441264c888ed0585a325e7d527dfb5069bad2001b780e267dc9418f0ec3c7e"
+      "linux-amd64": "24cc1c53590b68916f3cea4797653d5eedb3b1ffaefb39c4291548a144648e6b",
+      "darwin-arm64": "cfdc99eda8fea3631ed048ba96f2c65c7098d4fd84889ac404b67978afad60db",
+      "windows-amd64": "76baef1bd801aa155880b6160bc48edaa6c199bb2fd39f8c1102116833eb492e"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
