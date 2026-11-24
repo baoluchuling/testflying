@@ -1,11 +1,11 @@
 {
-  "runId": "7cc781fb4ad746478a415a91f685bac0",
+  "runId": "1fbe4a10129c4681b9b43a80f5b0afee",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-23T07:23:14.700396+00:00",
-  "deploymentCommit": "5d3130b13fdb1a126b1a4c96f07e872c70d5b8ef",
-  "binarySourceCommit": "b75f9ec31c09b381141b81bb4e446e2901655f67",
-  "apiSha256": "33f0927031a3d57489dcfe71987d3025ad445aff71eb53b6a9f756c1fb23784d",
+  "finishedAt": "2026-11-24T04:57:13.834083+00:00",
+  "deploymentCommit": "ae83adf79483e45209f9c9490c5367dd2d7a438c",
+  "binarySourceCommit": "da53a042cf78d704a4a211573ad389e49e989d3d",
+  "apiSha256": "80f90ac1111ed4f7274bec4fcc4710c95adab74f8bb6f8ebbada004b8e72d968",
   "connectorBinarySha256": {
     "linux-amd64": "dbe8abb88620281a50046272d6870075b1b4c68249ba556e77b2f66a5d02909d",
     "darwin-arm64": "b7a91fb2152117eb33ef18439bc07642ec05d11dd6688e5e1181208c1be9660c",
@@ -51,13 +51,6 @@
     "exact deployed installation asset start.cmd",
     "exact deployed installation asset install.ps1",
     "exact deployed installation asset install.sh",
-    "existing Connector inventory available for download verification",
-    "linux-amd64 updated installation package available",
-    "linux-amd64 downloaded native installer preparation program verified",
-    "darwin-arm64 updated installation package available",
-    "darwin-arm64 downloaded native installer preparation program verified",
-    "windows-amd64 updated installation package available",
-    "windows-amd64 downloaded native installer preparation program verified",
     "http business-token documentation available",
     "http eleven store, two node, six screenshot and four account endpoints plus two upload helpers",
     "http exact four account endpoints and cached directory contract",
@@ -94,6 +87,8 @@
     "transactional account migration marker recorded",
     "Android manual directory migration recorded",
     "legacy Android directory backfill marker recorded",
+    "platform screenshot migration marker recorded",
+    "both platform selections retain the previous screenshot choice without changing split settings",
     "application membership changes only by audited legacy Android additions",
     "restored legacy Android membership keeps exact account and identifier",
     "preexisting application names, identifiers and store IDs preserved",
@@ -106,6 +101,8 @@
     "public cached account inventory omits node IDs and secrets",
     "cached account app schema includes separate screenshot resolution b43ce0fd-03c1-414c-8c6a-060ba890aa11",
     "cached account app schema includes separate screenshot resolution fa618279-9b9f-4e6a-88e3-2e71f3e1272a",
+    "cached account app schema includes separate screenshot resolution fa5a1cca-60e9-499f-851d-d41d43519c67",
+    "cached account app schema includes separate screenshot resolution fac3e5ba-dbbd-4a76-9190-1dc279d413cd",
     "cached account app schema includes separate screenshot resolution 9ec09461-99fc-4f6c-8415-d5b676ddf19d",
     "cached account app schema includes separate screenshot resolution c180cfa4-b06e-45eb-882e-9e5601af9b66",
     "cached account app schema includes separate screenshot resolution 1b109fa0-2900-4922-a186-ff635daeb59b",
@@ -132,6 +129,9 @@
     "directory-only ownership and application switch /v1/apps/android/com.novelduo.android",
     "exact catalog route or expected blocked result /v1/apps/android/com.novelduo.android/connector",
     "exact catalog route or expected blocked result /v1/apps/android/com.novelduo.android/screenshot-connector",
+    "directory-only ownership and application switch /v1/apps/android/com.yj.anystories.android",
+    "exact catalog route or expected blocked result /v1/apps/android/com.yj.anystories.android/connector",
+    "exact catalog route or expected blocked result /v1/apps/android/com.yj.anystories.android/screenshot-connector",
     "directory-only ownership and application switch /v1/apps/ios/app.readpod.ios",
     "exact catalog route or expected blocked result /v1/apps/ios/app.readpod.ios/connector",
     "exact catalog route or expected blocked result /v1/apps/ios/app.readpod.ios/screenshot-connector",
@@ -270,7 +270,7 @@
     "preservedHashes": {
       "legacyStoreSha256": "49035fb6fc9e8f3f95ddfba7debd098d109ed9d3738bae32064ce86aa37583ec",
       "legacyScreenshotSha256": "72fb10769a422cdf03da4cc4af25bfa3ed8410ff4f58b6c8670377dcbc94254a",
-      "connectorIdentitySha256": "7aa715d8d616380e965f382ab3d22adbea52a8637db4d98cfee5c668b9eae060",
+      "connectorIdentitySha256": "706a5ec5d67d92af3f8ec596522cc927babe61131830c2993736b53e369835d2",
       "integrationsSha256": "6e3dba445355d9dbc3f6369bcde33d5e3afe54cb086503c0ec4b9db46837900c",
       "integrationGrantsSha256": "d8bf10be532dcd546f6ac23f5829b2b040896a39161e662fc70e7bd511a94591",
       "screenshotSettingsSha256": "c622c41911c96741bd51174de128133555f09842bedbf6daf3904936a33ae75b"
@@ -285,8 +285,8 @@
         1
       ]
     ],
-    "accountsBefore": 10,
-    "accountsAfter": 10,
+    "accountsBefore": 12,
+    "accountsAfter": 12,
     "migrationMarkers": [
       [
         "accounts_v1"
@@ -296,11 +296,88 @@
       ],
       [
         "android_manual_apps_v1"
+      ],
+      [
+        "platform_screenshots_v1"
       ]
     ],
     "legacyAndroidRestored": [],
     "migrationIssues": [],
     "accountMigrationErrors": [],
+    "platformScreenshotBindings": [
+      [
+        "2a7da2bd-3381-41f2-ad32-55620dae695c",
+        "android",
+        "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
+        1
+      ],
+      [
+        "2a7da2bd-3381-41f2-ad32-55620dae695c",
+        "ios",
+        "42b1c53d-ef0a-47c0-9c7b-222cb2a30497",
+        1
+      ],
+      [
+        "2f76961c-c6e6-481a-855b-01841c1f7aef",
+        "android",
+        "5a4e66c4-0d05-477f-9aec-f755b472ab35",
+        1
+      ],
+      [
+        "2f76961c-c6e6-481a-855b-01841c1f7aef",
+        "ios",
+        "5a4e66c4-0d05-477f-9aec-f755b472ab35",
+        1
+      ],
+      [
+        "3854384b-1d91-4d58-aec8-ea4ec225aaf5",
+        "android",
+        "340cd42e-9041-475a-bed2-bcbddb66e88a",
+        1
+      ],
+      [
+        "3854384b-1d91-4d58-aec8-ea4ec225aaf5",
+        "ios",
+        "340cd42e-9041-475a-bed2-bcbddb66e88a",
+        1
+      ],
+      [
+        "420accdf-d5a6-468e-b20a-1fd9642eb78a",
+        "android",
+        "340cd42e-9041-475a-bed2-bcbddb66e88a",
+        1
+      ],
+      [
+        "420accdf-d5a6-468e-b20a-1fd9642eb78a",
+        "ios",
+        "340cd42e-9041-475a-bed2-bcbddb66e88a",
+        1
+      ],
+      [
+        "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "android",
+        "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        1
+      ],
+      [
+        "5d4a07c0-2a1b-47e7-a450-8484e225e168",
+        "ios",
+        "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
+        1
+      ],
+      [
+        "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "android",
+        "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        0
+      ],
+      [
+        "806eb06e-90ef-43d3-8b0a-ac3410a2a75e",
+        "ios",
+        "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
+        0
+      ]
+    ],
     "verifiedOriginalRoutes": [
       {
         "platform": "android",
@@ -332,7 +409,7 @@
         "ownershipError": null,
         "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "storeError": null,
-        "screenshotConnectorId": "cc91558b-5ea1-4bb9-8c95-6b3a322549a6",
+        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
         "screenshotError": null
       },
       {
@@ -343,7 +420,7 @@
         "ownershipError": null,
         "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "storeError": null,
-        "screenshotConnectorId": "cc91558b-5ea1-4bb9-8c95-6b3a322549a6",
+        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
         "screenshotError": null
       },
       {
@@ -354,7 +431,7 @@
         "ownershipError": null,
         "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "storeError": null,
-        "screenshotConnectorId": "cc91558b-5ea1-4bb9-8c95-6b3a322549a6",
+        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
         "screenshotError": null
       },
       {
@@ -369,6 +446,17 @@
         "screenshotError": null
       },
       {
+        "platform": "android",
+        "bundleIdentifier": "com.yj.anystories.android",
+        "accountId": "fac3e5ba-dbbd-4a76-9190-1dc279d413cd",
+        "ownershipStatus": 200,
+        "ownershipError": null,
+        "storeConnectorId": "3854384b-1d91-4d58-aec8-ea4ec225aaf5",
+        "storeError": null,
+        "screenshotConnectorId": "340cd42e-9041-475a-bed2-bcbddb66e88a",
+        "screenshotError": null
+      },
+      {
         "platform": "ios",
         "bundleIdentifier": "app.readpod.ios",
         "accountId": "d4484176-a743-43f6-920b-f9e8860ec59f",
@@ -376,7 +464,7 @@
         "ownershipError": null,
         "storeConnectorId": "5d4a07c0-2a1b-47e7-a450-8484e225e168",
         "storeError": null,
-        "screenshotConnectorId": "cc91558b-5ea1-4bb9-8c95-6b3a322549a6",
+        "screenshotConnectorId": "2ed62bf2-f8d4-4ee8-9ed7-3b1f75a37596",
         "screenshotError": null
       },
       {
