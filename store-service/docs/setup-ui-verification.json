@@ -1,5 +1,5 @@
 {
-  "runId": "fde7f7994fcd46c5866f7dbd4f57358f",
+  "runId": "392da1f19d1942cd9d5d6b0a504cb07e",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -18,6 +18,7 @@
     "wrong Token stays locked and transient unlock failure can be retried",
     "node setup and integration management appear only after shared HTTPS administrator unlock",
     "mock OSS and HTTP notification settings save without notifying; secrets clear before the response and only configured flags return",
+    "dynamic screenshot budget defaults to preparation 30 plus target count times 15 minutes; administrator edits persist and invalid values never submit or alter secrets",
     "blank screenshot passwords are omitted to preserve configured secrets and masked refresh retains ordinary fields",
     "AccessKey changes require a new Secret; failed settings saves keep the admin unlocked and display a fixed safe error",
     "administrator can pause iOS and Android independently and refresh persisted forwarding state",
@@ -51,8 +52,8 @@
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "6ea170b8-6b9c-4513-bd9b-a9cdc5f9bef5",
-    "76361fc0-6b1b-4ff1-aa1c-ffc33ddf66ed"
+    "4f120bb9-8fbd-49e5-862b-9358025211dc",
+    "d3ba1c73-74b4-46b5-8103-ededd35684c6"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0,
