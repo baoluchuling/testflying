@@ -1383,11 +1383,29 @@ async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids(
     );
     let queued = value(send(&app, "GET", &status_path, &client, Value::Null).await).await;
     assert_eq!(queued["status"], "queued");
-    let claim = value(send(&app, "POST", &path, &worker, Value::Null).await).await;
+    let claim = value(
+        app.clone()
+            .oneshot(
+                Request::post(&path)
+                    .header("x-forwarded-proto", "https")
+                    .header("x-screenshot-protocol", "3")
+                    .header("x-screenshot-timing-protocol", "1")
+                    .header(header::AUTHORIZATION, format!("Bearer {worker}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap(),
+    )
+    .await;
     assert_eq!(claim["jobId"], job["jobId"]);
     assert!(claim.get("taskId").is_none());
     assert_eq!(claim["prompt"], payload["prompt"]);
     assert_eq!(claim["target"], payload["target"]);
+    assert_eq!(
+        claim["executionTimeoutSeconds"],
+        30 * 60 + payload["target"].as_array().unwrap().len() * 15 * 60
+    );
 }
 
 #[tokio::test]

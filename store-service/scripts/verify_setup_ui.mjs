@@ -54,6 +54,7 @@ let fixtureSession;
 const forwardingFixture={ios:true,android:true};
 const screenshotSettingsFixture = {
   revision: 0,
+  execution: { preparationMinutes:30, perImageMinutes:15 },
   oss: { enabled: false, region: "", bucket: "", endpoint: "", prefix: "", publicBaseUrl: "",
     accessKeyId: "", accessKeySecretConfigured: false, securityTokenConfigured: false },
   notification: { url: "", tokenConfigured: false, status: "not_configured" },
@@ -217,13 +218,16 @@ if (!production) {
         if (req.method === "PUT") {
           let body = ""; for await (const part of req) body += part;
           const input = JSON.parse(body);
-          assert.deepEqual(Object.keys(input), ["oss", "notification"]);
+          assert.deepEqual(Object.keys(input), ["oss", "notification", "execution"]);
+          assert(Number.isInteger(input.execution.preparationMinutes) && input.execution.preparationMinutes>=0 && input.execution.preparationMinutes<=1440);
+          assert(Number.isInteger(input.execution.perImageMinutes) && input.execution.perImageMinutes>=1 && input.execution.perImageMinutes<=1440);
           screenshotSettingsWrites.push(input);
           if (failNextSettingsSave) {
             failNextSettingsSave = false;
             res.writeHead(500).end(JSON.stringify({ error: { message: '<img src=x onerror=alert(1)> fixture-secret-should-not-display' } }));
             return;
           }
+          screenshotSettingsFixture.execution = {...input.execution};
           for (const key of ["enabled", "region", "bucket", "endpoint", "prefix", "publicBaseUrl", "accessKeyId"]) {
             screenshotSettingsFixture.oss[key] = input.oss[key];
           }
@@ -471,6 +475,13 @@ try {
   assert.equal(await page.locator("#screenshotNotificationState").getAttribute("readonly"), "");
   assert.match(await page.locator("#screenshotNotificationState").inputValue(), /未配置完整地址与 Token；不影响截图执行/);
   if (!production) {
+    assert.equal(await page.locator("#screenshotPreparationMinutes").inputValue(),"30");
+    assert.equal(await page.locator("#screenshotPerImageMinutes").inputValue(),"15");
+    await page.locator("#screenshotPerImageMinutes").fill("0");
+    await page.locator("#screenshotSettingsSave").click();
+    assert.equal(screenshotSettingsWrites.length,0);
+    await page.locator("#screenshotPerImageMinutes").fill("18");
+    await page.locator("#screenshotPreparationMinutes").fill("40");
     assert.equal(await page.locator("#ossRegion").getAttribute("required"), null);
     await page.locator("#ossEnabled").check();
     await page.locator("#ossRegion").fill("cn-hangzhou");
@@ -497,6 +508,7 @@ try {
     assert.equal(screenshotSettingsFixture.notification.tokenConfigured, true);
     assert.equal(screenshotSettingsFixture.notification.status, "configured");
     assert.equal(screenshotSettingsWrites[0].oss.publicBaseUrl, "");
+    assert.deepEqual(screenshotSettingsWrites[0].execution,{preparationMinutes:40,perImageMinutes:18});
     await assertSettingsSecretsEmpty();
     for (const id of settingsSecrets) assert.equal(await page.locator(`#${id}`).getAttribute("placeholder"), "已配置，留空保留");
     assert.equal(screenshotSettingsFixture.notification.url, "http://studio.example.invalid:8420/api/hooks/captures");
@@ -510,6 +522,9 @@ try {
     await page.getByText("截图设置已刷新，密钥不回显。", { exact: true }).waitFor();
     await assertSettingsSecretsEmpty();
     assert.equal(await page.locator("#ossRegion").inputValue(), "cn-hangzhou");
+    assert.equal(await page.locator("#screenshotPerImageMinutes").inputValue(),"18");
+    assert.equal(await page.locator("#screenshotPreparationMinutes").inputValue(),"40");
+    checks.push("dynamic screenshot budget defaults to preparation 30 plus target count times 15 minutes; administrator edits persist and invalid values never submit or alter secrets");
     checks.push("blank screenshot passwords are omitted to preserve configured secrets and masked refresh retains ordinary fields");
     await page.locator("#ossAccessKeyId").fill("fixture-replaced-key-id");
     await page.locator("#screenshotSettingsSave").click();

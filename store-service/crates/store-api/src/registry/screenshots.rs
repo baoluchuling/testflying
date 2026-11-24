@@ -98,7 +98,7 @@ pub(super) fn expire(db: &Connection, time: i64) -> Result<()> {
         super::screenshot_notifications::enqueue(db, &id, time)?;
     }
     db.execute(
-        "DELETE FROM screenshot_jobs WHERE status IN ('failed','succeeded') AND created_at<=?1",
+        "DELETE FROM screenshot_jobs WHERE status IN ('failed','succeeded') AND COALESCE((SELECT created_at FROM screenshot_notifications WHERE job_id=screenshot_jobs.id),created_at)<=?1",
         [time.saturating_sub(7 * 86400)],
     )
     .map_err(database_error)?;
@@ -702,11 +702,22 @@ impl Registry {
         self.claim_screenshot_with_skill_protocol(node, current_protocol, false)
     }
 
+    #[cfg(test)]
     pub(crate) fn claim_screenshot_with_skill_protocol(
         &self,
         node: &str,
         current_protocol: bool,
         skill_protocol: bool,
+    ) -> Result<Option<Value>> {
+        self.claim_screenshot_with_timing_protocol(node, current_protocol, skill_protocol, false)
+    }
+
+    pub(crate) fn claim_screenshot_with_timing_protocol(
+        &self,
+        node: &str,
+        current_protocol: bool,
+        skill_protocol: bool,
+        timing_protocol: bool,
     ) -> Result<Option<Value>> {
         let time = timestamp()?;
         let mut db = self.db.lock().unwrap();
@@ -740,6 +751,31 @@ impl Registry {
                 ));
             }
             let lease = Uuid::new_v4().to_string();
+            let execution_seconds = if timing_protocol {
+                let count = targets
+                    .as_ref()
+                    .map(|s| serde_json::from_str::<Vec<Value>>(s))
+                    .transpose()
+                    .map_err(|_| database_error(rusqlite::Error::InvalidQuery))?
+                    .map_or(1, |v| v.len());
+                Some(
+                    super::screenshot_settings::load(&tx, &self.signing_key)?
+                        .execution
+                        .timeout_seconds(count)
+                        .ok_or_else(|| {
+                            StoreError::new(
+                                500,
+                                "invalid_screenshot_settings",
+                                "Invalid screenshot execution policy",
+                            )
+                        })?,
+                )
+            } else {
+                None
+            };
+            let lease_seconds = execution_seconds.map_or(1800, |seconds| {
+                seconds + store_protocol::screenshot::SCREENSHOT_DELIVERY_GRACE_SECONDS
+            });
             let skill_record = skill
                 .as_ref()
                 .map(serde_json::to_string)
@@ -747,7 +783,7 @@ impl Registry {
                 .map_err(|_| database_error(rusqlite::Error::InvalidQuery))?;
             tx.execute(
                 "UPDATE screenshot_jobs SET status='running', deadline=?2, lease=?3, prompt='', skill_manifest=?4 WHERE id=?1",
-                params![id, time + 1800, lease,skill_record],
+                params![id, time + lease_seconds as i64, lease,skill_record],
             ).map_err(database_error)?;
             let profile = (!profile.is_empty()).then_some(profile);
             let prompt = match (&platform, &identifier) {
@@ -757,13 +793,25 @@ impl Registry {
                 }
                 _ => prompt,
             };
-            Some(
-                json!({"jobId":id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()),"platform":platform,"bundleIdentifier":identifier,"profile":profile,"prompt":prompt,"lease":lease,"skill":skill}),
-            )
+            let mut reply = json!({"jobId":id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()),"platform":platform,"bundleIdentifier":identifier,"profile":profile,"prompt":prompt,"lease":lease,"skill":skill});
+            if let Some(seconds) = execution_seconds {
+                reply["executionTimeoutSeconds"] = json!(seconds);
+            }
+            Some(reply)
         } else {
             None
         };
         tx.commit().map_err(database_error)?;
+        drop(db);
+        if let Some(job) = &claimed {
+            self.logs.record(crate::logs::Event {
+                name: "screenshot.claimed",
+                request_id: job["jobId"].as_str().map(str::to_owned),
+                connector_id: Some(node.to_owned()),
+                details: json!({"jobId":job["jobId"],"executionTimeoutSeconds":job.get("executionTimeoutSeconds"),"targetCount":job["target"].as_array().map_or(1,Vec::len),"timingProtocol":timing_protocol}),
+                ..Default::default()
+            });
+        }
         Ok(claimed)
     }
 
@@ -821,6 +869,19 @@ impl Registry {
         }
         super::screenshot_notifications::enqueue(&tx, id, timestamp()?)?;
         tx.commit().map_err(database_error)?;
+        drop(db);
+        self.logs.record(crate::logs::Event {
+            name: if error.is_some() {
+                "screenshot.failed"
+            } else {
+                "screenshot.completed"
+            },
+            request_id: Some(id.to_owned()),
+            connector_id: Some(node.to_owned()),
+            status: Some(if error.is_some() { 500 } else { 200 }),
+            details: json!({"jobId":id,"code":error}),
+            ..Default::default()
+        });
         Ok(())
     }
 }
@@ -828,6 +889,170 @@ impl Registry {
 #[cfg(test)]
 mod direct_delivery_tests {
     use super::*;
+
+    fn budget_fixture(
+        target_count: usize,
+    ) -> (
+        Registry,
+        String,
+        super::super::integrations::Integration,
+        String,
+    ) {
+        let registry = Registry::open(":memory:", "budget-fixture-signing-key-0123456789").unwrap();
+        let node = registry
+            .create_with_kind(
+                ConnectorInput {
+                    name: "Budget node".into(),
+                },
+                ConnectorKind::Screenshot,
+            )
+            .unwrap()
+            .connector_id;
+        let access = registry
+            .issue_integration(
+                serde_json::from_value(json!({"name":"Budget integration"})).unwrap(),
+            )
+            .unwrap();
+        verified_app(&registry, "com.example.budget");
+        registry
+            .bind_screenshot(Platform::Ios, "com.example.budget", &node)
+            .unwrap();
+        let targets = (0..target_count)
+            .map(|i| store_protocol::screenshot::ScreenshotTarget {
+                locale: "en".into(),
+                page: format!("page{i}"),
+                device: "phone".into(),
+            })
+            .collect::<Vec<_>>();
+        let job = registry
+            .enqueue_screenshot_v2(
+                &access,
+                Platform::Ios,
+                "com.example.budget",
+                "",
+                "Capture all targets",
+                &targets,
+            )
+            .unwrap()["jobId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        (registry, node, access, job)
+    }
+
+    #[test]
+    fn supported_claims_scale_the_budget_and_legacy_claims_keep_their_old_deadline() {
+        for (count, supported, seconds) in
+            [(1, true, 45 * 60), (64, true, 990 * 60), (1, false, 1800)]
+        {
+            let (registry, node, _access, job) = budget_fixture(count);
+            let before = timestamp().unwrap();
+            let claim = registry
+                .claim_screenshot_with_timing_protocol(&node, true, false, supported)
+                .unwrap()
+                .unwrap();
+            let deadline: i64 = registry
+                .db
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT deadline FROM screenshot_jobs WHERE id=?1",
+                    [&job],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let grace = if supported {
+                store_protocol::screenshot::SCREENSHOT_DELIVERY_GRACE_SECONDS as i64
+            } else {
+                0
+            };
+            assert!(
+                (before + seconds + grace..=timestamp().unwrap() + seconds + grace)
+                    .contains(&deadline)
+            );
+            if supported {
+                assert_eq!(claim["executionTimeoutSeconds"], seconds);
+            } else {
+                assert!(claim.get("executionTimeoutSeconds").is_none());
+            }
+            let log: String = registry.db.lock().unwrap().query_row("SELECT details FROM center_logs WHERE event='screenshot.claimed' AND request_id=?1",[&job],|r|r.get(0)).unwrap();
+            let log: Value = serde_json::from_str(&log).unwrap();
+            assert_eq!(log["targetCount"], count);
+            if supported {
+                assert_eq!(log["executionTimeoutSeconds"], seconds);
+            }
+            assert!(log.get("prompt").is_none());
+            registry
+                .save_screenshot_settings(
+                    &serde_json::from_value(
+                        json!({"execution":{"preparationMinutes":0,"perImageMinutes":1}}),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            assert_eq!(
+                registry
+                    .db
+                    .lock()
+                    .unwrap()
+                    .query_row(
+                        "SELECT deadline FROM screenshot_jobs WHERE id=?1",
+                        [&job],
+                        |r| r.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                deadline
+            );
+        }
+    }
+
+    #[test]
+    fn long_tasks_retain_the_terminal_result_for_seven_days_after_finishing() {
+        let (registry, node, access, job) = budget_fixture(1);
+        let claim = registry
+            .claim_screenshot_with_timing_protocol(&node, true, false, true)
+            .unwrap()
+            .unwrap();
+        let now = timestamp().unwrap();
+        registry
+            .db
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE screenshot_jobs SET created_at=?2 WHERE id=?1",
+                params![job, now - 8 * 86400],
+            )
+            .unwrap();
+        registry
+            .finish_screenshot(
+                &node,
+                &job,
+                claim["lease"].as_str().unwrap(),
+                Err("codex_execution_timeout"),
+                "running",
+            )
+            .unwrap();
+        assert_eq!(
+            registry.screenshot_status(&access, &job).unwrap()["error"],
+            "codex_execution_timeout"
+        );
+        let db = registry.db.lock().unwrap();
+        db.execute(
+            "UPDATE screenshot_notifications SET created_at=?2 WHERE job_id=?1",
+            params![job, now - 8 * 86400],
+        )
+        .unwrap();
+        expire(&db, now).unwrap();
+        assert_eq!(
+            db.query_row(
+                "SELECT count(*) FROM screenshot_jobs WHERE id=?1",
+                [&job],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+    }
 
     fn verified_app(registry: &Registry, identifier: &str) {
         let store = registry
@@ -1056,13 +1281,23 @@ mod direct_delivery_tests {
         );
         assert!(job.get("taskId").is_none());
         let claimed = registry
-            .claim_screenshot_protocol(&node, true)
+            .claim_screenshot_with_timing_protocol(&node, true, false, true)
             .unwrap()
             .unwrap();
         assert_eq!(claimed["prompt"], prompt);
         assert_eq!(claimed["target"], serde_json::to_value(&targets).unwrap());
         assert_eq!(claimed["jobId"], id);
         let lease = claimed["lease"].as_str().unwrap();
+        let deadline: i64 = registry
+            .db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT deadline FROM screenshot_jobs WHERE id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
         let fp = oss_fingerprint(&registry.screenshot_settings().unwrap().oss).unwrap();
         for index in 0..2 {
             registry
@@ -1116,6 +1351,19 @@ mod direct_delivery_tests {
                 .complete_target_ticket(&node, id, lease, index, &fp, &json!({}))
                 .unwrap();
             assert_eq!(repeated, result);
+            assert_eq!(
+                registry
+                    .db
+                    .lock()
+                    .unwrap()
+                    .query_row(
+                        "SELECT deadline FROM screenshot_jobs WHERE id=?1",
+                        [id],
+                        |r| r.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                deadline
+            );
         }
         assert_eq!(
             registry.screenshot_status(&integration, id).unwrap()["status"],

@@ -100,6 +100,7 @@ impl Config {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Job {
+    execution_timeout_seconds: Option<u64>,
     job_id: Uuid,
     platform: Option<String>,
     bundle_identifier: Option<String>,
@@ -179,6 +180,7 @@ impl<'a> Worker<'a> {
                 .request(Method::POST, "claim")
                 .header("X-Screenshot-Protocol", "3")
                 .header("X-Screenshot-Skill-Protocol", "1")
+                .header("X-Screenshot-Timing-Protocol", "1")
                 .send()
                 .await?;
             match response.status() {
@@ -278,6 +280,32 @@ impl<'a> Worker<'a> {
         stop: &mut watch::Receiver<bool>,
     ) -> Result<(), &'static str> {
         let id = Some(job.job_id);
+        let execution_timeout = match job.execution_timeout_seconds {
+            Some(seconds)
+                if (60..=store_protocol::screenshot::MAX_SCREENSHOT_EXECUTION_SECONDS)
+                    .contains(&seconds) =>
+            {
+                Some(Duration::from_secs(seconds))
+            }
+            Some(_) => return Err("invalid_execution_budget"),
+            None => None,
+        };
+        self.log.event(
+            id,
+            format_args!(
+                "execution_budget seconds={} targets={} source={}",
+                execution_timeout.map_or(
+                    store_protocol::screenshot::LEGACY_SCREENSHOT_TIMEOUT_SECONDS,
+                    |v| v.as_secs()
+                ),
+                job.target.as_ref().map_or(1, |v| v.len()),
+                if execution_timeout.is_some() {
+                    "center"
+                } else {
+                    "legacy"
+                }
+            ),
+        );
         let installed = if let Some(manifest) = &job.skill {
             let request = self
                 .client
@@ -334,6 +362,7 @@ impl<'a> Worker<'a> {
             instructions.push_str(goal::SKILL_INSTRUCTIONS);
         }
         let session = goal::Session {
+            execution_timeout,
             root,
             instructions,
             prompt: &job.prompt,
@@ -366,8 +395,12 @@ impl<'a> Worker<'a> {
         // The center result is authoritative even if Codex exits after delivery.
         if tools.center_finished {
             Ok(())
+        } else if tools.failure == "delivery_unknown" {
+            Err("delivery_unknown")
         } else if result == Err("codex_skill_unavailable") {
             Err("codex_skill_unavailable")
+        } else if job.execution_timeout_seconds.is_some() {
+            result.and(Err(tools.failure))
         } else {
             Err(tools.failure)
         }
@@ -1316,6 +1349,7 @@ mod tests {
         let puts = Arc::new(AtomicUsize::new(0));
         let completions = Arc::new(AtomicUsize::new(0));
         let job = Job {
+            execution_timeout_seconds: None,
             job_id: Uuid::new_v4(),
             platform: Some("ios".into()),
             bundle_identifier: Some("fixture.app".into()),
@@ -1591,6 +1625,41 @@ mod tests {
         let decoded: Job = serde_json::from_slice(&body).unwrap();
         assert_eq!(decoded.prompt, prompt);
         assert_eq!(decoded.target.unwrap().len(), 256);
+    }
+
+    #[tokio::test]
+    async fn timing_protocol_preserves_stage_errors_and_validates_the_center_budget() {
+        use std::os::unix::fs::PermissionsExt;
+        let workspace = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let fixture = workspace.path().join("fixture-codex");
+        fs::write(&fixture,b"#!/bin/sh\nset -eu\nIFS= read -r line\nprintf '%s\\n' '{\"id\":0,\"result\":{}}'\nIFS= read -r line\nIFS= read -r line\nexit 0\n").unwrap();
+        fs::set_permissions(&fixture, fs::Permissions::from_mode(0o700)).unwrap();
+        let config = Config {
+            kind: "screenshot".into(),
+            connector_id: Uuid::new_v4().to_string(),
+            token: "a".repeat(64),
+            server_url: Url::parse("https://fixture.example").unwrap(),
+            message_key: "fixture".into(),
+            codex_path: Some(fixture),
+            codex_home: None,
+            adb_path: None,
+            ca_file: None,
+        };
+        let worker = Worker::new(&config, &workspace.path().join("connector.json")).unwrap();
+        for (budget, code) in [
+            (None, "codex_failed"),
+            (Some(2700), "codex_thread_start_failed"),
+            (Some(0), "invalid_execution_budget"),
+            (Some(u64::MAX), "invalid_execution_budget"),
+        ] {
+            let job:Job=serde_json::from_value(json!({"jobId":Uuid::new_v4(),"lease":Uuid::new_v4(),"prompt":"unchanged original","executionTimeoutSeconds":budget})).unwrap();
+            let (_stop, mut stop) = watch::channel(false);
+            assert_eq!(
+                worker.run_goal_in(root.path(), &job, &mut stop).await,
+                Err(code)
+            );
+        }
     }
 
     #[tokio::test]

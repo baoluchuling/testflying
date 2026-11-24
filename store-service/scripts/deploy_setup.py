@@ -396,6 +396,18 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
         check(healthy, "HTTP health after API-only rollout")
         check(request("/health", scheme="https")[0] == 200, "HTTPS health with certificate verification")
         if documents_only:
+            status, body = request("/v1/screenshot-settings", snapshot["admin"])
+            screenshot_settings = json.loads(body)
+            execution = screenshot_settings.get("execution", {})
+            check(status == 200 and set(execution) == {"preparationMinutes", "perImageMinutes"}
+                  and type(execution["preparationMinutes"]) is int and 0 <= execution["preparationMinutes"] <= 1440
+                  and type(execution["perImageMinutes"]) is int and 1 <= execution["perImageMinutes"] <= 1440,
+                  "administrator can read bounded dynamic screenshot execution budget")
+            status, body = request("/connector-setup/api/screenshot-settings", snapshot["admin"])
+            check(status == 200 and json.loads(body) == screenshot_settings,
+                  "screenshot budget mirrors HTTPS developer session route")
+            check(request("/v1/screenshot-settings", snapshot["token"])[0] == 401,
+                  "business credentials cannot read screenshot execution and destination settings")
             status, body = request("/v1/logs?limit=20", snapshot["admin"])
             logs = json.loads(body)
             check(status == 200 and logs["retentionDays"] == 7 and logs["storageHealthy"],
@@ -617,6 +629,8 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                                               "automaticMembershipChanges": False, "publicCoreEndpointCountUnchanged": True},
                       "screenshotConnectorSha256": worker["sha256"] if worker else snapshot["screenshotConnectorSha256"],
                       "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
+                      "screenshotExecution": {**execution, "timingProtocol": 1, "deliveryGraceSeconds": 360,
+                                              "productionScreenshotTasksCreated": 0},
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
                       "actualStoreAccountsUsed": False,
                       "apiDocumentation": {"contractVersion": "2026-11-18", "coreEndpoints": 23, "uploadHelpers": 2, "formats": ["json", "markdown", "openapi"],

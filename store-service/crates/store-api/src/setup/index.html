@@ -95,6 +95,12 @@
         <summary>截图上传与结果通知</summary>
         <p class="muted">全局配置影响后续签发的上传凭证。中心加密保存 OSS 与通知密钥，只向截图节点发放短时签名 URL；PNG 由节点直传 OSS，不经过中心。</p>
         <form id="screenshotSettingsForm" autocomplete="off">
+          <h3>截图执行预算</h3>
+          <p class="hint">总执行预算＝准备时间＋截图目标数×单张预算，与上传顺序无关。只影响之后领取的任务；新版截图节点升级后生效。</p>
+          <div class="grid">
+            <div><label for="screenshotPreparationMinutes">首次准备时间（分钟）</label><input id="screenshotPreparationMinutes" type="number" min="0" max="1440" step="1" value="30" required></div>
+            <div><label for="screenshotPerImageMinutes">单张图片预算（分钟）</label><input id="screenshotPerImageMinutes" type="number" min="1" max="1440" step="1" value="15" required></div>
+          </div>
           <h3>阿里云 OSS</h3>
           <label class="toggle"><input id="ossEnabled" type="checkbox"><span><strong>启用 OSS 上传</strong><small>未启用或未配置时，任务仍可提交和截图，上传阶段会提示配置问题。</small></span></label>
           <div class="grid">

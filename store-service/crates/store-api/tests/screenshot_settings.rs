@@ -58,6 +58,92 @@ async fn send(
 async fn value(response: axum::response::Response) -> Value {
     serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap()
 }
+
+#[tokio::test]
+async fn execution_budget_settings_are_admin_only_validated_and_partial() {
+    let app = app();
+    for token in ["", BUSINESS] {
+        assert_eq!(
+            send(
+                &app,
+                "PUT",
+                "/v1/screenshot-settings",
+                token,
+                json!({"execution":{"perImageMinutes":20}}),
+                (true, None, false)
+            )
+            .await
+            .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    let initial = value(
+        send(
+            &app,
+            "GET",
+            "/v1/screenshot-settings",
+            ADMIN,
+            json!({}),
+            (true, None, false),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        initial["execution"],
+        json!({"preparationMinutes":30,"perImageMinutes":15})
+    );
+    let saved = value(
+        send(
+            &app,
+            "PUT",
+            "/v1/screenshot-settings",
+            ADMIN,
+            json!({"execution":{"perImageMinutes":20}}),
+            (true, None, false),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(
+        saved["execution"],
+        json!({"preparationMinutes":30,"perImageMinutes":20})
+    );
+    for execution in [
+        json!({"perImageMinutes":0}),
+        json!({"preparationMinutes":1441}),
+        json!({"perImageMinutes":-1}),
+        json!({"perImageMinutes":1.5}),
+        json!({"unknown":3}),
+    ] {
+        assert_eq!(
+            send(
+                &app,
+                "PUT",
+                "/v1/screenshot-settings",
+                ADMIN,
+                json!({"execution":execution}),
+                (true, None, false)
+            )
+            .await
+            .status(),
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
+    }
+    let after = value(
+        send(
+            &app,
+            "GET",
+            "/v1/screenshot-settings",
+            ADMIN,
+            json!({}),
+            (true, None, false),
+        )
+        .await,
+    )
+    .await;
+    assert_eq!(after, saved);
+}
 #[tokio::test]
 async fn destinations_are_https_admin_only_and_setup_session_keeps_secrets_write_only() {
     let app = app();

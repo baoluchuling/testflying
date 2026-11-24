@@ -442,13 +442,16 @@ async fn claim(
 ) -> Result<Response> {
     authorize_worker(&state, &id, &headers)?;
     Ok(
-        match state.registry.claim_screenshot_with_skill_protocol(
+        match state.registry.claim_screenshot_with_timing_protocol(
             &id,
             headers
                 .get("x-screenshot-protocol")
                 .is_some_and(|v| v == "3"),
             headers
                 .get("x-screenshot-skill-protocol")
+                .is_some_and(|v| v == "1"),
+            headers
+                .get("x-screenshot-timing-protocol")
                 .is_some_and(|v| v == "1"),
         )? {
             Some(job) => Json(job).into_response(),
@@ -501,6 +504,17 @@ async fn fail(
     if !matches!(
         failure.code.as_str(),
         "profile_unavailable"
+            | "codex_execution_timeout"
+            | "invalid_execution_budget"
+            | "codex_goal_stream_closed"
+            | "codex_goal_unconfirmed"
+            | "codex_turn_failed"
+            | "codex_thread_start_failed"
+            | "codex_turn_start_failed"
+            | "codex_goal_setup_failed"
+            | "codex_initialize_failed"
+            | "codex_tool_reply_failed"
+            | "codex_interrupted"
             | "codex_failed"
             | "selection_invalid"
             | "capture_failed"

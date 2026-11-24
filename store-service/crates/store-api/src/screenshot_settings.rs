@@ -9,6 +9,7 @@ use store_protocol::StoreError;
 #[derive(Default, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub(crate) struct Settings {
+    pub execution: store_protocol::screenshot::ScreenshotExecutionPolicy,
     pub oss: OssSettings,
     pub notification: NotificationSettings,
     pub revision: u64,
@@ -55,8 +56,16 @@ pub(crate) struct NotificationSettings {
 #[derive(Default, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct SettingsUpdate {
+    pub execution: Option<ExecutionUpdate>,
     pub oss: Option<OssUpdate>,
     pub notification: Option<NotificationUpdate>,
+}
+
+#[derive(Default, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct ExecutionUpdate {
+    pub preparation_minutes: Option<u32>,
+    pub per_image_minutes: Option<u32>,
 }
 
 #[derive(Default, Clone, Deserialize)]
@@ -196,6 +205,7 @@ impl Settings {
     pub(crate) fn view(&self) -> Value {
         json!({
             "revision": self.revision,
+            "execution": self.execution,
             "oss": {
                 "enabled": self.oss.enabled, "region": self.oss.region,
                 "bucket": self.oss.bucket, "endpoint": self.oss.endpoint,
@@ -214,6 +224,17 @@ impl Settings {
 
     pub(crate) fn apply(&self, update: SettingsUpdate) -> Result<Self, StoreError> {
         let mut next = self.clone();
+        if let Some(input) = update.execution {
+            if let Some(value) = input.preparation_minutes {
+                next.execution.preparation_minutes = value;
+            }
+            if let Some(value) = input.per_image_minutes {
+                next.execution.per_image_minutes = value;
+            }
+            if next.execution.timeout_seconds(1).is_none() {
+                return Err(invalid());
+            }
+        }
         if let Some(input) = update.oss {
             let new_secret = input
                 .access_key_secret
@@ -278,6 +299,34 @@ pub(crate) async fn update(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn execution_defaults_and_partial_updates_preserve_encrypted_destination_values() {
+        let old: Settings = serde_json::from_value(json!({"revision":7,"oss":{"accessKeySecret":"fixture-secret"},"notification":{"token":"fixture-token"}})).unwrap();
+        assert_eq!(old.execution.timeout_seconds(64), Some(990 * 60));
+        let next = old
+            .apply(serde_json::from_value(json!({"execution":{"perImageMinutes":20}})).unwrap())
+            .unwrap();
+        assert_eq!(next.execution.preparation_minutes, 30);
+        assert_eq!(next.execution.per_image_minutes, 20);
+        assert_eq!(next.oss.access_key_secret, "fixture-secret");
+        assert_eq!(next.notification.token, "fixture-token");
+        for execution in [
+            json!({"perImageMinutes":0}),
+            json!({"perImageMinutes":1441}),
+            json!({"preparationMinutes":1441}),
+        ] {
+            assert!(old
+                .apply(serde_json::from_value(json!({"execution":execution})).unwrap())
+                .is_err());
+        }
+        assert!(serde_json::from_value::<SettingsUpdate>(
+            json!({"execution":{"perImageMinutes":-1}})
+        )
+        .is_err());
+        assert!(!next.view().to_string().contains("fixture-secret"));
+        assert!(!next.view().to_string().contains("fixture-token"));
+    }
 
     #[test]
     fn rotating_sts_credentials_to_permanent_keys_clears_old_token() {

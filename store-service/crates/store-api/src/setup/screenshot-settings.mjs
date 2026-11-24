@@ -41,6 +41,8 @@ export function bindScreenshotSettings(request, getSession) {
 
   function populate(value) {
     settings = value;
+    $("screenshotPreparationMinutes").value = value.execution?.preparationMinutes ?? 30;
+    $("screenshotPerImageMinutes").value = value.execution?.perImageMinutes ?? 15;
     $("ossEnabled").checked = value.oss.enabled;
     for (const [key, id] of Object.entries(fields)) $(id).value = value.oss[key] ?? "";
     $("screenshotNotificationUrl").value = value.notification.url ?? "";
@@ -71,7 +73,7 @@ export function bindScreenshotSettings(request, getSession) {
       if ($("ossSecurityToken").value) oss.securityToken = $("ossSecurityToken").value;
       const notification = { url: $("screenshotNotificationUrl").value.trim() };
       if ($("screenshotNotificationToken").value) notification.token = $("screenshotNotificationToken").value;
-      body = { oss, notification };
+      body = { oss, notification, execution: {preparationMinutes: $("screenshotPreparationMinutes").valueAsNumber, perImageMinutes: $("screenshotPerImageMinutes").valueAsNumber} };
     }
     busy = true;
     renderBusy();

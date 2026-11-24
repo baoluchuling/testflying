@@ -132,6 +132,7 @@ impl Protocol {
 }
 
 pub(super) struct Session<'a> {
+    pub(super) execution_timeout: Option<Duration>,
     pub(super) root: &'a Path,
     pub(super) instructions: String,
     pub(super) prompt: &'a str,
@@ -298,11 +299,18 @@ impl Session<'_> {
             _ = stop.wait_for(|stopped| *stopped) => return Err("codex_interrupted"),
         };
         log.event(Some(self.job), "codex_goal_started");
-        let limit = Instant::now() + Duration::from_secs(24 * 60);
+        let budget = self.execution_timeout.unwrap_or(Duration::from_secs(
+            store_protocol::screenshot::LEGACY_SCREENSHOT_TIMEOUT_SECONDS,
+        ));
+        let limit = Instant::now() + budget;
+        log.event(
+            Some(self.job),
+            format_args!("codex_execution_budget seconds={}", budget.as_secs()),
+        );
         rpc.deadline = limit;
         loop {
             let message = tokio::select! {
-                result = rpc.recv() => result.map_err(|_| "codex_goal_stream_closed")?,
+                result = rpc.recv() => result.map_err(|_| if Instant::now()>=limit {"codex_execution_timeout"}else{"codex_goal_stream_closed"})?,
                 _ = stop.wait_for(|stopped| *stopped) => return Err("codex_interrupted"),
             };
             let params = &message["params"];
@@ -346,7 +354,7 @@ impl Session<'_> {
                     Some("thread/goal/cleared") => return Err("codex_goal_unconfirmed"),
                     Some("turn/completed") if params["turn"]["status"] == "completed" => {
                         // An active native Goal continues in a new turn on the same thread.
-                        rpc.deadline = limit.min(Instant::now() + Duration::from_secs(30));
+                        rpc.deadline = limit;
                     }
                     Some("turn/completed") => return Err("codex_turn_failed"),
                     Some("turn/started") => rpc.deadline = limit,
@@ -389,6 +397,139 @@ fn skill_available(listed: &Value, root: &Path, skill: &InstalledSkill) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn budget_fixture(root: &Path, tail: &str) -> std::path::PathBuf {
+        let path = root.join("budget-codex.sh");
+        let script = format!(
+            r#"#!/bin/sh
+set -eu
+read_request() {{ IFS= read -r line; }}
+reply() {{ printf '%s\n' "$1"; }}
+read_request
+reply '{{"id":0,"result":{{}}}}'
+read_request
+read_request
+reply '{{"id":1,"result":{{"thread":{{"id":"fixture-thread"}}}}}}'
+read_request
+reply '{{"id":2,"result":{{"goal":{{"status":"active"}}}}}}'
+read_request
+reply '{{"id":3,"result":{{"turn":{{"id":"first-turn"}}}}}}'
+{tail}
+"#
+        );
+        std::fs::write(&path, script).unwrap();
+        path
+    }
+
+    #[tokio::test]
+    async fn configured_budget_reports_a_distinct_timeout_instead_of_the_old_fixed_limit() {
+        let root = tempfile::tempdir().unwrap();
+        let fixture = budget_fixture(root.path(), "cat >/dev/null");
+        let session = Session {
+            execution_timeout: Some(Duration::from_millis(100)),
+            root: root.path(),
+            instructions: INSTRUCTIONS.into(),
+            prompt: "Capture",
+            job: Uuid::new_v4(),
+            skill: None,
+        };
+        let log = Log::for_config(&root.path().join("connector.json"));
+        let mut command = Command::new("/bin/sh");
+        command.arg(fixture);
+        let (_stop, mut stop) = watch::channel(false);
+        assert_eq!(
+            session
+                .run(
+                    &mut command,
+                    &log,
+                    &mut stop,
+                    async |_, _, _| ToolReply::ok(json!({}), GoalChange::Continue)
+                )
+                .await,
+            Err("codex_execution_timeout")
+        );
+        let text = std::fs::read_to_string(root.path().join("connector.log")).unwrap();
+        assert!(text.contains("codex_execution_timeout"));
+    }
+
+    #[tokio::test]
+    async fn completed_turn_waits_for_native_goal_continuation_beyond_thirty_seconds() {
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        };
+        let root = tempfile::tempdir().unwrap();
+        let fixture = budget_fixture(
+            root.path(),
+            r#"
+reply '{"id":"clock","method":"item/tool/call","params":{"threadId":"fixture-thread","tool":"clock","arguments":{}}}'
+read_request
+reply '{"method":"turn/completed","params":{"threadId":"fixture-thread","turn":{"status":"completed"}}}'
+touch "$1/turn-ended"
+while [ ! -f "$1/continue" ]; do sleep 0.01; done
+reply '{"method":"turn/started","params":{"threadId":"fixture-thread"}}'
+reply '{"id":"done","method":"item/tool/call","params":{"threadId":"fixture-thread","tool":"done","arguments":{}}}'
+read_request
+read_request
+reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
+"#,
+        );
+        let session = Session {
+            execution_timeout: Some(Duration::from_secs(120)),
+            root: root.path(),
+            instructions: INSTRUCTIONS.into(),
+            prompt: "Capture",
+            job: Uuid::new_v4(),
+            skill: None,
+        };
+        let log = Log::for_config(&root.path().join("connector.json"));
+        let awake = Arc::new(AtomicBool::new(true));
+        let active = awake.clone();
+        let keep_awake = tokio::spawn(async move {
+            while active.load(Ordering::Relaxed) {
+                tokio::task::yield_now().await;
+            }
+        });
+        let path = root.path().to_owned();
+        let controller = tokio::spawn(async move {
+            tokio::task::spawn_blocking({
+                let path = path.clone();
+                move || {
+                    let until = std::time::Instant::now() + Duration::from_secs(5);
+                    while !path.join("turn-ended").exists() {
+                        assert!(std::time::Instant::now() < until);
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            })
+            .await
+            .unwrap();
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(31)).await;
+            for _ in 0..5 {
+                tokio::task::yield_now().await;
+            }
+            std::fs::write(path.join("continue"), b"ready").unwrap();
+            tokio::time::resume();
+        });
+        let mut command = Command::new("/bin/sh");
+        command.arg(fixture).arg(root.path());
+        let (_stop, mut stop) = watch::channel(false);
+        let outcome = session
+            .run(&mut command, &log, &mut stop, async |name, _, _| {
+                if name == "done" {
+                    ToolReply::ok(json!({"delivered":true}), GoalChange::Delivered)
+                } else {
+                    ToolReply::ok(json!({}), GoalChange::Continue)
+                }
+            })
+            .await;
+        controller.await.unwrap();
+        awake.store(false, Ordering::Relaxed);
+        keep_awake.await.unwrap();
+        assert_eq!(outcome, Ok(()));
+    }
 
     #[tokio::test]
     async fn verifies_native_skill_discovery_before_turn_and_preserves_original_text() {
@@ -452,6 +593,7 @@ reply '{"id":4,"result":{"goal":{"status":"blocked"}}}'
             std::fs::write(&fixture, script).unwrap();
             let prompt = "原始请求\n  keep spacing and \"quotes\"";
             let session = Session {
+                execution_timeout: None,
                 root: &cwd,
                 instructions: INSTRUCTIONS.into(),
                 prompt,
@@ -539,6 +681,7 @@ reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
 "#).unwrap();
         let prompt = "Amberia\n请截取 iPhone 首页的 \"商店图\"".repeat(170);
         let session = Session {
+            execution_timeout: None,
             root: root.path(),
             instructions: INSTRUCTIONS.into(),
             prompt: &prompt,

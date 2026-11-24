@@ -2,6 +2,41 @@ use crate::StoreError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+pub const LEGACY_SCREENSHOT_TIMEOUT_SECONDS: u64 = 24 * 60;
+pub const SCREENSHOT_DELIVERY_GRACE_SECONDS: u64 = 6 * 60;
+pub const MAX_SCREENSHOT_EXECUTION_SECONDS: u64 = (256 + 1) * 1440 * 60;
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+pub struct ScreenshotExecutionPolicy {
+    pub preparation_minutes: u32,
+    pub per_image_minutes: u32,
+}
+
+impl Default for ScreenshotExecutionPolicy {
+    fn default() -> Self {
+        Self {
+            preparation_minutes: 30,
+            per_image_minutes: 15,
+        }
+    }
+}
+
+impl ScreenshotExecutionPolicy {
+    pub fn timeout_seconds(&self, targets: usize) -> Option<u64> {
+        if !(1..=256).contains(&targets)
+            || self.preparation_minutes > 1440
+            || !(1..=1440).contains(&self.per_image_minutes)
+        {
+            return None;
+        }
+        u64::from(self.per_image_minutes)
+            .checked_mul(targets as u64)?
+            .checked_add(u64::from(self.preparation_minutes))?
+            .checked_mul(60)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(deny_unknown_fields)]
 pub struct ScreenshotTarget {
@@ -56,6 +91,48 @@ pub fn validate_targets(targets: &[ScreenshotTarget]) -> Result<(), StoreError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn screenshot_budget_scales_with_targets_and_validates_all_bounds() {
+        let policy = ScreenshotExecutionPolicy::default();
+        assert_eq!(policy.timeout_seconds(1), Some(45 * 60));
+        assert_eq!(policy.timeout_seconds(64), Some((30 + 64 * 15) * 60));
+        assert_eq!(policy.timeout_seconds(256), Some((30 + 256 * 15) * 60));
+        assert_eq!(policy.timeout_seconds(0), None);
+        assert_eq!(policy.timeout_seconds(257), None);
+        assert_eq!(
+            ScreenshotExecutionPolicy {
+                preparation_minutes: 0,
+                per_image_minutes: 1
+            }
+            .timeout_seconds(1),
+            Some(60)
+        );
+        assert_eq!(
+            ScreenshotExecutionPolicy {
+                preparation_minutes: 1440,
+                per_image_minutes: 1440
+            }
+            .timeout_seconds(256),
+            Some(MAX_SCREENSHOT_EXECUTION_SECONDS)
+        );
+        for invalid in [
+            ScreenshotExecutionPolicy {
+                preparation_minutes: 1441,
+                per_image_minutes: 15,
+            },
+            ScreenshotExecutionPolicy {
+                preparation_minutes: 30,
+                per_image_minutes: 0,
+            },
+            ScreenshotExecutionPolicy {
+                preparation_minutes: 0,
+                per_image_minutes: u32::MAX,
+            },
+        ] {
+            assert_eq!(invalid.timeout_seconds(1), None);
+        }
+    }
 
     fn target() -> ScreenshotTarget {
         ScreenshotTarget {

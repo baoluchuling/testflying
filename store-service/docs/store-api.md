@@ -223,7 +223,7 @@ Firebase 错误只返回固定安全码：`firebase_not_configured`（503，Goog
 
 ### 节点升级与目录发现
 
-商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.3`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
+商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.4`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
 
 后续节点生产代码、依赖或安装脚本变化，必须先提升 `crates/store-connector/Cargo.toml` 的独立版本和 `store-protocol::release::CONNECTOR_VERSION`，并同步 Cargo.lock。固定发布守卫检查版本一致、禁止回退，并比较各平台上次发布的节点输入摘要；输入改变却未提升版本时构建直接失败。仅中心页面／接口文档改动可保留节点版本。商店三平台及 arm64 截图包必须使用同一版本与输入摘要才可部署；版本信息写入正式构建和发布报告。
 
@@ -1080,6 +1080,16 @@ Content-Type: application/json
 
 每次成功 POST 都创建一个新任务并返回新的 jobId。若响应丢失，不要自动重发，避免重复执行；正常业务不需要通过查询来推动任务完成。
 
+### 截图执行预算（节点 0.2.4）
+
+外部仍只提交现有平台、包名、提示词和 target，不增加时长参数。中心后台「截图上传与结果通知」增加准备时间与单张图片预算；管理员 PUT `/v1/screenshot-settings` 或原 HTTPS session 镜像可单独更新 `{"execution":{"preparationMinutes":30,"perImageMinutes":15}}`。准备时间范围 0–1440 分钟，单张 1–1440 分钟，省略保留原值。原有 OSS／通知密钥、配置和凭据保持，旧加密配置缺少 execution 时使用默认值。
+
+**总执行预算＝准备时间＋target 实际条目数×单张预算**。默认单张 15 分钟，准备另加 30 分钟：1 张为 45 分钟，64 张为 16 小时 30 分钟。直接按 target 条目数计算，预算与截图上传早晚、批次及重试无关；提前完成立即结束。
+
+新版截图节点声明 `X-Screenshot-Timing-Protocol: 1`，中心领取任务时下发 `executionTimeoutSeconds` 并固定本次预算，节点按此执行；中心的有效期另留 6 分钟交付收尾。后台修改仅影响之后开始执行的任务，已经运行的任务不被突然缩短。排队有效期仍为 24 小时。旧节点或旧中心未协商此能力时继续使用旧 24 分钟执行／30 分钟中心有效期，需升级截图节点后才能享用新预算。
+
+预算用尽上报 `codex_execution_timeout`；新版还分别记录 Codex 初始化、thread／Goal／turn 启动失败、turn 失败、流关闭和工具回复失败等固定安全码。未知上传结果仍保留 `delivery_unknown`，不能从超时推断图片未写入 OSS。中心日志的 `screenshot.claimed` 保存预算秒数和目标数，以 jobId 作为 requestId；终态失败也使用同一 jobId，可在后台按任务 ID 查询，无需仅凭总耗时猜测。记录不包含提示词、密钥或签名 URL。
+
 ### 4. 可选：查询状态和结果
 
 ```http
@@ -1116,7 +1126,7 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 状态可能为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。节点逐项截图和上传，第一张成功不会结束多目标任务；**全部 target 均上传确认后才为 succeeded**。`result.images` 按原 target 顺序排列，`targetIndex` 为从 0 开始的数组位置，每张图携带原 target；尚未完成的项目不会占位。后续目标失败时保留已确认图片，`status=failed`、`error` 为错误码，不能把部分图片当作整单成功。
 
-任务记录约保留七天。本节以新版任务协议为准。
+终态任务记录约保留七天；新版长任务按终态通知快照时间计算，避免任务运行多日后刚完成便被清理，旧无快照记录沿用创建时间。本节以新版任务协议为准。
 
 ### 5. 图片交付与限制
 

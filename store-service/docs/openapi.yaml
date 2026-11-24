@@ -746,13 +746,13 @@ paths:
         default: {$ref: '#/components/responses/Error'}
   /v1/screenshot-settings:
     get:
-      summary: Read masked OSS and Studio capture-v1 notification settings
-      description: HTTPS administrator only. Secret values are never returned. Configured HTTP or HTTPS notification URL and independent token enable automatic POST of terminal results using capture-v1; missing config never blocks screenshots.
+      summary: Read screenshot execution budget and masked OSS notification settings
+      description: HTTPS administrator only. execution defaults to preparationMinutes 30 and perImageMinutes 15. New timing-protocol nodes use preparation plus target count times per-image minutes, independent of upload order. Secret values are never returned. Configured notification enables terminal capture-v1 callbacks; missing config never blocks screenshots.
       security: [{adminToken: []}]
       responses: {'200': {$ref: '#/components/responses/Data'}, default: {$ref: '#/components/responses/Error'}}
     put:
-      summary: Save encrypted screenshot delivery settings
-      description: HTTPS administrator only. Partial groups may be updated; omitted or blank passwords preserve existing values. Enabling OSS requires region, bucket, complete bucket Endpoint and credentials. Changing AccessKey ID requires a new Secret. Configuration takes effect on subsequent upload tickets.
+      summary: Save screenshot execution budget and encrypted delivery settings
+      description: HTTPS administrator only. Partial groups may be updated; omitted or blank passwords preserve existing values. Execution budget is snapshotted when a timing-protocol node claims a task; updates affect subsequent claims. Enabling OSS requires region, bucket, complete bucket Endpoint and credentials. Changing AccessKey ID requires a new Secret. OSS changes take effect on subsequent upload tickets.
       security: [{adminToken: []}]
       requestBody:
         required: true
@@ -762,6 +762,12 @@ paths:
               type: object
               additionalProperties: false
               properties:
+                execution:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    preparationMinutes: {type: integer, minimum: 0, maximum: 1440, default: 30}
+                    perImageMinutes: {type: integer, minimum: 1, maximum: 1440, default: 15}
                 oss:
                   type: object
                   additionalProperties: false
