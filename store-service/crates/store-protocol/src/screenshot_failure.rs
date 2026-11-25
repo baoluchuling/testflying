@@ -121,7 +121,7 @@ pub fn summary(
     result: &Value,
 ) -> String {
     let base = match code {
-        "codex_goal_unconfirmed" => "Codex Goal 已退出活跃状态，但截图任务尚未确认完成",
+        "codex_goal_unconfirmed" => "任务已退出",
         "codex_reported_failure" => "Codex 报告截图任务无法继续",
         "codex_execution_timeout" | "screenshot_timeout" => "截图任务超过执行时限",
         "codex_turn_failed" => "Codex 执行回合失败",
@@ -157,43 +157,7 @@ pub fn summary(
     let uploaded = result["images"].as_array().map_or(0, Vec::len);
     parts.push(format!("已确认候选图 {uploaded}/{count}"));
     let d = details.cloned().unwrap_or_default().sanitized(&[]);
-    if let Some(reason) = &d.reason {
-        parts.push(format!("阻塞原因：{reason}"));
-    }
-    if let Some(message) = &d.native_message {
-        parts.push(format!("Codex 返回：{message}"));
-    }
-    if d.reason.is_none() && d.native_message.is_none() {
-        parts.push("未提供具体原因，现有记录无法确认根因".into());
-    }
-    for (label, value) in [
-        ("事件", d.event),
-        ("Goal 状态", d.goal_status),
-        ("RPC", d.rpc_method),
-        ("最后工具", d.last_tool),
-        ("工具错误", d.last_tool_error),
-        ("诊断分类", d.diagnostic),
-    ] {
-        if let Some(value) = value {
-            parts.push(format!("{label}：{value}"));
-        }
-    }
-    if let Some(code) = d.rpc_error_code {
-        parts.push(format!("RPC 错误码：{code}"));
-    }
-    if let Some(code) = d.exit_code {
-        parts.push(format!("进程退出码：{code}"));
-    }
-    if d.requires_finalization {
-        parts.push(
-            if d.finalization_started {
-                "整单最终提交已开始，尚未确认"
-            } else {
-                "整单尚未最终提交"
-            }
-            .into(),
-        );
-    }
+    parts.push(d.reason.or(d.native_message).unwrap_or_else(|| "未提供具体原因".into()));
     parts.join("；").chars().take(2000).collect()
 }
 
@@ -245,7 +209,7 @@ mod tests {
             &json!([{}, {}]),
             &json!({"images":[{}]}),
         );
-        assert!(text.contains("1/2") && text.contains("无法确认根因"));
+        assert_eq!(text,"任务已退出；已确认候选图 1/2；未提供具体原因");
         let d = FailureDetails {
             reason: Some("缺少可用的 Android 系统镜像".into()),
             goal_status: Some("blocked".into()),
@@ -257,7 +221,7 @@ mod tests {
             &json!([{}]),
             &Value::Null,
         );
-        assert!(text.contains("系统镜像") && text.contains("blocked"));
-        assert!(!text.contains("无法确认根因"));
+        assert!(text.contains("系统镜像") && !text.contains("blocked"));
+        assert!(!text.contains("未提供具体原因"));
     }
 }

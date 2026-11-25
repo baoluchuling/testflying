@@ -1139,11 +1139,11 @@ Authorization: Bearer INTEGRATION_TOKEN
 
 状态可能为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。节点逐项截图和上传，第一张成功不会结束多目标任务。支持审阅的节点在所有候选图确认、审阅并调用最终提交后才为 succeeded；旧节点沿用最后一张上传确认后完成。`result.images` 按原 target 顺序排列，`targetIndex` 为从 0 开始的数组位置。失败任务保留候选图供排障，但不能视作整单完成，审阅任务最终提交前失败的外部回调不含候选图。
 
-截图任务查询的 `errorCode` 是稳定错误码（如 `codex_goal_unconfirmed`），`error` 是最长 2000 个 Unicode 字符的脱敏详细说明；无任务错误时两者为 null。说明包含已确认图数、目标数，以及节点实际采集到的阻塞原因、Goal 状态、RPC 或工具错误等上下文。原生协议没有给出原因时明确写“无法确认根因”，不猜测。通知本身的错误仍在 `result.notificationError`，普通同步 HTTP 错误仍为 `error:{code,message,...}`。
+截图任务查询的 `errorCode` 是稳定错误码（如 `codex_goal_unconfirmed`），`error` 是最长 2000 个 Unicode 字符的脱敏详细说明；无任务错误时两者为 null。说明按“任务结果；已确认候选图 x/y；具体原因”展示；没有原因时固定为“未提供具体原因”。Goal 状态、RPC、工具错误、退出码等技术上下文只保留在日志，不拼入外部详情。通知本身的错误仍在 `result.notificationError`，普通同步 HTTP 错误仍为 `error:{code,message,...}`。
 
-截图节点 0.2.7 声明 `X-Screenshot-Failure-Protocol: 1`，中心领取响应返回 `failureDetailsSupported:true` 后，内部 failure 请求保留 `code` 并可传 `details`；未协商时节点只发旧 code。新节点增加 `report_capture_failure({"reason":"具体阻塞事实和已尝试的处理"})` 工具；可恢复错误继续处理，无法完成时才上报，不能覆盖未知上传／撤销／最终提交。Skill 需同步补充此流程。旧节点只有通用说明，历史缺失的原生原因无法补回。
+截图节点 0.2.8 声明 `X-Screenshot-Failure-Protocol: 1`，中心领取响应返回 `failureDetailsSupported:true` 后，内部 failure 请求保留 `code` 并可传 `details`；未协商时节点只发旧 code。新节点增加 `report_capture_failure({"reason":"具体阻塞事实和已尝试的处理"})` 工具；可恢复错误继续处理，无法完成时才上报，不能覆盖未知上传／撤销／最终提交。Skill 需同步补充此流程。旧节点只有通用说明，历史缺失的原生原因无法补回。
 
-失败示例：`{"status":"failed","errorCode":"codex_goal_unconfirmed","error":"Codex Goal 已退出活跃状态，但截图任务尚未确认完成；已确认候选图 30/37；未提供具体原因，现有记录无法确认根因；Goal 状态：blocked"}`。
+失败示例：`{"status":"failed","errorCode":"codex_goal_unconfirmed","error":"任务已退出；已确认候选图 30/37；未提供具体原因"}`。
 
 终态任务记录约保留七天；新版长任务按终态通知快照时间计算，避免任务运行多日后刚完成便被清理，旧无快照记录沿用创建时间。本节以新版任务协议为准。
 

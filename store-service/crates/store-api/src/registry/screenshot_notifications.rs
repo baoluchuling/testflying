@@ -253,7 +253,7 @@ mod tests {
         let body: Value = serde_json::from_str(&first.body).unwrap();
         assert_eq!(
             body,
-            json!({"upstream_job_id":"job","revision":1,"status":"partial","items":[{"slot":"details","language":"pt","url":"https://images.example/a.png","version":"abc"}],"errorCode":"capture_failed","error":"截图采集未完成；已确认候选图 1/0；未提供具体原因，现有记录无法确认根因"})
+            json!({"upstream_job_id":"job","revision":1,"status":"partial","items":[{"slot":"details","language":"pt","url":"https://images.example/a.png","version":"abc"}],"errorCode":"capture_failed","error":"截图采集未完成；已确认候选图 1/0；未提供具体原因"})
         );
         assert!(registry.claim_notification(103).unwrap().is_none());
         drop(registry);
