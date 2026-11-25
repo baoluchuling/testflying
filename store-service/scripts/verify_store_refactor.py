@@ -32,6 +32,7 @@ def source_hashes() -> dict[str, str]:
                        + list((crates / "store-api/src/setup").rglob("*"))
                        + list((PROJECT / "packaging/connector").rglob("*"))
                        + list((PROJECT / "packaging/screenshot-connector").rglob("*"))
+                       + list((PROJECT / "packaging/screenshot-skill").rglob("*"))
                        + list(crates.rglob("*.mjs"))))
     files = [path for path in files if path.is_file()]
     return {str(p.relative_to(PROJECT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}

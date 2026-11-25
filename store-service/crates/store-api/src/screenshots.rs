@@ -451,7 +451,7 @@ async fn claim(
 ) -> Result<Response> {
     authorize_worker(&state, &id, &headers)?;
     Ok(
-        match state.registry.claim_screenshot_with_protocols(
+        match state.registry.claim_screenshot_with_features(
             &id,
             headers
                 .get("x-screenshot-protocol")
@@ -464,6 +464,9 @@ async fn claim(
                 .is_some_and(|v| v == "1"),
             headers
                 .get("x-screenshot-review-protocol")
+                .is_some_and(|v| v == "1"),
+            headers
+                .get("x-screenshot-failure-protocol")
                 .is_some_and(|v| v == "1"),
         )? {
             Some(job) => Json(job).into_response(),
@@ -504,6 +507,7 @@ fn lease(headers: &HeaderMap) -> Result<&str> {
 #[serde(deny_unknown_fields)]
 struct Failure {
     code: String,
+    details: Option<store_protocol::screenshot_failure::FailureDetails>,
 }
 
 async fn fail(
@@ -516,6 +520,7 @@ async fn fail(
     if !matches!(
         failure.code.as_str(),
         "profile_unavailable"
+            | "codex_reported_failure"
             | "codex_execution_timeout"
             | "invalid_execution_budget"
             | "codex_goal_stream_closed"
@@ -546,9 +551,22 @@ async fn fail(
             StoreError::new(422, "invalid_failure", "Unknown screenshot failure code").into(),
         );
     }
-    state
-        .registry
-        .finish_screenshot(&id, &job, lease(&headers)?, Err(&failure.code), "running")?;
+    if failure.details.as_ref().is_some_and(|d| !d.within_limits()) {
+        return Err(StoreError::new(
+            422,
+            "invalid_failure",
+            "Screenshot failure details exceed the allowed size",
+        )
+        .into());
+    }
+    state.registry.finish_screenshot_with_details(
+        &id,
+        &job,
+        lease(&headers)?,
+        Err(&failure.code),
+        "running",
+        failure.details.as_ref(),
+    )?;
     Ok(StatusCode::NO_CONTENT)
 }
 

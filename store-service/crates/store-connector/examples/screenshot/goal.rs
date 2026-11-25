@@ -4,7 +4,9 @@ use super::{
     worker::{drain_stderr, finish_process, wait_for_exit},
 };
 use serde_json::{json, Value};
+use std::sync::Mutex;
 use std::{io, path::Path, process::Stdio, time::Duration};
+use store_protocol::screenshot_failure::{sanitize, FailureDetails};
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{ChildStdin, ChildStdout, Command},
@@ -16,7 +18,7 @@ use uuid::Uuid;
 const GOAL: &str = "Fulfill the screenshot request, review the current images, and obtain confirmed final delivery using the Connector tools.";
 const MAX_MESSAGE: u64 = 1024 * 1024;
 
-pub(super) const INSTRUCTIONS: &str = "You own the screenshot task. Call get_capture_task first to read the task identity, center-generated jobId, app, ordered target array, requiresFinalization and current screenshot IDs. The user message is the original visual request. Fulfill targets separately without a Cartesian product. Use the zero-based targetIndex with capture_screenshot, upload_screenshot and discard_screenshot; omit it only for legacy target=null. Find the project on this computer, prepare a suitable iOS Simulator or Android Emulator, reuse one or create and boot it as needed, and decide whether to build, install or launch the app. Treat project source as read-only and use the provided build output paths. A missing existing simulator is not a blocker; only missing development tools or runtimes that prevent preparation are blockers. Validate the selected simulator, navigate to the requested screen and capture it. Upload or discard the current capture before capturing another. Use discard_screenshot to reject an unsuitable local image or an already confirmed uploaded image, then fix the screen and recapture that target. If upload has started or its outcome is unknown, first confirm upload_screenshot using the same screenshotId; do not abandon or replay an unknown upload. get_capture_task lists the screenshot IDs available for discard. When requiresFinalization=true, uploading every target is only staging: review all images, discard and retake unsuitable ones, then call finish_capture_task with an empty object. Only its delivered=true response completes this review-enabled task. If a discard or final submission is uncertain, retry that same operation before any other change. Legacy tasks with requiresFinalization=false finish when upload_screenshot returns delivered=true. Retryable tool errors stay in this same Goal: fix or wait and retry; report an unrecoverable blocker. Use the provided tools for delivery and preserve the requested app screen until capture completes.";
+pub(super) const INSTRUCTIONS: &str = "You own the screenshot task. Call get_capture_task first to read the task identity, center-generated jobId, app, ordered target array, requiresFinalization and current screenshot IDs. The user message is the original visual request. Fulfill targets separately without a Cartesian product. Use the zero-based targetIndex with capture_screenshot, upload_screenshot and discard_screenshot; omit it only for legacy target=null. Find the project on this computer, prepare a suitable iOS Simulator or Android Emulator, reuse one or create and boot it as needed, and decide whether to build, install or launch the app. Treat project source as read-only and use the provided build output paths. A missing existing simulator is not a blocker; only missing development tools or runtimes that prevent preparation are blockers. Validate the selected simulator, navigate to the requested screen and capture it. Upload or discard the current capture before capturing another. Use discard_screenshot to reject an unsuitable local image or an already confirmed uploaded image, then fix the screen and recapture that target. If upload has started or its outcome is unknown, first confirm upload_screenshot using the same screenshotId; do not abandon or replay an unknown upload. get_capture_task lists the screenshot IDs available for discard. When requiresFinalization=true, uploading every target is only staging: review all images, discard and retake unsuitable ones, then call finish_capture_task with an empty object. Only its delivered=true response completes this review-enabled task. If a discard or final submission is uncertain, retry that same operation before any other change. Legacy tasks with requiresFinalization=false finish when upload_screenshot returns delivered=true. Retryable tool errors stay in this same Goal: fix or wait and retry; report an unrecoverable blocker using report_capture_failure with a concise factual reason and attempted recovery, without secrets or full logs. Confirm pending upload, discard or final submission first. Do not mark the Goal complete before confirmed delivery. Use the provided tools for delivery and preserve the requested app screen until capture completes.";
 
 pub(super) const SKILL_INSTRUCTIONS: &str = "Use the attached screenshot skill for preparation, navigation and visual checks on the original captured images. Discard and retake unsuitable images before final submission. Connector tools, task identity, target order, one current capture at a time and confirmed final delivery remain authoritative. Skill product examples are historical examples; use the app and targets from get_capture_task.";
 
@@ -75,7 +77,8 @@ fn tool_specs() -> Value {
             "type":"object","properties":{"screenshotId":{"type":"string"},"targetIndex":{"type":"integer","minimum":0}},
             "required":["screenshotId"],"additionalProperties":false
         }},
-        {"name":"finish_capture_task","description":"Finalize the task only after every current target image is uploaded and visually acceptable. Retry this tool if final submission is uncertain.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}
+        {"name":"finish_capture_task","description":"Finalize the task only after every current target image is uploaded and visually acceptable. Retry this tool if final submission is uncertain.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+        {"name":"report_capture_failure","description":"End this task with a factual blocker only after recovery attempts cannot succeed. Do not include secrets, full prompts or logs. Pending upload, discard or final submission must be confirmed first.","inputSchema":{"type":"object","properties":{"reason":{"type":"string","minLength":1,"maxLength":2000}},"required":["reason"],"additionalProperties":false}}
     ])
 }
 
@@ -84,6 +87,19 @@ struct Protocol {
     output: BufReader<ChildStdout>,
     deadline: Instant,
 }
+
+#[derive(Debug)]
+struct RpcFailure {
+    code: Option<i64>,
+    message: String,
+}
+
+impl std::fmt::Display for RpcFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("App Server rejected the request")
+    }
+}
+impl std::error::Error for RpcFailure {}
 
 impl Protocol {
     async fn send(&mut self, message: Value) -> io::Result<()> {
@@ -120,10 +136,18 @@ impl Protocol {
                     self.unsupported(id).await?;
                 }
             } else if message["id"] == id {
-                return message
-                    .get("result")
-                    .cloned()
-                    .ok_or_else(|| io::Error::other("App Server rejected the request"));
+                return message.get("result").cloned().ok_or_else(|| {
+                    io::Error::other(RpcFailure {
+                        code: message["error"]["code"].as_i64(),
+                        message: sanitize(
+                            message["error"]["message"]
+                                .as_str()
+                                .unwrap_or("App Server rejected the request"),
+                            &[],
+                            500,
+                        ),
+                    })
+                });
             }
         }
     }
@@ -137,6 +161,7 @@ impl Protocol {
 }
 
 pub(super) struct Session<'a> {
+    pub(super) failure_details: Option<&'a Mutex<FailureDetails>>,
     pub(super) execution_timeout: Option<Duration>,
     pub(super) root: &'a Path,
     pub(super) instructions: String,
@@ -146,6 +171,21 @@ pub(super) struct Session<'a> {
 }
 
 impl Session<'_> {
+    fn record(&self, update: impl FnOnce(&mut FailureDetails)) {
+        if let Some(details) = self.failure_details {
+            update(&mut details.lock().unwrap());
+        }
+    }
+
+    fn rpc_failure(&self, method: &str, error: &io::Error) {
+        self.record(|d| {
+            d.rpc_method = Some(method.into());
+            if let Some(error) = error.get_ref().and_then(|e| e.downcast_ref::<RpcFailure>()) {
+                d.rpc_error_code = error.code;
+                d.native_message = Some(error.message.clone());
+            }
+        });
+    }
     pub(super) async fn run(
         &self,
         command: &mut Command,
@@ -190,12 +230,14 @@ impl Session<'_> {
             }
         };
         if let Err(stage) = result {
+            let exit_code = status.ok().and_then(|s| s.code());
+            self.record(|d| {
+                d.exit_code = exit_code;
+                d.diagnostic = Some(diagnostic.into());
+            });
             log.event(
                 Some(self.job),
-                format_args!(
-                    "{stage} exit={:?} diagnostic={diagnostic}",
-                    status.ok().and_then(|s| s.code())
-                ),
+                format_args!("{stage} exit={:?} diagnostic={diagnostic}", exit_code),
             );
         }
         result
@@ -211,7 +253,10 @@ impl Session<'_> {
             }),
         )
         .await
-        .map_err(|_| "codex_initialize_failed")?;
+        .map_err(|e| {
+            self.rpc_failure("initialize", &e);
+            "codex_initialize_failed"
+        })?;
         rpc.send(json!({"method":"initialized"}))
             .await
             .map_err(|_| "codex_initialize_failed")?;
@@ -223,7 +268,10 @@ impl Session<'_> {
                     json!({"cwds":[self.root],"forceReload":true}),
                 )
                 .await
-                .map_err(|_| "codex_skill_unavailable")?;
+                .map_err(|e| {
+                    self.rpc_failure("skills/list", &e);
+                    "codex_skill_unavailable"
+                })?;
             if !skill_available(&listed, self.root, skill) {
                 return Err("codex_skill_unavailable");
             }
@@ -248,7 +296,10 @@ impl Session<'_> {
                 }),
             )
             .await
-            .map_err(|_| "codex_thread_start_failed")?;
+            .map_err(|e| {
+                self.rpc_failure("thread/start", &e);
+                "codex_thread_start_failed"
+            })?;
         let thread = started["thread"]["id"]
             .as_str()
             .ok_or("codex_thread_start_failed")?
@@ -262,7 +313,10 @@ impl Session<'_> {
                 }),
             )
             .await
-            .map_err(|_| "codex_goal_setup_failed")?;
+            .map_err(|e| {
+                self.rpc_failure("thread/goal/set", &e);
+                "codex_goal_setup_failed"
+            })?;
         if goal["goal"]["status"] != "active" {
             return Err("codex_goal_setup_failed");
         }
@@ -288,7 +342,10 @@ impl Session<'_> {
             }),
         )
         .await
-        .map_err(|_| "codex_turn_start_failed")?;
+        .map_err(|e| {
+            self.rpc_failure("turn/start", &e);
+            "codex_turn_start_failed"
+        })?;
         Ok(thread)
     }
 
@@ -328,7 +385,15 @@ impl Session<'_> {
                     continue;
                 }
                 let name = params["tool"].as_str().unwrap_or_default().to_owned();
-                let reply = call(name, params["arguments"].clone(), stop.clone()).await;
+                let reply = call(name.clone(), params["arguments"].clone(), stop.clone()).await;
+                self.record(|d| {
+                    d.last_tool = Some(sanitize(&name, &[], 80));
+                    d.last_tool_error = if reply.success {
+                        None
+                    } else {
+                        reply.value["code"].as_str().map(|s| sanitize(s, &[], 80))
+                    };
+                });
                 // Give the result a bounded delivery window even if the tool consumed the time budget.
                 rpc.deadline = Instant::now() + Duration::from_secs(5);
                 rpc.send(json!({"id":id,"result":{
@@ -354,14 +419,44 @@ impl Session<'_> {
             if params["threadId"] == thread {
                 match method {
                     Some("thread/goal/updated") if params["goal"]["status"] != "active" => {
-                        return Err("codex_goal_unconfirmed")
+                        self.record(|d| {
+                            d.event = Some("thread/goal/updated".into());
+                            d.goal_status = params["goal"]["status"]
+                                .as_str()
+                                .map(|s| sanitize(s, &[], 80));
+                        });
+                        return Err("codex_goal_unconfirmed");
                     }
-                    Some("thread/goal/cleared") => return Err("codex_goal_unconfirmed"),
+                    Some("thread/goal/cleared") => {
+                        self.record(|d| {
+                            d.event = Some("thread/goal/cleared".into());
+                            d.goal_status = Some("cleared".into());
+                        });
+                        return Err("codex_goal_unconfirmed");
+                    }
                     Some("turn/completed") if params["turn"]["status"] == "completed" => {
                         // An active native Goal continues in a new turn on the same thread.
                         rpc.deadline = limit;
+                        self.record(|d| {
+                            d.native_message = None;
+                            d.event = None;
+                        });
                     }
-                    Some("turn/completed") => return Err("codex_turn_failed"),
+                    Some("turn/completed") => {
+                        self.record(|d| {
+                            d.event = Some("turn/completed".into());
+                            if let Some(message) = params["turn"]["error"]["message"].as_str() {
+                                d.native_message = Some(sanitize(message, &[], 500));
+                            }
+                        });
+                        return Err("codex_turn_failed");
+                    }
+                    Some("error") => self.record(|d| {
+                        d.event = Some("error".into());
+                        d.native_message = params["error"]["message"]
+                            .as_str()
+                            .map(|s| sanitize(s, &[], 500));
+                    }),
                     Some("turn/started") => rpc.deadline = limit,
                     _ => {}
                 }
@@ -403,6 +498,67 @@ fn skill_available(listed: &Value, root: &Path, skill: &InstalledSkill) -> bool 
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn native_goal_and_turn_errors_preserve_context_without_guessing_reasons() {
+        for (tail,code,status,message) in [
+            ("reply '{\"method\":\"thread/goal/updated\",\"params\":{\"threadId\":\"fixture-thread\",\"goal\":{\"status\":\"blocked\"}}}'","codex_goal_unconfirmed",Some("blocked"),None),
+            ("reply '{\"method\":\"thread/goal/cleared\",\"params\":{\"threadId\":\"fixture-thread\"}}'","codex_goal_unconfirmed",Some("cleared"),None),
+            ("reply '{\"method\":\"turn/completed\",\"params\":{\"threadId\":\"fixture-thread\",\"turn\":{\"status\":\"failed\",\"error\":{\"message\":\"Runtime unavailable\"}}}}'","codex_turn_failed",None,Some("Runtime unavailable")),
+        ] {
+            let root=tempfile::tempdir().unwrap();
+            let fixture=budget_fixture(root.path(),tail);
+            let details=Mutex::new(FailureDetails::default());
+            let session=Session {failure_details:Some(&details),execution_timeout:Some(Duration::from_secs(10)),root:root.path(),instructions:INSTRUCTIONS.into(),prompt:"Capture",job:Uuid::new_v4(),skill:None};
+            let log=Log::for_config(&root.path().join("connector.json"));
+            let mut command=Command::new("/bin/sh");
+            command.arg(fixture);
+            let (_stop,mut stop)=watch::channel(false);
+            assert_eq!(session.run(&mut command,&log,&mut stop,async |_,_,_|ToolReply::ok(json!({}),GoalChange::Continue)).await,Err(code));
+            let d=details.lock().unwrap();
+            assert_eq!(d.goal_status.as_deref(),status);
+            assert_eq!(d.native_message.as_deref(),message);
+        }
+    }
+
+    #[tokio::test]
+    async fn rejected_rpc_preserves_the_method_code_and_sanitized_message() {
+        let root = tempfile::tempdir().unwrap();
+        let fixture = root.path().join("rejected.sh");
+        std::fs::write(&fixture,"read line\nprintf '%s\\n' '{\"id\":0,\"error\":{\"code\":-32000,\"message\":\"Unavailable endpoint https://example/?secret=value\"}}'\n").unwrap();
+        let details = Mutex::new(FailureDetails::default());
+        let session = Session {
+            failure_details: Some(&details),
+            execution_timeout: None,
+            root: root.path(),
+            instructions: INSTRUCTIONS.into(),
+            prompt: "Capture",
+            job: Uuid::new_v4(),
+            skill: None,
+        };
+        let log = Log::for_config(&root.path().join("connector.json"));
+        let mut command = Command::new("/bin/sh");
+        command.arg(fixture);
+        let (_stop, mut stop) = watch::channel(false);
+        assert_eq!(
+            session
+                .run(
+                    &mut command,
+                    &log,
+                    &mut stop,
+                    async |_, _, _| ToolReply::ok(json!({}), GoalChange::Continue)
+                )
+                .await,
+            Err("codex_initialize_failed")
+        );
+        let d = details.lock().unwrap();
+        assert_eq!(d.rpc_method.as_deref(), Some("initialize"));
+        assert_eq!(d.rpc_error_code, Some(-32000));
+        assert_eq!(
+            d.native_message.as_deref(),
+            Some("Unavailable endpoint [redacted]")
+        );
+    }
+
     fn budget_fixture(root: &Path, tail: &str) -> std::path::PathBuf {
         let path = root.join("budget-codex.sh");
         let script = format!(
@@ -431,6 +587,7 @@ reply '{{"id":3,"result":{{"turn":{{"id":"first-turn"}}}}}}'
         let root = tempfile::tempdir().unwrap();
         let fixture = budget_fixture(root.path(), "cat >/dev/null");
         let session = Session {
+            failure_details: None,
             execution_timeout: Some(Duration::from_millis(100)),
             root: root.path(),
             instructions: INSTRUCTIONS.into(),
@@ -480,6 +637,7 @@ reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
 "#,
         );
         let session = Session {
+            failure_details: None,
             execution_timeout: Some(Duration::from_secs(120)),
             root: root.path(),
             instructions: INSTRUCTIONS.into(),
@@ -598,6 +756,7 @@ reply '{"id":4,"result":{"goal":{"status":"blocked"}}}'
             std::fs::write(&fixture, script).unwrap();
             let prompt = "原始请求\n  keep spacing and \"quotes\"";
             let session = Session {
+                failure_details: None,
                 execution_timeout: None,
                 root: &cwd,
                 instructions: INSTRUCTIONS.into(),
@@ -686,6 +845,7 @@ reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
 "#).unwrap();
         let prompt = "Amberia\n请截取 iPhone 首页的 \"商店图\"".repeat(170);
         let session = Session {
+            failure_details: None,
             execution_timeout: None,
             root: root.path(),
             instructions: INSTRUCTIONS.into(),

@@ -901,7 +901,7 @@ async fn jobs_are_claimed_once_and_their_png_is_forwarded_once() {
     )
     .await;
     assert_eq!(failed["status"], "failed");
-    assert_eq!(failed["error"], "upstream_rejected");
+    assert_eq!(failed["errorCode"], "upstream_rejected");
 
     let abandoned = value(
         send_legacy(
@@ -1224,7 +1224,7 @@ async fn jobs_run_without_a_destination_and_only_image_delivery_fails() {
     )
     .await;
     assert_eq!(failed["status"], "failed");
-    assert_eq!(failed["error"], "screenshot_upload_unconfigured");
+    assert_eq!(failed["errorCode"], "screenshot_upload_unconfigured");
     let next = value(
         send_legacy(
             &database_path,
@@ -1391,6 +1391,7 @@ async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids(
                     .header("x-screenshot-protocol", "3")
                     .header("x-screenshot-timing-protocol", "1")
                     .header("x-screenshot-review-protocol", "1")
+                    .header("x-screenshot-failure-protocol", "1")
                     .header(header::AUTHORIZATION, format!("Bearer {worker}"))
                     .body(Body::empty())
                     .unwrap(),
@@ -1403,6 +1404,7 @@ async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids(
     assert!(claim.get("taskId").is_none());
     assert_eq!(claim["prompt"], payload["prompt"]);
     assert_eq!(claim["reviewBeforeCompletion"], true);
+    assert_eq!(claim["failureDetailsSupported"], true);
     let base = format!("/v1/connectors/{mac}/screenshot-jobs/{id}");
     for (suffix, body) in [
         ("finish", json!({})),
@@ -1449,6 +1451,46 @@ async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids(
         claim["executionTimeoutSeconds"],
         30 * 60 + payload["target"].as_array().unwrap().len() * 15 * 60
     );
+    let path = format!("{base}/failure");
+    let failure = json!({"code":"codex_reported_failure","details":{"reason":"Missing runtime","requiresFinalization":true}});
+    assert_eq!(
+        send(&app, "POST", &path, &client, failure.clone())
+            .await
+            .status(),
+        401
+    );
+    for (body, expected) in [
+        (
+            json!({"code":"codex_reported_failure","details":{"reason":"x".repeat(2001)}}),
+            422,
+        ),
+        (
+            json!({"code":"codex_reported_failure","details":{"prompt":"secret"}}),
+            422,
+        ),
+        (failure, 204),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(&path)
+                    .header("x-forwarded-proto", "https")
+                    .header(header::AUTHORIZATION, format!("Bearer {worker}"))
+                    .header("x-screenshot-lease", claim["lease"].as_str().unwrap())
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status().as_u16(), expected);
+    }
+    let failed = value(send(&app, "GET", &status_path, &client, Value::Null).await).await;
+    assert_eq!(failed["errorCode"], "codex_reported_failure");
+    assert!(failed["error"]
+        .as_str()
+        .unwrap()
+        .contains("Missing runtime"));
 }
 
 #[tokio::test]
@@ -1766,5 +1808,5 @@ async fn unconfigured_oss_fails_at_upload_ticket_after_job_claim() {
     )
     .await;
     assert_eq!(status["status"], "failed");
-    assert_eq!(status["error"], "screenshot_oss_not_configured");
+    assert_eq!(status["errorCode"], "screenshot_oss_not_configured");
 }

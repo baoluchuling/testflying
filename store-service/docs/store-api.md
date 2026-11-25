@@ -1132,11 +1132,18 @@ Authorization: Bearer INTEGRATION_TOKEN
     ],
     "notificationStatus":"pending"
   },
-  "error":null
+  "error":null,
+  "errorCode":null
 }
 ```
 
-状态可能为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。节点逐项截图和上传，第一张成功不会结束多目标任务；**全部 target 均上传确认后才为 succeeded**。`result.images` 按原 target 顺序排列，`targetIndex` 为从 0 开始的数组位置，每张图携带原 target；尚未完成的项目不会占位。后续目标失败时保留已确认图片，`status=failed`、`error` 为错误码，不能把部分图片当作整单成功。
+状态可能为 `queued`、`running`、`uploading`、`succeeded` 或 `failed`。节点逐项截图和上传，第一张成功不会结束多目标任务。支持审阅的节点在所有候选图确认、审阅并调用最终提交后才为 succeeded；旧节点沿用最后一张上传确认后完成。`result.images` 按原 target 顺序排列，`targetIndex` 为从 0 开始的数组位置。失败任务保留候选图供排障，但不能视作整单完成，审阅任务最终提交前失败的外部回调不含候选图。
+
+截图任务查询的 `errorCode` 是稳定错误码（如 `codex_goal_unconfirmed`），`error` 是最长 2000 个 Unicode 字符的脱敏详细说明；无任务错误时两者为 null。说明包含已确认图数、目标数，以及节点实际采集到的阻塞原因、Goal 状态、RPC 或工具错误等上下文。原生协议没有给出原因时明确写“无法确认根因”，不猜测。通知本身的错误仍在 `result.notificationError`，普通同步 HTTP 错误仍为 `error:{code,message,...}`。
+
+截图节点 0.2.7 声明 `X-Screenshot-Failure-Protocol: 1`，中心领取响应返回 `failureDetailsSupported:true` 后，内部 failure 请求保留 `code` 并可传 `details`；未协商时节点只发旧 code。新节点增加 `report_capture_failure({"reason":"具体阻塞事实和已尝试的处理"})` 工具；可恢复错误继续处理，无法完成时才上报，不能覆盖未知上传／撤销／最终提交。Skill 需同步补充此流程。旧节点只有通用说明，历史缺失的原生原因无法补回。
+
+失败示例：`{"status":"failed","errorCode":"codex_goal_unconfirmed","error":"Codex Goal 已退出活跃状态，但截图任务尚未确认完成；已确认候选图 30/37；未提供具体原因，现有记录无法确认根因；Goal 状态：blocked"}`。
 
 终态任务记录约保留七天；新版长任务按终态通知快照时间计算，避免任务运行多日后刚完成便被清理，旧无快照记录沿用创建时间。本节以新版任务协议为准。
 
@@ -1206,7 +1213,7 @@ Content-Type: application/json
 }
 ```
 
-upstream_job_id 就是原中心 jobId；slot、language 分别原样取 target.page、target.locale，version 使用 PNG 的 SHA256。每批只含表中字段，不传 platform/device/app/theme；同一任务只使用一个设备，因此 (slot,language) 不重复。图片 URL 独立于任务 ID，不在原地址覆盖内容。全部目标上传确认为 done；部分图片成功后任务失败为 partial；没有可用图片为 failed。失败时可带最长 2000 字符的 error，未采集条目省略。每次发送完整快照，正文最多 2 MiB，不拆成增量。status 是采集方交付情况，与 Studio 的 coverage_status 相互独立。
+upstream_job_id 就是原中心 jobId；slot、language 分别原样取 target.page、target.locale，version 使用 PNG 的 SHA256。每批只含表中字段，不传 platform/device/app/theme；同一任务只使用一个设备，因此 (slot,language) 不重复。图片 URL 独立于任务 ID，不在原地址覆盖内容。审阅任务最终提交确认为 done；提交前失败为 failed 且 items 为空。旧协议部分图片成功后失败仍为 partial，没有可用图片为 failed。新失败回调的 error 是最长 2000 字符的脱敏详细说明，errorCode 是原稳定错误码；成功回调省略两者。已生成的历史回调快照保持原正文，重试不改字段或内容。未采集条目省略。每次发送完整快照，正文最多 2 MiB，不拆成增量。status 是采集方交付情况，与 Studio 的 coverage_status 相互独立。
 
 中心把通知意图和终态一并持久保存，revision 从 1 开始；同一次交付的重试复用完全相同正文。通知缺失或失败不改变截图 status。`result.notificationStatus` 单独显示通知进度，只有 Studio 确认全部条目 created／skipped 才记为 delivered；HTTP 200 中出现 rejected 不能当作全部成功。不要仅凭 coverage_status 或 received_at 判断单项是否入库。
 

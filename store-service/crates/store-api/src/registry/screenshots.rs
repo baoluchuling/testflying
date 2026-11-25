@@ -36,7 +36,7 @@ pub(super) fn create_schema(db: &Connection) -> Result<()> {
             .collect::<std::result::Result<_, _>>()
             .map_err(database_error)?
     };
-    for column in ["platform", "bundle_identifier"] {
+    for column in ["platform", "bundle_identifier", "failure_details"] {
         if !columns.iter().any(|name| name == column) {
             db.execute(
                 &format!("ALTER TABLE screenshot_jobs ADD COLUMN {column} TEXT"),
@@ -89,6 +89,29 @@ pub(super) fn create_schema(db: &Connection) -> Result<()> {
 pub(super) fn timestamp() -> Result<i64> {
     i64::try_from(now()?)
         .map_err(|_| StoreError::new(500, "invalid_clock", "System clock is invalid"))
+}
+
+pub(super) fn failure_description(db: &Connection, id: &str, code: &str) -> Result<String> {
+    let (details, targets, result): (Option<String>, Option<String>, Option<String>) = db
+        .query_row(
+            "SELECT failure_details,targets,result FROM screenshot_jobs WHERE id=?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(database_error)?;
+    let details = details.and_then(|v| {
+        serde_json::from_str::<store_protocol::screenshot_failure::FailureDetails>(&v).ok()
+    });
+    let parse = |v: Option<String>| {
+        v.and_then(|v| serde_json::from_str::<Value>(&v).ok())
+            .unwrap_or(Value::Null)
+    };
+    Ok(store_protocol::screenshot_failure::summary(
+        code,
+        details.as_ref(),
+        &parse(targets),
+        &parse(result),
+    ))
 }
 
 pub(super) fn expire(db: &Connection, time: i64) -> Result<()> {
@@ -746,10 +769,14 @@ impl Registry {
             .transpose()
             .map_err(|_| database_error(rusqlite::Error::InvalidQuery))?;
         super::screenshot_notifications::decorate(&tx, &self.signing_key, id, &mut result)?;
+        let description = error
+            .as_deref()
+            .map(|code| failure_description(&tx, id, code))
+            .transpose()?;
         tx.commit().map_err(database_error)?;
         let profile = (!profile.is_empty()).then_some(profile);
         Ok(
-            json!({"jobId":job_id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()).unwrap_or_else(|| json!([])),"connectorId":node,"platform":platform,"bundleIdentifier":identifier,"profile":profile,"status":status,"result":result,"error":error,"skill":skill}),
+            json!({"jobId":job_id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()).unwrap_or_else(|| json!([])),"connectorId":node,"platform":platform,"bundleIdentifier":identifier,"profile":profile,"status":status,"result":result,"error":description,"errorCode":error,"skill":skill}),
         )
     }
 
@@ -794,6 +821,7 @@ impl Registry {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn claim_screenshot_with_protocols(
         &self,
         node: &str,
@@ -801,6 +829,25 @@ impl Registry {
         skill_protocol: bool,
         timing_protocol: bool,
         review_protocol: bool,
+    ) -> Result<Option<Value>> {
+        self.claim_screenshot_with_features(
+            node,
+            current_protocol,
+            skill_protocol,
+            timing_protocol,
+            review_protocol,
+            false,
+        )
+    }
+
+    pub(crate) fn claim_screenshot_with_features(
+        &self,
+        node: &str,
+        current_protocol: bool,
+        skill_protocol: bool,
+        timing_protocol: bool,
+        review_protocol: bool,
+        failure_protocol: bool,
     ) -> Result<Option<Value>> {
         let time = timestamp()?;
         let mut db = self.db.lock().unwrap();
@@ -884,6 +931,9 @@ impl Registry {
             if review {
                 reply["reviewBeforeCompletion"] = json!(true);
             }
+            if failure_protocol {
+                reply["failureDetailsSupported"] = json!(true);
+            }
             Some(reply)
         } else {
             None
@@ -935,20 +985,38 @@ impl Registry {
         result: std::result::Result<&Value, &str>,
         phase: &str,
     ) -> Result<()> {
+        self.finish_screenshot_with_details(node, id, lease, result, phase, None)
+    }
+
+    pub(crate) fn finish_screenshot_with_details(
+        &self,
+        node: &str,
+        id: &str,
+        lease: &str,
+        result: std::result::Result<&Value, &str>,
+        phase: &str,
+        details: Option<&store_protocol::screenshot_failure::FailureDetails>,
+    ) -> Result<()> {
         let (status, output, error) = match result {
             Ok(value) => ("succeeded", Some(value.to_string()), None),
             Err(code) => ("failed", None, Some(code)),
         };
+        let details = details
+            .filter(|_| error.is_some())
+            .map(|d| d.sanitized(&[]));
+        let details_json = details
+            .as_ref()
+            .map(|d| serde_json::to_string(d).expect("serializable details"));
         let mut db = self.db.lock().unwrap();
         let tx = db
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
         let count = tx.execute(
-                "UPDATE screenshot_jobs SET status=?4, result=COALESCE(?5,result), error=?6, lease=NULL
+                "UPDATE screenshot_jobs SET status=?4, result=COALESCE(?5,result), error=?6, lease=NULL,failure_details=?9
              WHERE id=?1 AND connector_id=?2 AND lease=?3 AND status=?7 AND deadline>?8
              AND EXISTS(SELECT 1 FROM integrations WHERE id=screenshot_jobs.integration_id)
              AND EXISTS(SELECT 1 FROM connectors WHERE id=?2 AND enabled=1 AND mode='screenshot')",
-                params![id, node, lease, status, output, error, phase, timestamp()?],
+                params![id, node, lease, status, output, error, phase, timestamp()?,details_json],
             )
             .map_err(database_error)?;
         if count != 1 {
@@ -966,7 +1034,7 @@ impl Registry {
             request_id: Some(id.to_owned()),
             connector_id: Some(node.to_owned()),
             status: Some(if error.is_some() { 500 } else { 200 }),
-            details: json!({"jobId":id,"code":error}),
+            details: json!({"jobId":id,"code":error,"failureDetails":details}),
             ..Default::default()
         });
         Ok(())
@@ -1025,6 +1093,78 @@ mod direct_delivery_tests {
             .unwrap()
             .to_owned();
         (registry, node, access, job)
+    }
+
+    #[test]
+    fn failure_context_is_sanitized_and_saved_atomically_with_the_callback() {
+        use store_protocol::screenshot_failure::FailureDetails;
+        let (registry, node, access, job) = budget_fixture(2);
+        let claim = registry
+            .claim_screenshot_with_features(&node, true, false, true, true, true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(claim["failureDetailsSupported"], true);
+        let details = FailureDetails {
+            reason: Some("缺少系统镜像 https://example/p?secret=hidden".into()),
+            goal_status: Some("blocked".into()),
+            requires_finalization: true,
+            ..Default::default()
+        };
+        assert!(registry
+            .finish_screenshot_with_details(
+                &node,
+                &job,
+                "wrong",
+                Err("codex_reported_failure"),
+                "running",
+                Some(&details)
+            )
+            .is_err());
+        {
+            let db = registry.db.lock().unwrap();
+            let count: i64 = db
+                .query_row(
+                    "SELECT count(*) FROM screenshot_notifications WHERE job_id=?1",
+                    [&job],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 0);
+        }
+        registry
+            .finish_screenshot_with_details(
+                &node,
+                &job,
+                claim["lease"].as_str().unwrap(),
+                Err("codex_reported_failure"),
+                "running",
+                Some(&details),
+            )
+            .unwrap();
+        let public = registry.screenshot_status(&access, &job).unwrap();
+        assert_eq!(public["errorCode"], "codex_reported_failure");
+        let text = public["error"].as_str().unwrap();
+        assert!(text.contains("缺少系统镜像") && text.contains("0/2") && !text.contains("hidden"));
+        let db = registry.db.lock().unwrap();
+        let body: String = db
+            .query_row(
+                "SELECT body FROM screenshot_notifications WHERE job_id=?1",
+                [&job],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let body: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(body["error"], public["error"]);
+        assert_eq!(body["errorCode"], public["errorCode"]);
+        assert_eq!(body["items"], json!([]));
+        let stored: String = db
+            .query_row(
+                "SELECT failure_details FROM screenshot_jobs WHERE id=?1",
+                [&job],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!stored.contains("hidden"));
     }
 
     #[test]
@@ -1120,7 +1260,7 @@ mod direct_delivery_tests {
             )
             .unwrap();
         assert_eq!(
-            registry.screenshot_status(&access, &job).unwrap()["error"],
+            registry.screenshot_status(&access, &job).unwrap()["errorCode"],
             "codex_execution_timeout"
         );
         let db = registry.db.lock().unwrap();
@@ -1533,7 +1673,8 @@ mod direct_delivery_tests {
         assert!(Uuid::parse_str(id).is_ok());
         assert_eq!(failed["jobId"], id);
         assert_eq!(failed["status"], "failed");
-        assert_eq!(failed["error"], "capture_failed");
+        assert_eq!(failed["errorCode"], "capture_failed");
+        assert!(failed["error"].as_str().unwrap().contains("截图采集未完成"));
         assert_eq!(failed["result"]["images"], first["result"]["images"]);
         assert_eq!(failed["result"]["notificationStatus"], "not_configured");
         assert!(failed["result"]["notificationError"].is_null());

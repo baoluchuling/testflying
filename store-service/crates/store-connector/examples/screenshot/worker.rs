@@ -7,6 +7,7 @@ use reqwest::{Client, Method, RequestBuilder, StatusCode, Url};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::sync::Mutex;
 use std::{
     collections::{BTreeMap, HashMap},
     env,
@@ -17,6 +18,7 @@ use std::{
     process::{ExitStatus, Stdio},
     time::Duration,
 };
+use store_protocol::screenshot_failure::{sanitize, FailureDetails};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -101,6 +103,8 @@ impl Config {
 #[serde(rename_all = "camelCase")]
 struct Job {
     #[serde(default)]
+    failure_details_supported: bool,
+    #[serde(default)]
     review_before_completion: bool,
     execution_timeout_seconds: Option<u64>,
     job_id: Uuid,
@@ -114,6 +118,7 @@ struct Job {
 }
 
 pub(super) struct Worker<'a> {
+    failure_details: Mutex<FailureDetails>,
     config: &'a Config,
     client: Client,
     oss_client: Client,
@@ -151,6 +156,7 @@ impl<'a> Worker<'a> {
             config.connector_id
         );
         Ok(Self {
+            failure_details: Mutex::new(FailureDetails::default()),
             config,
             client: client.build()?,
             oss_client: Client::builder()
@@ -184,6 +190,7 @@ impl<'a> Worker<'a> {
                 .header("X-Screenshot-Skill-Protocol", "1")
                 .header("X-Screenshot-Timing-Protocol", "1")
                 .header("X-Screenshot-Review-Protocol", "1")
+                .header("X-Screenshot-Failure-Protocol", "1")
                 .send()
                 .await?;
             match response.status() {
@@ -227,10 +234,11 @@ impl<'a> Worker<'a> {
         }
 
         self.log.event(id, format_args!("job_failed code={code}"));
+        let payload = self.failure_payload(&job, code);
         let request = self
             .request(Method::POST, &format!("{}/failure", job.job_id))
             .header("X-Screenshot-Lease", job.lease.to_string())
-            .json(&json!({"code":code}))
+            .json(&payload)
             .send();
         let response = if stopping {
             timeout(Duration::from_secs(3), request).await??
@@ -254,11 +262,35 @@ impl<'a> Worker<'a> {
         Ok(!stopping)
     }
 
+    fn failure_payload(&self, job: &Job, code: &str) -> Value {
+        let mut payload = json!({"code":code});
+        let details = self
+            .failure_details
+            .lock()
+            .unwrap()
+            .sanitized(&[&self.config.token, &self.config.message_key]);
+        self.log.event(
+            Some(job.job_id),
+            format_args!(
+                "failure_context {}",
+                serde_json::to_string(&details).expect("serializable details")
+            ),
+        );
+        if job.failure_details_supported {
+            payload["details"] = json!(details);
+        }
+        payload
+    }
+
     async fn run_goal(
         &self,
         job: &Job,
         stop: &mut watch::Receiver<bool>,
     ) -> Result<(), &'static str> {
+        *self.failure_details.lock().unwrap() = FailureDetails {
+            requires_finalization: job.review_before_completion,
+            ..Default::default()
+        };
         let workspace = tempfile::Builder::new()
             .prefix("testflying-screenshot-")
             .tempdir()
@@ -365,6 +397,7 @@ impl<'a> Worker<'a> {
             instructions.push_str(goal::SKILL_INSTRUCTIONS);
         }
         let session = goal::Session {
+            failure_details: Some(&self.failure_details),
             execution_timeout,
             root,
             instructions,
@@ -399,6 +432,11 @@ impl<'a> Worker<'a> {
                 async |name, arguments, mut stop| tools.call(&name, arguments, &mut stop).await,
             )
             .await;
+        {
+            let mut details = self.failure_details.lock().unwrap();
+            details.requires_finalization = job.review_before_completion;
+            details.finalization_started = tools.finalization_started;
+        }
 
         // The center result is authoritative even if Codex exits after delivery.
         if tools.center_finished {
@@ -485,6 +523,52 @@ impl JobTools<'_, '_> {
         }
         if name == "upload_screenshot" {
             return self.upload(arguments, stop).await;
+        }
+        if name == "report_capture_failure" {
+            if self.center_finished {
+                return ToolReply::ok(json!({"delivered":true}), GoalChange::Delivered);
+            }
+            if self.upload_started || self.failure == "delivery_unknown" {
+                return ToolReply::error(
+                    "upload_pending",
+                    "Confirm the same upload before reporting a terminal failure.",
+                    true,
+                    GoalChange::Continue,
+                );
+            }
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Input {
+                reason: String,
+            }
+            let Some(input) = serde_json::from_value::<Input>(arguments)
+                .ok()
+                .filter(|v| !v.reason.trim().is_empty() && v.reason.chars().count() <= 2000)
+            else {
+                return ToolReply::error(
+                    "invalid_arguments",
+                    "Provide a factual blocker reason of 1–2000 characters.",
+                    true,
+                    GoalChange::Continue,
+                );
+            };
+            let reason = sanitize(
+                &input.reason,
+                &[&self.worker.config.token, &self.worker.config.message_key],
+                800,
+            );
+            self.worker.failure_details.lock().unwrap().reason = Some(reason);
+            self.failure = if self.job.failure_details_supported {
+                "codex_reported_failure"
+            } else {
+                "codex_failed"
+            };
+            return ToolReply::error(
+                self.failure,
+                "The blocker was recorded; this task will end as failed.",
+                false,
+                GoalChange::Blocked,
+            );
         }
         if !matches!(name, "validate_simulator" | "capture_screenshot") {
             return ToolReply::error(
@@ -1583,6 +1667,7 @@ mod tests {
         let puts = Arc::new(AtomicUsize::new(0));
         let completions = Arc::new(AtomicUsize::new(0));
         let job = Job {
+            failure_details_supported: false,
             review_before_completion: false,
             execution_timeout_seconds: None,
             job_id: Uuid::new_v4(),
@@ -1972,6 +2057,90 @@ mod tests {
         assert_eq!(finishes.load(Ordering::SeqCst), 2);
         shutdown.send(()).unwrap();
         server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn explicit_failure_is_negotiated_and_cannot_override_uncertain_delivery() {
+        let workspace = tempfile::tempdir().unwrap();
+        let config = Config {
+            kind: "screenshot".into(),
+            connector_id: Uuid::new_v4().to_string(),
+            token: "a".repeat(64),
+            server_url: Url::parse("http://127.0.0.1:1").unwrap(),
+            message_key: "private-message-key".into(),
+            codex_path: None,
+            codex_home: None,
+            adb_path: None,
+            ca_file: None,
+        };
+        let worker = Worker::new(&config, &workspace.path().join("connector.json")).unwrap();
+        for supported in [false, true] {
+            let job:Job=serde_json::from_value(json!({"jobId":Uuid::new_v4(),"lease":Uuid::new_v4(),"prompt":"original","failureDetailsSupported":supported,"reviewBeforeCompletion":true})).unwrap();
+            let mut tools = JobTools {
+                worker: &worker,
+                job: &job,
+                root: workspace.path(),
+                adb: None,
+                screenshot: None,
+                current_target: None,
+                completed_targets: Default::default(),
+                upload_attempted: None,
+                retry_upload: false,
+                upload_started: true,
+                upload_object_key: None,
+                uploaded_screenshots: Default::default(),
+                pending_discard: None,
+                finalization_started: false,
+                center_finished: false,
+                failure: "delivery_unknown",
+            };
+            let (_stop, mut stop) = watch::channel(false);
+            let args = json!({"reason":format!("Runtime unavailable {}",config.token)});
+            let reply = tools
+                .call("report_capture_failure", args.clone(), &mut stop)
+                .await;
+            assert_eq!(reply.value["code"], "upload_pending");
+            assert_eq!(tools.failure, "delivery_unknown");
+            tools.upload_started = false;
+            tools.failure = "capture_failed";
+            tools.pending_discard = Some((0, Uuid::new_v4()));
+            assert_eq!(
+                tools
+                    .call("report_capture_failure", args.clone(), &mut stop)
+                    .await
+                    .value["code"],
+                "discard_pending"
+            );
+            tools.pending_discard = None;
+            tools.finalization_started = true;
+            assert_eq!(
+                tools
+                    .call("report_capture_failure", args.clone(), &mut stop)
+                    .await
+                    .value["code"],
+                "finalization_pending"
+            );
+            tools.finalization_started = false;
+            let reply = tools.call("report_capture_failure", args, &mut stop).await;
+            assert!(matches!(reply.change, GoalChange::Blocked));
+            let code = if supported {
+                "codex_reported_failure"
+            } else {
+                "codex_failed"
+            };
+            assert_eq!(tools.failure, code);
+            let payload = worker.failure_payload(&job, code);
+            assert_eq!(payload["code"], code);
+            assert!(!payload.to_string().contains(&config.token));
+            if supported {
+                assert!(payload["details"]["reason"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Runtime unavailable"));
+            } else {
+                assert_eq!(payload, json!({"code":"codex_failed"}));
+            }
+        }
     }
 
     #[tokio::test]

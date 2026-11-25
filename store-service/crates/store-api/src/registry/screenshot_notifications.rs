@@ -67,7 +67,8 @@ pub(super) fn enqueue(db: &Connection, id: &str, time: i64) -> Result<()> {
     let mut body =
         json!({"upstream_job_id":id,"revision":1,"status":callback_status,"items":items});
     if let Some(error) = error {
-        body["error"] = json!(error.chars().take(2000).collect::<String>());
+        body["error"] = json!(super::screenshots::failure_description(db, id, &error)?);
+        body["errorCode"] = json!(error);
     }
     let body = body.to_string();
     let (state, error) = if body.len() > MAX_BODY {
@@ -252,7 +253,7 @@ mod tests {
         let body: Value = serde_json::from_str(&first.body).unwrap();
         assert_eq!(
             body,
-            json!({"upstream_job_id":"job","revision":1,"status":"partial","items":[{"slot":"details","language":"pt","url":"https://images.example/a.png","version":"abc"}],"error":"capture_failed"})
+            json!({"upstream_job_id":"job","revision":1,"status":"partial","items":[{"slot":"details","language":"pt","url":"https://images.example/a.png","version":"abc"}],"errorCode":"capture_failed","error":"截图采集未完成；已确认候选图 1/0；未提供具体原因，现有记录无法确认根因"})
         );
         assert!(registry.claim_notification(103).unwrap().is_none());
         drop(registry);
@@ -276,6 +277,27 @@ mod tests {
         assert!(registry.claim_notification(312).unwrap().is_some());
         assert!(registry.claim_notification(86500).unwrap().is_none());
     }
+    #[test]
+    fn existing_legacy_callback_bodies_are_not_rewritten_on_enqueue_or_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("registry.sqlite");
+        let registry = Registry::open(&path, KEY).unwrap();
+        job(&registry, "legacy-body", "failed", json!({}));
+        let legacy = r#"{"upstream_job_id":"legacy-body","revision":1,"status":"failed","items":[],"error":"capture_failed"}"#;
+        {
+            let db = registry.db.lock().unwrap();
+            db.execute("INSERT INTO screenshot_notifications(job_id,body,created_at,next_at) VALUES('legacy-body',?1,100,100)",[legacy]).unwrap();
+            enqueue(&db, "legacy-body", 101).unwrap();
+        }
+        drop(registry);
+        let registry = Registry::open(&path, KEY).unwrap();
+        configured(&registry, "fixture");
+        assert_eq!(
+            registry.claim_notification(102).unwrap().unwrap().body,
+            legacy
+        );
+    }
+
     #[test]
     fn migration_does_not_backfill_terminal_history_and_expiry_creates_failed_intent() {
         let registry = Registry::open(":memory:", KEY).unwrap();

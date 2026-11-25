@@ -270,7 +270,8 @@ components:
             notificationError: {type: [string, 'null'], description: Safe fixed error code; no remote response text or secrets.}
             notificationResults: {type: [array, 'null'], items: {type: object, properties: {index: {type: integer}, result: {type: string, enum: [created, skipped, rejected]}}}}
           description: All targets must be confirmed before status becomes succeeded. Review-capable nodes also explicitly finalize the task; old nodes preserve automatic completion after the last upload.
-        error: {type: [string, 'null']}
+        error: {type: [string, 'null'], maxLength: 2000, description: 'Sanitized human-readable task failure details; null when there is no task error. Missing native cause is explicitly stated.'}
+        errorCode: {type: [string, 'null'], description: 'Stable screenshot task failure code, such as codex_goal_unconfirmed; null when there is no task error. Notification delivery errors remain in result.notificationError.'}
     CreateStoreRelease:
       type: object
       required: [versionString]

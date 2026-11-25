@@ -8,6 +8,7 @@ pub mod firebase;
 pub mod logs;
 pub mod release;
 pub mod screenshot;
+pub mod screenshot_failure;
 pub mod skill;
 pub mod upload;
 
