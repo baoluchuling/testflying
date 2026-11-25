@@ -1,27 +1,27 @@
 {
-  "runId": "2779148fb92341f98e82cff75198ad08",
+  "runId": "6dbb01d02b3b4b8a9a3f451299676ca1",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-25T04:34:42.090948+00:00",
-  "deploymentCommit": "52919e5d62e0c9268a09bc76b14b66c75bfca2f1",
-  "binarySourceCommit": "fb3253eb35aab4eabd409d9bff622c1a8a584fae",
-  "apiSha256": "34648f6d7b15dfd6a23ee35e12c20923e6b09b747533edd5e08a2969fe64762d",
+  "finishedAt": "2026-11-25T08:03:47.361219+00:00",
+  "deploymentCommit": "97c6b09ecc569e483c1b6ab988a62e6fb72b2cf8",
+  "binarySourceCommit": "9aab41199c1e80649af5e855b6d6cc41b449e448",
+  "apiSha256": "c119756ae3344b792d1c658cc061363d75c44ea482853034eebcd544bcb8c4ed",
   "connectorBinarySha256": {
-    "linux-amd64": "d5af3d21021f06731819c648d85ffc5fe714e7f9d96e14bda4c8fdc005616ac5",
-    "darwin-arm64": "e2e6f3c247358c38e0a12eeea2d2fee047918b9daa2bb239cbf86380719ed341",
-    "windows-amd64": "f9db0d31c9115779978356bb0b711e7e6cde167c922f10f3d1504e37b1f1f142"
+    "linux-amd64": "bcde46233cbe1c9000fefd3e52a9cbbf8ee95ed6e95c6c88df1a7c9575c6dd66",
+    "darwin-arm64": "5987af58d84a0a203b29045591a34b13181821443cfeb6154e2e571cf8c4d865",
+    "windows-amd64": "35ef8426ab89ad014c700e2d8b7e463cea4a01131e1dc4a5379e37ff00d85835"
   },
-  "connectorVersion": "0.2.6",
-  "connectorSourceFingerprint": "3c5a7539756f08f71d290b7e356af9e7c3eac0e47d33f2d95c23369a83ec2130",
+  "connectorVersion": "0.2.8",
+  "connectorSourceFingerprint": "622c9ca58e9cdb392240a93acff829f53aa468975d3aaad3575fe5f2a4d00862",
   "firebaseDiagnostics": {
     "minimumConnectorVersion": "0.2.1",
-    "publishedConnectorVersion": "0.2.6",
+    "publishedConnectorVersion": "0.2.8",
     "readOnly": true,
     "actualFirebaseAccountsQueried": false,
     "automaticMembershipChanges": false,
     "publicCoreEndpointCountUnchanged": true
   },
-  "screenshotConnectorSha256": "cd2c17005ce433b828ab093eee0087b3985d08aa31ea02c227b6bb8523e63539",
+  "screenshotConnectorSha256": "5135b86959924488e74026a177457e2b8c8994528c692b6dc6f21695719983fc",
   "screenshotUploadConfigured": false,
   "screenshotExecution": {
     "perImageMinutes": 15,
@@ -620,12 +620,12 @@
     "unavailableOrInconsistentBeforeRollout": []
   },
   "storeConnectorPublication": {
-    "runId": "2779148fb92341f98e82cff75198ad08",
-    "sourceCommit": "52919e5d62e0c9268a09bc76b14b66c75bfca2f1",
+    "runId": "6dbb01d02b3b4b8a9a3f451299676ca1",
+    "sourceCommit": "97c6b09ecc569e483c1b6ab988a62e6fb72b2cf8",
     "downloadVerified": {
-      "linux-amd64": "d5af3d21021f06731819c648d85ffc5fe714e7f9d96e14bda4c8fdc005616ac5",
-      "darwin-arm64": "e2e6f3c247358c38e0a12eeea2d2fee047918b9daa2bb239cbf86380719ed341",
-      "windows-amd64": "f9db0d31c9115779978356bb0b711e7e6cde167c922f10f3d1504e37b1f1f142"
+      "linux-amd64": "bcde46233cbe1c9000fefd3e52a9cbbf8ee95ed6e95c6c88df1a7c9575c6dd66",
+      "darwin-arm64": "5987af58d84a0a203b29045591a34b13181821443cfeb6154e2e571cf8c4d865",
+      "windows-amd64": "35ef8426ab89ad014c700e2d8b7e463cea4a01131e1dc4a5379e37ff00d85835"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
@@ -633,22 +633,26 @@
     "actualStoreAccountsUsed": false
   },
   "screenshotSkillPublication": {
-    "runId": "9dbda3eab41c4d3aa722dbd5445ced01",
-    "manifest": {
-      "bytes": 266938,
-      "files": 17,
-      "name": "mobile-localized-screenshots",
-      "publishedAt": 1794972822,
+    "runId": "05ded4f0e06c49e690883c2d4f823004",
+    "finishedAt": "2026-11-25T08:04:53.486167+00:00",
+    "baseVersion": "d9326dce135e627beec732dfc7a8a0f3764b6626529d67f9dceb77e3f6deca9e",
+    "active": {
       "schemaVersion": 1,
-      "sha256": "c15b4f5f5d27c4740c485e4f60507c054290a9265134a12599e7f53c9e1aa63b",
-      "version": "c15b4f5f5d27c4740c485e4f60507c054290a9265134a12599e7f53c9e1aa63b"
+      "name": "mobile-localized-screenshots",
+      "version": "938bf9c1d27c69271ae43cb5efb040d4711453ad7040c2160c14f4e08f92a245",
+      "sha256": "938bf9c1d27c69271ae43cb5efb040d4711453ad7040c2160c14f4e08f92a245",
+      "bytes": 288493,
+      "files": 19,
+      "publishedAt": 1795593893
     },
-    "sourceZipSha256": "03276264de4fdd4d7ab7d58e1fcd1e31b6f19fb38788e2ce97cd64abc6c13639",
-    "publishedByThisRun": true,
-    "requiresInitialScreenshotConnectorUpgrade": true,
-    "liveCaptureTested": false,
-    "providerCalls": 0,
-    "apiDocsVerified": true
+    "previousVersionRetained": true,
+    "unchangedFiles": 17,
+    "updatedFiles": [
+      "SKILL.md",
+      "references/connector-protocol.md"
+    ],
+    "realScreenshotTasksCreated": false,
+    "externalCallbacksSent": false
   },
   "screenshotSkillLiveTest": {
     "runId": "d8ed4c8b67d44504942f71a1c14fb642",
@@ -657,7 +661,7 @@
     "nodeId": "e9f1121f-9fcb-412c-a2e5-e24ee544f672",
     "platform": "ios",
     "bundleIdentifier": "app.snapflix.ios",
-    "prompt": "\u622a\u53d6 Kissreels iOS \u82f1\u8bed\u9996\u9875\u622a\u56fe\uff0c\u7528\u6765\u505a\u5546\u5e97\u9875\u3002",
+    "prompt": "截取 Kissreels iOS 英语首页截图，用来做商店页。",
     "target": [
       {
         "locale": "en-US",
@@ -692,7 +696,9 @@
     "workerSkillDownloadHttpStatus": 200,
     "callbackNetwork": {
       "connected": true
-    }
+    },
+    "historicalResultRetained": true,
+    "appliesToCurrentSkillPublication": false
   },
   "accountScreenshotBinding": {
     "selectorSourceCommit": "3ea5f7ddd22ea8879f378d1748472230b80652b9",
@@ -700,5 +706,16 @@
     "explicitBindingCount": 0,
     "productionBindingsWritten": 0,
     "requiresNodeUpgrade": false
+  },
+  "screenshotFailureDetails": {
+    "connectorVersion": "0.2.8",
+    "publicErrorExample": "任务已退出；已确认候选图 30/37；未提供具体原因",
+    "stableCodeField": "errorCode",
+    "humanMessageField": "error",
+    "nativeContextRetainedInLogs": true,
+    "rustTestsPassed": 273,
+    "realScreenshotTestTasksCreated": false,
+    "externalTestCallbacksSent": false,
+    "nodeProgramsRemotelyInstalled": false
   }
 }
