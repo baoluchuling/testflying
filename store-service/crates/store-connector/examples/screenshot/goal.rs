@@ -13,12 +13,12 @@ use tokio::{
 };
 use uuid::Uuid;
 
-const GOAL: &str = "Fulfill the user's screenshot request and obtain confirmed delivery from the Connector upload_screenshot tool.";
+const GOAL: &str = "Fulfill the screenshot request, review the current images, and obtain confirmed final delivery using the Connector tools.";
 const MAX_MESSAGE: u64 = 1024 * 1024;
 
-pub(super) const INSTRUCTIONS: &str = "You own the screenshot task. Call get_capture_task first to read the task identity, center-generated jobId, app and ordered target array. The user's message is the original visual request. Fulfill each target separately without a Cartesian product. Pass its zero-based targetIndex to capture_screenshot and upload_screenshot; omit targetIndex only for legacy tasks with target=null. Finish uploading each captured image before capturing another. After delivered=false continue with an unfinished target, and finish only after delivered=true. Find the project on this computer and use the local development tools to prepare the requested screen. Choose an appropriate iOS Simulator or Android Emulator, reuse a suitable one or create and boot one as needed. Decide whether to build, install or launch the app. Treat project source as read-only and use the provided build output paths. If no simulator is ready, prepare one using the installed development tools and runtimes. Report a simulator environment blocker only when the required tools or runtime are missing and prevent preparation. Call validate_simulator with the chosen device, then capture_screenshot when the requested screen is visible. Upload the returned screenshotId using upload_screenshot. If a tool returns a retryable error, fix the issue or wait if appropriate and call it again within this Goal. Only a successful upload_screenshot response with delivered=true completes the task. If delivery cannot be retried, report the blocker. Use the provided upload tool for delivery and preserve the requested app screen until the capture is complete.";
+pub(super) const INSTRUCTIONS: &str = "You own the screenshot task. Call get_capture_task first to read the task identity, center-generated jobId, app, ordered target array, requiresFinalization and current screenshot IDs. The user message is the original visual request. Fulfill targets separately without a Cartesian product. Use the zero-based targetIndex with capture_screenshot, upload_screenshot and discard_screenshot; omit it only for legacy target=null. Find the project on this computer, prepare a suitable iOS Simulator or Android Emulator, reuse one or create and boot it as needed, and decide whether to build, install or launch the app. Treat project source as read-only and use the provided build output paths. A missing existing simulator is not a blocker; only missing development tools or runtimes that prevent preparation are blockers. Validate the selected simulator, navigate to the requested screen and capture it. Upload or discard the current capture before capturing another. Use discard_screenshot to reject an unsuitable local image or an already confirmed uploaded image, then fix the screen and recapture that target. If upload has started or its outcome is unknown, first confirm upload_screenshot using the same screenshotId; do not abandon or replay an unknown upload. get_capture_task lists the screenshot IDs available for discard. When requiresFinalization=true, uploading every target is only staging: review all images, discard and retake unsuitable ones, then call finish_capture_task with an empty object. Only its delivered=true response completes this review-enabled task. If a discard or final submission is uncertain, retry that same operation before any other change. Legacy tasks with requiresFinalization=false finish when upload_screenshot returns delivered=true. Retryable tool errors stay in this same Goal: fix or wait and retry; report an unrecoverable blocker. Use the provided tools for delivery and preserve the requested app screen until capture completes.";
 
-pub(super) const SKILL_INSTRUCTIONS: &str = "Use the attached screenshot skill for preparation, navigation and visual checks. Before each final upload, apply its visual checks to the original image captured for this target. Connector tools and task identity, target order, one-image-at-a-time upload and confirmed delivery remain authoritative. Skill product examples are historical examples; use the app and targets from get_capture_task.";
+pub(super) const SKILL_INSTRUCTIONS: &str = "Use the attached screenshot skill for preparation, navigation and visual checks on the original captured images. Discard and retake unsuitable images before final submission. Connector tools, task identity, target order, one current capture at a time and confirmed final delivery remain authoritative. Skill product examples are historical examples; use the app and targets from get_capture_task.";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum GoalChange {
@@ -64,13 +64,18 @@ fn tool_specs() -> Value {
     let mut capture = device.clone();
     capture["properties"]["targetIndex"] = json!({"type":"integer","minimum":0,"description":"Required for target-array tasks; position in get_capture_task target array"});
     json!([
-        {"name":"get_capture_task","description":"Read structured task identity, original prompt, targets and completed target indices.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+        {"name":"get_capture_task","description":"Read task identity, original prompt, targets, uploaded screenshot IDs, pending capture and final submission requirement.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
         {"name":"validate_simulator","description":"Check that the requested local simulator is booted and available.","inputSchema":device},
         {"name":"capture_screenshot","description":"Capture the visible screen of this local simulator and return a screenshotId.","inputSchema":capture},
-        {"name":"upload_screenshot","description":"Upload the captured PNG to the configured storage and obtain center confirmation. Retry the same screenshotId when instructed.","inputSchema":{
+        {"name":"upload_screenshot","description":"Upload a captured PNG and confirm that candidate. Review-enabled tasks still need finish_capture_task after all images pass review. Retry the same screenshotId when instructed.","inputSchema":{
             "type":"object","properties":{"screenshotId":{"type":"string"},"targetIndex":{"type":"integer","minimum":0}},
             "required":["screenshotId"],"additionalProperties":false
-        }}
+        }},
+        {"name":"discard_screenshot","description":"Discard an unsuitable current local capture or confirmed uploaded candidate before final submission, then recapture that target. An uncertain upload must be confirmed first.","inputSchema":{
+            "type":"object","properties":{"screenshotId":{"type":"string"},"targetIndex":{"type":"integer","minimum":0}},
+            "required":["screenshotId"],"additionalProperties":false
+        }},
+        {"name":"finish_capture_task","description":"Finalize the task only after every current target image is uploaded and visually acceptable. Retry this tool if final submission is uncertain.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}
     ])
 }
 
@@ -747,5 +752,11 @@ reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
         assert_eq!(messages[4]["params"]["input"].as_array().unwrap().len(), 1);
         let tools = messages[2]["params"]["dynamicTools"].as_array().unwrap();
         assert!(tools.iter().any(|tool| tool["name"] == "get_capture_task"));
+        assert!(tools
+            .iter()
+            .any(|tool| tool["name"] == "discard_screenshot"));
+        assert!(tools
+            .iter()
+            .any(|tool| tool["name"] == "finish_capture_task"));
     }
 }

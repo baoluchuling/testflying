@@ -1390,6 +1390,7 @@ async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids(
                     .header("x-forwarded-proto", "https")
                     .header("x-screenshot-protocol", "3")
                     .header("x-screenshot-timing-protocol", "1")
+                    .header("x-screenshot-review-protocol", "1")
                     .header(header::AUTHORIZATION, format!("Bearer {worker}"))
                     .body(Body::empty())
                     .unwrap(),
@@ -1401,6 +1402,48 @@ async fn structured_submission_generates_one_scoped_uuid_and_rejects_caller_ids(
     assert_eq!(claim["jobId"], job["jobId"]);
     assert!(claim.get("taskId").is_none());
     assert_eq!(claim["prompt"], payload["prompt"]);
+    assert_eq!(claim["reviewBeforeCompletion"], true);
+    let base = format!("/v1/connectors/{mac}/screenshot-jobs/{id}");
+    for (suffix, body) in [
+        ("finish", json!({})),
+        (
+            "discard",
+            json!({"targetIndex":0,"objectKey":"materials/missing.png"}),
+        ),
+    ] {
+        assert_eq!(
+            send(
+                &app,
+                "POST",
+                &format!("{base}/{suffix}"),
+                &client,
+                body.clone()
+            )
+            .await
+            .status(),
+            401
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::post(format!("{base}/{suffix}"))
+                    .header("x-forwarded-proto", "https")
+                    .header(header::AUTHORIZATION, format!("Bearer {worker}"))
+                    .header("x-screenshot-lease", claim["lease"].as_str().unwrap())
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 409);
+        let code = if suffix == "finish" {
+            "screenshot_targets_incomplete"
+        } else {
+            "screenshot_discard_unavailable"
+        };
+        assert_eq!(value(response).await["error"]["code"], code);
+    }
     assert_eq!(claim["target"], payload["target"]);
     assert_eq!(
         claim["executionTimeoutSeconds"],

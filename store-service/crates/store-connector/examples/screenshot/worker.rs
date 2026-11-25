@@ -100,6 +100,8 @@ impl Config {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Job {
+    #[serde(default)]
+    review_before_completion: bool,
     execution_timeout_seconds: Option<u64>,
     job_id: Uuid,
     platform: Option<String>,
@@ -181,6 +183,7 @@ impl<'a> Worker<'a> {
                 .header("X-Screenshot-Protocol", "3")
                 .header("X-Screenshot-Skill-Protocol", "1")
                 .header("X-Screenshot-Timing-Protocol", "1")
+                .header("X-Screenshot-Review-Protocol", "1")
                 .send()
                 .await?;
             match response.status() {
@@ -379,6 +382,11 @@ impl<'a> Worker<'a> {
             completed_targets: std::collections::BTreeSet::new(),
             upload_attempted: None,
             retry_upload: false,
+            upload_started: false,
+            upload_object_key: None,
+            uploaded_screenshots: BTreeMap::new(),
+            pending_discard: None,
+            finalization_started: false,
             center_finished: false,
             failure: "codex_failed",
         };
@@ -418,6 +426,11 @@ struct JobTools<'a, 'config> {
     /// A PUT is replayed only after HEAD definitively confirms absence, on a later tool call.
     upload_attempted: Option<Uuid>,
     retry_upload: bool,
+    upload_started: bool,
+    upload_object_key: Option<String>,
+    uploaded_screenshots: BTreeMap<usize, (Uuid, String)>,
+    pending_discard: Option<(usize, Uuid)>,
+    finalization_started: bool,
     center_finished: bool,
     failure: &'static str,
 }
@@ -449,7 +462,24 @@ impl JobTools<'_, '_> {
                 );
             }
             return ToolReply::ok(
-                json!({"jobId":self.job.job_id,"platform":self.job.platform,"bundleIdentifier":self.job.bundle_identifier,"prompt":self.job.prompt,"target":self.job.target,"profile":self.job.profile,"skill":self.job.skill,"completedTargetIndices":self.completed_targets}),
+                json!({"jobId":self.job.job_id,"platform":self.job.platform,"bundleIdentifier":self.job.bundle_identifier,"prompt":self.job.prompt,"target":self.job.target,"profile":self.job.profile,"skill":self.job.skill,"completedTargetIndices":self.completed_targets,"requiresFinalization":self.job.review_before_completion,"pendingDiscard":self.pending_discard.map(|(index,id)|json!({"targetIndex":index,"screenshotId":id})),"finalizationStarted":self.finalization_started,"pendingScreenshot":self.screenshot.as_ref().map(|(id,_)|json!({"screenshotId":id,"targetIndex":self.current_target})),"uploadedScreenshots":self.uploaded_screenshots.iter().map(|(index,(id,_))|json!({"targetIndex":index,"screenshotId":id})).collect::<Vec<_>>()}),
+                GoalChange::Continue,
+            );
+        }
+        if self.pending_discard.is_some() && name != "discard_screenshot" {
+            return ToolReply::error("discard_pending","Retry the same discard_screenshot to confirm the pending discard before continuing.",true,GoalChange::Continue);
+        }
+        if name == "discard_screenshot" {
+            return self.discard(arguments, stop).await;
+        }
+        if name == "finish_capture_task" {
+            return self.finalize(arguments, stop).await;
+        }
+        if self.finalization_started {
+            return ToolReply::error(
+                "finalization_pending",
+                "Retry finish_capture_task; final submission has already started.",
+                true,
                 GoalChange::Continue,
             );
         }
@@ -467,7 +497,7 @@ impl JobTools<'_, '_> {
         if name == "capture_screenshot" && self.screenshot.is_some() {
             return ToolReply::error(
                 "upload_pending",
-                "Retry upload_screenshot with the same screenshotId to confirm its pending upload.",
+                "Upload or discard the current screenshot before capturing another. If upload has started, confirm it before discarding.",
                 true,
                 GoalChange::Continue,
             );
@@ -549,6 +579,184 @@ impl JobTools<'_, '_> {
         }
     }
 
+    async fn discard(&mut self, arguments: Value, stop: &mut watch::Receiver<bool>) -> ToolReply {
+        if self.screenshot.is_some() && (self.upload_started || self.upload_attempted.is_some()) {
+            return ToolReply::error("upload_pending", "Confirm the current upload_screenshot before discarding any candidate; its upload may already exist.", true, GoalChange::Continue);
+        }
+        if self.finalization_started || self.center_finished {
+            return ToolReply::error("finalization_pending","Final submission has started. Retry finish_capture_task; the images can no longer be changed.",true,GoalChange::Continue);
+        }
+        let Ok(input) = serde_json::from_value::<UploadInput>(arguments) else {
+            return ToolReply::error(
+                "invalid_screenshot_id",
+                "Provide the current screenshotId and its targetIndex.",
+                true,
+                GoalChange::Continue,
+            );
+        };
+        if self.pending_discard.is_some_and(|(index, id)| {
+            Some(index) != input.target_index || id != input.screenshot_id
+        }) {
+            return ToolReply::error(
+                "discard_pending",
+                "Retry the same pending discard_screenshot first.",
+                true,
+                GoalChange::Continue,
+            );
+        }
+        if self
+            .screenshot
+            .as_ref()
+            .is_some_and(|(id, _)| *id == input.screenshot_id)
+            && input.target_index == self.current_target
+        {
+            if self.upload_started
+                || self.upload_attempted.is_some()
+                || self.failure == "delivery_unknown"
+            {
+                return ToolReply::error("upload_pending","Confirm upload_screenshot with this same screenshotId before discarding; its upload may already exist.",true,GoalChange::Continue);
+            }
+            self.screenshot = None;
+            self.current_target = None;
+            self.failure = "capture_failed";
+            self.worker
+                .log
+                .event(Some(self.job.job_id), "image_discarded stage=local");
+            return ToolReply::ok(
+                json!({"discarded":true,"screenshotId":input.screenshot_id,"targetIndex":input.target_index}),
+                GoalChange::Continue,
+            );
+        }
+        if !self.job.review_before_completion {
+            return ToolReply::error("screenshot_review_unsupported","This task cannot replace uploaded images. Upgrade the center and use a new review-enabled task.",true,GoalChange::Continue);
+        }
+        let Some(index) = input.target_index else {
+            return self.invalid_target();
+        };
+        let Some((_, key)) = self
+            .uploaded_screenshots
+            .get(&index)
+            .filter(|(id, _)| *id == input.screenshot_id)
+        else {
+            return ToolReply::error("screenshot_not_found","Use an uploaded screenshotId from get_capture_task, or the current local screenshot.",true,GoalChange::Continue);
+        };
+        let key = key.clone();
+        self.pending_discard = Some((index, input.screenshot_id));
+        let request = self
+            .worker
+            .request(Method::POST, &format!("{}/discard", self.job.job_id))
+            .header("X-Screenshot-Lease", self.job.lease.to_string())
+            .json(&json!({"targetIndex":index,"objectKey":key}))
+            .send();
+        let response = tokio::select! {
+            value=request=>match value {Ok(value)=>value,Err(_)=>return self.unknown_review("discard_unknown",false)},
+            _=stop.wait_for(|v|*v)=>return self.unknown_review("discard_unknown",true),
+        };
+        let status = response.status();
+        let body = match bounded_json(response).await {
+            Ok(v) => v,
+            Err(_) => return self.unknown_review("discard_unknown", false),
+        };
+        if status == StatusCode::OK
+            && body["discarded"] == true
+            && body["targetIndex"].as_u64() == Some(index as u64)
+        {
+            self.uploaded_screenshots.remove(&index);
+            self.completed_targets.remove(&index);
+            self.pending_discard = None;
+            self.failure = "capture_failed";
+            self.worker.log.event(
+                Some(self.job.job_id),
+                format_args!("image_discarded stage=uploaded target_index={index}"),
+            );
+            return ToolReply::ok(
+                json!({"discarded":true,"screenshotId":input.screenshot_id,"targetIndex":index}),
+                GoalChange::Continue,
+            );
+        }
+        if status.is_success() || status.is_server_error() {
+            return self.unknown_review("discard_unknown", false);
+        }
+        self.pending_discard = None;
+        self.upload_rejected(status, safe_error_code(&body))
+    }
+
+    async fn finalize(&mut self, arguments: Value, stop: &mut watch::Receiver<bool>) -> ToolReply {
+        if arguments.as_object().is_none_or(|v| !v.is_empty()) {
+            return ToolReply::error(
+                "invalid_arguments",
+                "finish_capture_task accepts an empty object.",
+                true,
+                GoalChange::Continue,
+            );
+        }
+        if !self.job.review_before_completion {
+            return ToolReply::error(
+                "screenshot_review_unsupported",
+                "This legacy task finishes automatically after all uploads.",
+                true,
+                GoalChange::Continue,
+            );
+        }
+        if self.screenshot.is_some()
+            || self
+                .job
+                .target
+                .as_ref()
+                .is_none_or(|v| v.is_empty() || v.len() != self.completed_targets.len())
+        {
+            return ToolReply::error("screenshot_targets_incomplete","Upload and review every target before finish_capture_task. Discard and retake any unsuitable image first.",true,GoalChange::Continue);
+        }
+        self.finalization_started = true;
+        let request = self
+            .worker
+            .request(Method::POST, &format!("{}/finish", self.job.job_id))
+            .header("X-Screenshot-Lease", self.job.lease.to_string())
+            .json(&json!({}))
+            .send();
+        let response = tokio::select! {
+            value=request=>match value {Ok(value)=>value,Err(_)=>return self.unknown_review("finalization_unknown",false)},
+            _=stop.wait_for(|v|*v)=>return self.unknown_review("finalization_unknown",true),
+        };
+        let status = response.status();
+        let body = match bounded_json(response).await {
+            Ok(v) => v,
+            Err(_) => return self.unknown_review("finalization_unknown", false),
+        };
+        if status == StatusCode::OK && body["delivered"] == true && body["result"].is_object() {
+            self.center_finished = true;
+            self.failure = "capture_failed";
+            self.worker
+                .log
+                .event(Some(self.job.job_id), "task_finalized");
+            return ToolReply::ok(
+                json!({"delivered":true,"targetCount":self.completed_targets.len()}),
+                GoalChange::Delivered,
+            );
+        }
+        if status.is_success() || status.is_server_error() {
+            return self.unknown_review("finalization_unknown", false);
+        }
+        let code = body["error"]["code"].as_str();
+        if code == Some("screenshot_targets_incomplete") {
+            self.finalization_started = false;
+            self.failure = "capture_failed";
+            return ToolReply::error(
+                "screenshot_targets_incomplete",
+                "The center still has unfinished targets. Resolve them before final submission.",
+                true,
+                GoalChange::Continue,
+            );
+        }
+        self.upload_rejected(status, safe_error_code(&body))
+    }
+
+    fn unknown_review(&mut self, code: &'static str, stopping: bool) -> ToolReply {
+        self.failure = "delivery_unknown";
+        self.worker.log.event(Some(self.job.job_id), code);
+        ToolReply::error(code,"The previous change is not confirmed. Retry that same discard or final submission; do not capture, upload or change another image yet.",!stopping,if stopping{GoalChange::Blocked}else{GoalChange::Continue})
+    }
+
     async fn upload(&mut self, arguments: Value, stop: &mut watch::Receiver<bool>) -> ToolReply {
         let Ok(input) = serde_json::from_value::<UploadInput>(arguments) else {
             return ToolReply::error(
@@ -587,6 +795,7 @@ impl JobTools<'_, '_> {
             let sha256 = hex::encode(Sha256::digest(bytes));
             let md5 = format!("{:x}", md5::compute(bytes));
             self.worker.log.event(id, "upload_ticket_request");
+            self.upload_started = true;
             let prepare = self
                 .worker
                 .request(Method::POST, &format!("{}/upload-ticket", self.job.job_id))
@@ -631,6 +840,7 @@ impl JobTools<'_, '_> {
                 return self.invalid_ticket();
             }
             let mut request = self.worker.oss_client.put(upload_url);
+            self.upload_object_key = Some(ticket.object_key.clone());
             for (name, value) in &ticket.headers {
                 request = request.header(name.as_str(), value.as_str());
             }
@@ -661,7 +871,11 @@ impl JobTools<'_, '_> {
             .worker
             .request(Method::POST, &format!("{}/complete", self.job.job_id))
             .header("X-Screenshot-Lease", self.job.lease.to_string())
-            .json(&self.target_body(json!({})))
+            .json(&self.target_body(if self.job.review_before_completion {
+                json!({"objectKey":self.upload_object_key})
+            } else {
+                json!({})
+            }))
             .send();
         let response = tokio::select! {
             result = completion => match result { Ok(response)=>response, Err(_)=>return self.unknown_upload(false) },
@@ -710,8 +924,21 @@ impl JobTools<'_, '_> {
             .target
             .as_ref()
             .is_none_or(|targets| completed.len() == targets.len());
-        if (body["delivered"] == true) != all_done {
+        if (body["delivered"] == true) != (all_done && !self.job.review_before_completion) {
             return self.unknown_upload(false);
+        }
+        if self.job.review_before_completion {
+            let Some((screenshot_id, _)) = self.screenshot.as_ref() else {
+                return self.unknown_upload(false);
+            };
+            let Some(key) = self.upload_object_key.clone() else {
+                return self.unknown_upload(false);
+            };
+            let Some(index) = self.current_target else {
+                return self.unknown_upload(false);
+            };
+            self.uploaded_screenshots
+                .insert(index, (*screenshot_id, key));
         }
         // Public queries retain the aggregate. The model only needs this item's
         // confirmation; repeating every signed URL on every call grows quadratically.
@@ -725,14 +952,16 @@ impl JobTools<'_, '_> {
         self.current_target = None;
         self.upload_attempted = None;
         self.retry_upload = false;
+        self.upload_started = false;
+        self.upload_object_key = None;
         self.failure = "capture_failed";
-        self.center_finished = all_done;
+        self.center_finished = all_done && !self.job.review_before_completion;
         self.worker
             .log
             .event(Some(self.job.job_id), "image_delivered");
         ToolReply::ok(
             body,
-            if all_done {
+            if all_done && !self.job.review_before_completion {
                 GoalChange::Delivered
             } else {
                 GoalChange::Continue
@@ -865,6 +1094,11 @@ fn safe_error_code(body: &Value) -> &'static str {
         Some("screenshot_upload_busy") => "screenshot_upload_busy",
         Some("delivery_unknown") => "delivery_unknown",
         Some("invalid_job_lease") => "invalid_job_lease",
+        Some("screenshot_review_unsupported") => "screenshot_review_unsupported",
+        Some("screenshot_discard_unavailable") => "screenshot_discard_unavailable",
+        Some("screenshot_file_changed") => "screenshot_file_changed",
+        Some("screenshot_targets_incomplete") => "screenshot_targets_incomplete",
+        Some("screenshot_object_key_required") => "screenshot_object_key_required",
         Some("invalid_image") => "invalid_image",
         Some("image_too_large") => "image_too_large",
         Some("upstream_rejected") => "upstream_rejected",
@@ -1349,6 +1583,7 @@ mod tests {
         let puts = Arc::new(AtomicUsize::new(0));
         let completions = Arc::new(AtomicUsize::new(0));
         let job = Job {
+            review_before_completion: false,
             execution_timeout_seconds: None,
             job_id: Uuid::new_v4(),
             platform: Some("ios".into()),
@@ -1455,6 +1690,11 @@ mod tests {
             completed_targets: std::collections::BTreeSet::new(),
             upload_attempted: None,
             retry_upload: false,
+            upload_started: false,
+            upload_object_key: None,
+            uploaded_screenshots: BTreeMap::new(),
+            pending_discard: None,
+            finalization_started: false,
             center_finished: false,
             failure: "codex_failed",
         };
@@ -1508,6 +1748,283 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn uploaded_candidates_can_be_discarded_and_recaptured_before_final_submission() {
+        use axum::{
+            http::HeaderMap,
+            response::IntoResponse,
+            routing::{post, put},
+            Json, Router,
+        };
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let prepares = Arc::new(AtomicUsize::new(0));
+        let puts = Arc::new(AtomicUsize::new(0));
+        let completes = Arc::new(AtomicUsize::new(0));
+        let discards = Arc::new(AtomicUsize::new(0));
+        let finishes = Arc::new(AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let png=store_protocol::upload::decode_chunk("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==").unwrap();
+        let sha = hex::encode(Sha256::digest(&png));
+        let md5 = format!("{:x}", md5::compute(&png));
+        let ticket_headers = json!({"content-type":"image/png","content-length":png.len().to_string(),"content-md5":store_protocol::upload::encode_chunk(&md5::compute(&png).0),"x-oss-meta-sha256":sha,"x-oss-meta-md5":md5,"x-oss-forbid-overwrite":"true"});
+        let mut app = Router::new();
+        let p = prepares.clone();
+        let headers = ticket_headers.clone();
+        app=app.route("/v1/connectors/{node}/screenshot-jobs/{job}/upload-ticket",post(move |Json(body):Json<Value>| {let n=p.fetch_add(1,Ordering::SeqCst)+1;let headers=headers.clone();async move {
+            assert_eq!(body["targetIndex"],0);
+            Json(json!({"uploadUrl":format!("http://{address}/oss"),"headers":headers,"objectKey":format!("materials/{n}.png"),"expiresAt":store_protocol::upload::now().unwrap()+300}))
+        }}));
+        let p = puts.clone();
+        app = app.route(
+            "/oss",
+            put(move |headers: HeaderMap| {
+                p.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    assert!(headers.get("authorization").is_none());
+                    StatusCode::OK
+                }
+            }),
+        );
+        let c = completes.clone();
+        let p = prepares.clone();
+        app=app.route("/v1/connectors/{node}/screenshot-jobs/{job}/complete",post(move |Json(body):Json<Value>| {let attempt=c.fetch_add(1,Ordering::SeqCst);let n=p.load(Ordering::SeqCst);async move {
+            assert_eq!(body,json!({"targetIndex":0,"objectKey":format!("materials/{n}.png")}));
+            if attempt==0 {(StatusCode::SERVICE_UNAVAILABLE,Json(json!({"error":{"code":"screenshot_verification_unavailable"}}))).into_response()}
+            else {Json(json!({"delivered":false,"allUploaded":true,"requiresFinalization":true,"result":{"images":[{"targetIndex":0,"imageUrl":format!("https://cdn.fixture/{n}.png")}]}})).into_response()}
+        }}));
+        let d = discards.clone();
+        app = app.route(
+            "/v1/connectors/{node}/screenshot-jobs/{job}/discard",
+            post(move |Json(body): Json<Value>| {
+                let attempt = d.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    assert_eq!(body, json!({"targetIndex":0,"objectKey":"materials/1.png"}));
+                    if attempt == 0 {
+                        (
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            Json(json!({"error":{"code":"unknown"}})),
+                        )
+                            .into_response()
+                    } else {
+                        Json(json!({"discarded":true,"targetIndex":0})).into_response()
+                    }
+                }
+            }),
+        );
+        let f = finishes.clone();
+        app=app.route("/v1/connectors/{node}/screenshot-jobs/{job}/finish",post(move |Json(body):Json<Value>| {let attempt=f.fetch_add(1,Ordering::SeqCst);async move {
+            assert_eq!(body,json!({}));
+            if attempt==0 {(StatusCode::SERVICE_UNAVAILABLE,Json(json!({"error":{"code":"unknown"}}))).into_response()}
+            else {Json(json!({"delivered":true,"result":{"images":[{"targetIndex":0,"imageUrl":"https://cdn.fixture/2.png"}]}})).into_response()}
+        }}));
+        let (shutdown, stopped) = tokio::sync::oneshot::channel();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async {
+                    let _ = stopped.await;
+                })
+                .await
+                .unwrap();
+        });
+        let root = tempfile::tempdir().unwrap();
+        let job:Job=serde_json::from_value(json!({"jobId":Uuid::new_v4(),"lease":Uuid::new_v4(),"prompt":"Original request","reviewBeforeCompletion":true,"target":[{"locale":"en","page":"home","device":"phone"}]})).unwrap();
+        let config = Config {
+            kind: "screenshot".into(),
+            connector_id: Uuid::new_v4().to_string(),
+            token: "a".repeat(64),
+            server_url: Url::parse(&format!("http://{address}")).unwrap(),
+            message_key: "fixture".into(),
+            codex_path: None,
+            codex_home: None,
+            adb_path: None,
+            ca_file: None,
+        };
+        let worker = Worker::new(&config, &root.path().join("connector.json")).unwrap();
+        let first = Uuid::new_v4();
+        let mut tools = JobTools {
+            worker: &worker,
+            job: &job,
+            root: root.path(),
+            adb: None,
+            screenshot: Some((first, png.clone())),
+            current_target: Some(0),
+            completed_targets: Default::default(),
+            upload_attempted: None,
+            retry_upload: false,
+            upload_started: false,
+            upload_object_key: None,
+            uploaded_screenshots: BTreeMap::new(),
+            pending_discard: None,
+            finalization_started: false,
+            center_finished: false,
+            failure: "capture_failed",
+        };
+        let (_stop, mut stop) = watch::channel(false);
+        let args = |id| json!({"screenshotId":id,"targetIndex":0});
+        assert!(
+            tools
+                .call("discard_screenshot", args(first), &mut stop)
+                .await
+                .success
+        );
+        assert!(tools.screenshot.is_none());
+        let captured = Uuid::new_v4();
+        tools.screenshot = Some((captured, png.clone()));
+        tools.current_target = Some(0);
+        assert_eq!(
+            tools
+                .call("upload_screenshot", args(captured), &mut stop)
+                .await
+                .value["code"],
+            "screenshot_verification_unavailable"
+        );
+        assert_eq!(
+            tools
+                .call("discard_screenshot", args(captured), &mut stop)
+                .await
+                .value["code"],
+            "upload_pending"
+        );
+        assert_eq!(puts.load(Ordering::SeqCst), 1);
+        let uploaded = tools
+            .call("upload_screenshot", args(captured), &mut stop)
+            .await;
+        assert!(
+            uploaded.success && uploaded.change == GoalChange::Continue && !tools.center_finished
+        );
+        assert_eq!(uploaded.value["allUploaded"], true);
+        let context = tools.call("get_capture_task", json!({}), &mut stop).await;
+        assert_eq!(context.value["requiresFinalization"], true);
+        assert_eq!(
+            context.value["uploadedScreenshots"][0]["screenshotId"],
+            captured.to_string()
+        );
+        assert_eq!(
+            tools
+                .call("discard_screenshot", args(captured), &mut stop)
+                .await
+                .value["code"],
+            "discard_unknown"
+        );
+        assert_eq!(
+            tools
+                .call("finish_capture_task", json!({}), &mut stop)
+                .await
+                .value["code"],
+            "discard_pending"
+        );
+        assert!(
+            tools
+                .call("discard_screenshot", args(captured), &mut stop)
+                .await
+                .success
+        );
+        assert!(tools.completed_targets.is_empty() && tools.valid_target(Some(0)));
+        assert_eq!(
+            tools
+                .call("discard_screenshot", args(captured), &mut stop)
+                .await
+                .value["code"],
+            "screenshot_not_found"
+        );
+        assert_eq!(
+            tools
+                .call("finish_capture_task", json!({}), &mut stop)
+                .await
+                .value["code"],
+            "screenshot_targets_incomplete"
+        );
+        let replacement = Uuid::new_v4();
+        tools.screenshot = Some((replacement, png));
+        tools.current_target = Some(0);
+        assert!(
+            tools
+                .call("upload_screenshot", args(replacement), &mut stop)
+                .await
+                .success
+        );
+        assert_eq!(puts.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            tools
+                .call("finish_capture_task", json!({}), &mut stop)
+                .await
+                .value["code"],
+            "finalization_unknown"
+        );
+        assert_eq!(
+            tools
+                .call("discard_screenshot", args(replacement), &mut stop)
+                .await
+                .value["code"],
+            "finalization_pending"
+        );
+        let done = tools
+            .call("finish_capture_task", json!({}), &mut stop)
+            .await;
+        assert!(done.success && done.change == GoalChange::Delivered && tools.center_finished);
+        assert_eq!(prepares.load(Ordering::SeqCst), 2);
+        assert_eq!(discards.load(Ordering::SeqCst), 2);
+        assert_eq!(finishes.load(Ordering::SeqCst), 2);
+        shutdown.send(()).unwrap();
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn discarding_another_candidate_cannot_clear_an_uncertain_upload() {
+        let workspace = tempfile::tempdir().unwrap();
+        let job:Job=serde_json::from_value(json!({"jobId":Uuid::new_v4(),"lease":Uuid::new_v4(),"prompt":"Original","reviewBeforeCompletion":true,"target":[{"locale":"en","page":"home","device":"phone"},{"locale":"en","page":"settings","device":"phone"}]})).unwrap();
+        let config = Config {
+            kind: "screenshot".into(),
+            connector_id: Uuid::new_v4().to_string(),
+            token: "a".repeat(64),
+            server_url: Url::parse("http://127.0.0.1:1").unwrap(),
+            message_key: "fixture".into(),
+            codex_path: None,
+            codex_home: None,
+            adb_path: None,
+            ca_file: None,
+        };
+        let worker = Worker::new(&config, &workspace.path().join("connector.json")).unwrap();
+        let old = Uuid::new_v4();
+        let current = Uuid::new_v4();
+        let mut tools = JobTools {
+            worker: &worker,
+            job: &job,
+            root: workspace.path(),
+            adb: None,
+            screenshot: Some((current, vec![1, 2, 3])),
+            current_target: Some(1),
+            completed_targets: std::collections::BTreeSet::from([0]),
+            upload_attempted: Some(current),
+            retry_upload: false,
+            upload_started: true,
+            upload_object_key: Some("materials/pending.png".into()),
+            uploaded_screenshots: BTreeMap::from([(0, (old, "materials/old.png".into()))]),
+            pending_discard: None,
+            finalization_started: false,
+            center_finished: false,
+            failure: "delivery_unknown",
+        };
+        let (_stop, mut stop) = watch::channel(false);
+        let result = tools
+            .call(
+                "discard_screenshot",
+                json!({"screenshotId":old,"targetIndex":0}),
+                &mut stop,
+            )
+            .await;
+        assert_eq!(result.value["code"], "upload_pending");
+        assert_eq!(tools.failure, "delivery_unknown");
+        assert!(tools.pending_discard.is_none() && tools.completed_targets.contains(&0));
+        assert_eq!(tools.screenshot.as_ref().unwrap().0, current);
+    }
+
+    #[tokio::test]
     async fn multiple_targets_keep_identity_and_continue_until_every_image_is_confirmed() {
         let workspace = tempfile::tempdir().unwrap();
         let job: Job = serde_json::from_value(json!({
@@ -1543,6 +2060,11 @@ mod tests {
             completed_targets: std::collections::BTreeSet::new(),
             upload_attempted: Some(image),
             retry_upload: true,
+            upload_started: false,
+            upload_object_key: None,
+            uploaded_screenshots: BTreeMap::new(),
+            pending_discard: None,
+            finalization_started: false,
             center_finished: false,
             failure: "delivery_unknown",
         };
@@ -1707,6 +2229,11 @@ mod tests {
             completed_targets: std::collections::BTreeSet::new(),
             upload_attempted: None,
             retry_upload: false,
+            upload_started: false,
+            upload_object_key: None,
+            uploaded_screenshots: BTreeMap::new(),
+            pending_discard: None,
+            finalization_started: false,
             center_finished: false,
             failure: "codex_failed",
         };

@@ -223,7 +223,7 @@ Firebase 错误只返回固定安全码：`firebase_not_configured`（503，Goog
 
 ### 节点升级与目录发现
 
-商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.5`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
+商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.6`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
 
 后续节点生产代码、依赖或安装脚本变化，必须先提升 `crates/store-connector/Cargo.toml` 的独立版本和 `store-protocol::release::CONNECTOR_VERSION`，并同步 Cargo.lock。固定发布守卫检查版本一致、禁止回退，并比较各平台上次发布的节点输入摘要；输入改变却未提升版本时构建直接失败。仅中心页面／接口文档改动可保留节点版本。商店三平台及 arm64 截图包必须使用同一版本与输入摘要才可部署；版本信息写入正式构建和发布报告。
 
@@ -1079,6 +1079,16 @@ Content-Type: application/json
 **保存返回的 jobId**：它是中心生成的 UUID，创建、保存、节点执行和后续结果通知共用这个 ID，不再区分另一套 taskId。中心在入队时原子读取截图绑定并固定节点；未绑定返回 404 screenshot_app_not_found，不随机选择 Mac；已绑定节点被停用返回 503 screenshot_connector_disabled。启用但离线的节点允许入队，重连后检查队列。在线节点通过已有加密 WSS 收到任务通知。每个 Mac 同时执行一个任务，最多排队 20 个，队满返回 429 screenshot_queue_full。202 只表示已入队，不表示截图或外部回传已完成。
 
 每次成功 POST 都创建一个新任务并返回新的 jobId。若响应丢失，不要自动重发，避免重复执行；正常业务不需要通过查询来推动任务完成。
+
+### 上传后重拍与最终提交（节点 0.2.6）
+
+支持复核的截图节点在领取任务时声明 `X-Screenshot-Review-Protocol: 1`，中心返回 `reviewBeforeCompletion:true`。每张图片上传并确认后先作为候选图保存，全部上传仍为 `running`；最终由 Codex 调用 `finish_capture_task` 确认整单，中心才转为 `succeeded` 并创建外部回传。外部触发接口、jobId、target 和回传格式均不变，不需要增加参数。
+
+Codex 可调用 `discard_screenshot`，传截图工具产生的 `screenshotId` 和对应 `targetIndex`，丢弃未开始上传的本地截图或已确认上传的候选图，再对同一目标重拍。已开始上传而结果不确定时，先核对同一截图的上传；撤销结果不确定时只重试同一撤销；最终提交开始后只能核对或重试提交。不能撤销已经最终提交／回传的历史任务。重拍生成新的随机 OSS 链接，旧图立即移出本任务结果；OSS 旧对象暂保留，不自动物理删除。
+
+内部节点 HTTPS 接口均使用节点 Bearer Token 和 `X-Screenshot-Lease`：`POST /v1/connectors/{id}/screenshot-jobs/{job}/discard`，正文 `{"targetIndex":0,"objectKey":"当前上传票据的key"}`；`POST .../{job}/finish`，正文 `{}`。复核任务的既有 `complete` 正文须带 `targetIndex` 和 `objectKey`，响应 `delivered:false`、`allUploaded` 和 `requiresFinalization:true`。撤销按票据版本及租约幂等，旧请求不能覆盖／作废重拍的新图；缺图不能最终提交，重复成功提交不会重复创建通知。
+
+最终提交前，查询返回的 `result.images` 均为可撤销候选图；以任务 `succeeded` 或最终回传为准。复核任务未提交即失败时，查询保留候选图用于排障，失败回调的 `items` 为空，防止把未确认素材交给外部。旧节点、旧中心及已在运行的旧任务保留原“最后一张上传即完成”行为；需要同时更新中心及截图节点才能使用上传后重拍。重拍不延长原执行预算。
 
 ### 截图执行预算（节点 0.2.4）
 

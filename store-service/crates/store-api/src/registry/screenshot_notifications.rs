@@ -47,6 +47,16 @@ pub(super) fn enqueue(db: &Connection, id: &str, time: i64) -> Result<()> {
             }
         }
     }
+    let review: bool = db
+        .query_row(
+            "SELECT review_before_completion FROM screenshot_jobs WHERE id=?1",
+            [id],
+            |r| r.get(0),
+        )
+        .map_err(database_error)?;
+    if review && status != "succeeded" {
+        items.clear();
+    }
     let callback_status = if status == "succeeded" {
         "done"
     } else if items.is_empty() {

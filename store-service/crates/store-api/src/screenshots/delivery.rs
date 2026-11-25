@@ -171,6 +171,7 @@ mod tests {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(super) struct CompleteInput {
     target_index: Option<usize>,
+    object_key: Option<String>,
 }
 
 pub(super) async fn complete(
@@ -181,23 +182,42 @@ pub(super) async fn complete(
 ) -> Result<Json<Value>> {
     authorize_worker(&state, &id, &headers)?;
     let lease = lease(&headers)?;
+    let input = input.map(|Json(v)| v);
+    let object_key = input.as_ref().and_then(|v| v.object_key.as_deref());
     let target_index = state
         .registry
-        .screenshot_target_index(&job, input.and_then(|Json(v)| v.target_index))?;
+        .screenshot_target_index(&job, input.as_ref().and_then(|v| v.target_index))?;
     let ticket = if let Some(index) = target_index {
         state.registry.target_ticket(&id, &job, lease, index)?
     } else {
         state.registry.screenshot_ticket(&id, &job, lease)?
     };
+    if state.registry.screenshot_requires_review(&job)? && object_key.is_none() {
+        return Err(StoreError::new(
+            422,
+            "screenshot_object_key_required",
+            "Review tasks require the current objectKey",
+        )
+        .into());
+    }
+    if object_key.is_some_and(|key| key != ticket.object_key) {
+        return Err(StoreError::new(
+            409,
+            "screenshot_file_changed",
+            "This upload ticket has been replaced",
+        )
+        .into());
+    }
     if let Some(index) = target_index {
         if let Some(result) = &ticket.result {
-            return Ok(Json(state.registry.complete_target_ticket(
+            return Ok(Json(state.registry.complete_target_ticket_for_object(
                 &id,
                 &job,
                 lease,
                 index,
                 &ticket.config_fingerprint,
                 result,
+                Some(&ticket.object_key),
             )?));
         }
     }
@@ -228,13 +248,14 @@ pub(super) async fn complete(
     result["sizeBytes"] = json!(ticket.size_bytes);
     result["sha256"] = json!(ticket.sha256);
     if let Some(index) = target_index {
-        return Ok(Json(state.registry.complete_target_ticket(
+        return Ok(Json(state.registry.complete_target_ticket_for_object(
             &id,
             &job,
             lease,
             index,
             &fingerprint,
             &result,
+            Some(&ticket.object_key),
         )?));
     }
     let result =

@@ -56,6 +56,19 @@ pub(super) fn create_schema(db: &Connection) -> Result<()> {
         )
         .map_err(database_error)?;
     }
+    if !columns
+        .iter()
+        .any(|name| name == "review_before_completion")
+    {
+        db.execute("ALTER TABLE screenshot_jobs ADD COLUMN review_before_completion INTEGER NOT NULL DEFAULT 0 CHECK(review_before_completion IN (0,1))", []).map_err(database_error)?;
+    }
+    db.execute_batch(
+        "CREATE TABLE IF NOT EXISTS screenshot_discarded_targets (
+        job_id TEXT NOT NULL REFERENCES screenshot_jobs(id) ON DELETE CASCADE,
+        target_index INTEGER NOT NULL, object_key TEXT NOT NULL, lease TEXT NOT NULL,
+        PRIMARY KEY(job_id,target_index,object_key));",
+    )
+    .map_err(database_error)?;
     // Existing queued/running protocol-3 jobs may still contain signed historical
     // image URLs. Only jobs created under the callback protocol are eligible.
     if !columns.iter().any(|name| name == "callback_eligible") {
@@ -73,7 +86,7 @@ pub(super) fn create_schema(db: &Connection) -> Result<()> {
     Ok(())
 }
 
-fn timestamp() -> Result<i64> {
+pub(super) fn timestamp() -> Result<i64> {
     i64::try_from(now()?)
         .map_err(|_| StoreError::new(500, "invalid_clock", "System clock is invalid"))
 }
@@ -183,7 +196,7 @@ fn load_ticket(
         })
     }).optional().map_err(database_error)
 }
-fn check_target_lease(db: &Connection, node: &str, id: &str, lease: &str) -> Result<()> {
+pub(super) fn check_target_lease(db: &Connection, node: &str, id: &str, lease: &str) -> Result<()> {
     let valid: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM screenshot_jobs j JOIN connectors c ON c.id=j.connector_id WHERE j.id=?1 AND j.connector_id=?2 AND j.deadline>?4 AND c.enabled=1 AND c.mode='screenshot' AND EXISTS(SELECT 1 FROM integrations WHERE id=j.integration_id) AND ((j.status='running' AND j.lease=?3) OR (j.status='succeeded' AND EXISTS(SELECT 1 FROM screenshot_target_tickets t WHERE t.job_id=j.id AND t.connector_id=?2 AND t.lease=?3))))",params![id,node,lease,timestamp()?],|r|r.get(0)).map_err(database_error)?;
     if valid {
         Ok(())
@@ -342,6 +355,7 @@ impl Registry {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn complete_target_ticket(
         &self,
         node: &str,
@@ -351,12 +365,47 @@ impl Registry {
         fingerprint: &str,
         result: &Value,
     ) -> Result<Value> {
+        self.complete_target_ticket_for_object(node, id, lease, index, fingerprint, result, None)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn complete_target_ticket_for_object(
+        &self,
+        node: &str,
+        id: &str,
+        lease: &str,
+        index: usize,
+        fingerprint: &str,
+        result: &Value,
+        object_key: Option<&str>,
+    ) -> Result<Value> {
         let mut db = self.db.lock().unwrap();
         let tx = db
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(database_error)?;
         check_target_lease(&tx, node, id, lease)?;
         let ticket = load_target_ticket(&tx, node, id, lease, index)?.ok_or_else(invalid_lease)?;
+        if object_key.is_some_and(|key| key != ticket.object_key) {
+            return Err(StoreError::new(
+                409,
+                "screenshot_file_changed",
+                "This upload ticket has been replaced",
+            ));
+        }
+        let review: bool = tx
+            .query_row(
+                "SELECT review_before_completion FROM screenshot_jobs WHERE id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .map_err(database_error)?;
+        if review && object_key.is_none() {
+            return Err(StoreError::new(
+                422,
+                "screenshot_object_key_required",
+                "Review tasks require the current objectKey",
+            ));
+        }
         if ticket.result.is_none() {
             let settings = super::screenshot_settings::load(&tx, &self.signing_key)?;
             if ticket.config_fingerprint != fingerprint
@@ -391,7 +440,7 @@ impl Registry {
                 }
                 images
             };
-            let delivered = images.len() == targets.len();
+            let delivered = images.len() == targets.len() && !review;
             let aggregate = json!({"images":images,"notificationStatus":if settings.notification.url.is_empty() || settings.notification.token.is_empty() {"not_configured"} else {"pending"}});
             tx.execute("UPDATE screenshot_jobs SET result=?2,status=?3,lease=CASE WHEN ?4 THEN NULL ELSE lease END WHERE id=?1",params![id,aggregate.to_string(),if delivered {"succeeded"} else {"running"},delivered]).map_err(database_error)?;
             if delivered {
@@ -408,7 +457,23 @@ impl Registry {
         let result: Value = serde_json::from_str(&result)
             .map_err(|_| database_error(rusqlite::Error::InvalidQuery))?;
         tx.commit().map_err(database_error)?;
-        Ok(json!({"delivered":status == "succeeded","result":result}))
+        let mut reply = json!({"delivered":status == "succeeded","result":result});
+        if review {
+            let total: String = db
+                .query_row(
+                    "SELECT targets FROM screenshot_jobs WHERE id=?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .map_err(database_error)?;
+            let total: Vec<Value> = serde_json::from_str(&total)
+                .map_err(|_| database_error(rusqlite::Error::InvalidQuery))?;
+            reply["allUploaded"] = json!(reply["result"]["images"]
+                .as_array()
+                .is_some_and(|v| v.len() == total.len()));
+            reply["requiresFinalization"] = json!(true);
+        }
+        Ok(reply)
     }
 
     pub(crate) fn screenshot_upload_lease(&self, node: &str, id: &str, lease: &str) -> Result<()> {
@@ -712,12 +777,30 @@ impl Registry {
         self.claim_screenshot_with_timing_protocol(node, current_protocol, skill_protocol, false)
     }
 
+    #[cfg(test)]
     pub(crate) fn claim_screenshot_with_timing_protocol(
         &self,
         node: &str,
         current_protocol: bool,
         skill_protocol: bool,
         timing_protocol: bool,
+    ) -> Result<Option<Value>> {
+        self.claim_screenshot_with_protocols(
+            node,
+            current_protocol,
+            skill_protocol,
+            timing_protocol,
+            false,
+        )
+    }
+
+    pub(crate) fn claim_screenshot_with_protocols(
+        &self,
+        node: &str,
+        current_protocol: bool,
+        skill_protocol: bool,
+        timing_protocol: bool,
+        review_protocol: bool,
     ) -> Result<Option<Value>> {
         let time = timestamp()?;
         let mut db = self.db.lock().unwrap();
@@ -751,6 +834,7 @@ impl Registry {
                 ));
             }
             let lease = Uuid::new_v4().to_string();
+            let review = review_protocol && targets.is_some();
             let execution_seconds = if timing_protocol {
                 let count = targets
                     .as_ref()
@@ -782,8 +866,8 @@ impl Registry {
                 .transpose()
                 .map_err(|_| database_error(rusqlite::Error::InvalidQuery))?;
             tx.execute(
-                "UPDATE screenshot_jobs SET status='running', deadline=?2, lease=?3, prompt='', skill_manifest=?4 WHERE id=?1",
-                params![id, time + lease_seconds as i64, lease,skill_record],
+                "UPDATE screenshot_jobs SET status='running', deadline=?2, lease=?3, prompt='', skill_manifest=?4,review_before_completion=?5 WHERE id=?1",
+                params![id, time + lease_seconds as i64, lease,skill_record,review],
             ).map_err(database_error)?;
             let profile = (!profile.is_empty()).then_some(profile);
             let prompt = match (&platform, &identifier) {
@@ -796,6 +880,9 @@ impl Registry {
             let mut reply = json!({"jobId":id,"target":targets.and_then(|v| serde_json::from_str::<Value>(&v).ok()),"platform":platform,"bundleIdentifier":identifier,"profile":profile,"prompt":prompt,"lease":lease,"skill":skill});
             if let Some(seconds) = execution_seconds {
                 reply["executionTimeoutSeconds"] = json!(seconds);
+            }
+            if review {
+                reply["reviewBeforeCompletion"] = json!(true);
             }
             Some(reply)
         } else {
@@ -1080,6 +1167,238 @@ mod direct_delivery_tests {
                 },
             )
             .unwrap();
+    }
+
+    #[test]
+    fn reviewed_images_can_be_replaced_until_explicit_idempotent_final_submission() {
+        for count in [1, 2] {
+            let (registry, node, access, job) = budget_fixture(count);
+            let claim = registry
+                .claim_screenshot_with_protocols(&node, true, false, true, true)
+                .unwrap()
+                .unwrap();
+            assert_eq!(claim["reviewBeforeCompletion"], true);
+            let lease = claim["lease"].as_str().unwrap();
+            let fp = oss_fingerprint(&registry.screenshot_settings().unwrap().oss).unwrap();
+            assert_eq!(
+                registry
+                    .finish_reviewed_screenshot(&node, &job, lease)
+                    .unwrap_err()
+                    .code,
+                "screenshot_targets_incomplete"
+            );
+            for index in 0..count {
+                let key = format!("materials/old{index}.png");
+                registry
+                    .prepare_target_ticket(
+                        &node,
+                        &job,
+                        lease,
+                        index,
+                        64,
+                        &"a".repeat(64),
+                        &"b".repeat(32),
+                        &fp,
+                        &key,
+                    )
+                    .unwrap();
+                let image = json!({"imageUrl":format!("https://cdn.fixture/old{index}.png"),"sha256":"a".repeat(64)});
+                assert_eq!(
+                    registry
+                        .complete_target_ticket(&node, &job, lease, index, &fp, &image)
+                        .unwrap_err()
+                        .code,
+                    "screenshot_object_key_required"
+                );
+                let result = registry
+                    .complete_target_ticket_for_object(
+                        &node,
+                        &job,
+                        lease,
+                        index,
+                        &fp,
+                        &image,
+                        Some(&key),
+                    )
+                    .unwrap();
+                assert_eq!(result["delivered"], false);
+                assert_eq!(result["allUploaded"], index + 1 == count);
+            }
+            assert_eq!(
+                registry.screenshot_status(&access, &job).unwrap()["status"],
+                "running"
+            );
+            let notifications = || {
+                registry
+                    .db
+                    .lock()
+                    .unwrap()
+                    .query_row(
+                        "SELECT count(*) FROM screenshot_notifications WHERE job_id=?1",
+                        [&job],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .unwrap()
+            };
+            assert_eq!(notifications(), 0);
+            assert!(registry
+                .discard_screenshot_target(&node, &job, "wrong-lease", 0, "materials/old0.png")
+                .is_err());
+            assert!(registry
+                .discard_screenshot_target("wrong-node", &job, lease, 0, "materials/old0.png")
+                .is_err());
+            let removed = registry
+                .discard_screenshot_target(&node, &job, lease, 0, "materials/old0.png")
+                .unwrap();
+            assert_eq!(
+                removed["result"]["images"].as_array().unwrap().len(),
+                count - 1
+            );
+            assert_eq!(
+                registry
+                    .discard_screenshot_target(&node, &job, lease, 0, "materials/old0.png")
+                    .unwrap(),
+                removed
+            );
+            assert!(registry
+                .finish_reviewed_screenshot(&node, &job, lease)
+                .is_err());
+            registry
+                .prepare_target_ticket(
+                    &node,
+                    &job,
+                    lease,
+                    0,
+                    64,
+                    &"c".repeat(64),
+                    &"d".repeat(32),
+                    &fp,
+                    "materials/new0.png",
+                )
+                .unwrap();
+            assert_eq!(
+                registry
+                    .complete_target_ticket_for_object(
+                        &node,
+                        &job,
+                        lease,
+                        0,
+                        &fp,
+                        &json!({}),
+                        Some("materials/old0.png")
+                    )
+                    .unwrap_err()
+                    .code,
+                "screenshot_file_changed"
+            );
+            let replacement = registry
+                .complete_target_ticket_for_object(
+                    &node,
+                    &job,
+                    lease,
+                    0,
+                    &fp,
+                    &json!({"imageUrl":"https://cdn.fixture/new0.png","sha256":"c".repeat(64)}),
+                    Some("materials/new0.png"),
+                )
+                .unwrap();
+            assert_eq!(replacement["allUploaded"], true);
+            let repeated_old = registry
+                .discard_screenshot_target(&node, &job, lease, 0, "materials/old0.png")
+                .unwrap();
+            assert_eq!(
+                repeated_old["result"]["images"][0]["imageUrl"],
+                "https://cdn.fixture/new0.png"
+            );
+            assert_eq!(notifications(), 0);
+            let done = registry
+                .finish_reviewed_screenshot(&node, &job, lease)
+                .unwrap();
+            assert_eq!(done["delivered"], true);
+            assert_eq!(
+                registry
+                    .finish_reviewed_screenshot(&node, &job, lease)
+                    .unwrap(),
+                done
+            );
+            assert_eq!(notifications(), 1);
+            assert!(registry
+                .discard_screenshot_target(&node, &job, lease, 0, "materials/new0.png")
+                .is_err());
+            assert!(registry
+                .finish_reviewed_screenshot(&node, &job, "other-lease")
+                .is_err());
+            let callback: String = registry
+                .db
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT body FROM screenshot_notifications WHERE job_id=?1",
+                    [&job],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(!callback.contains("old0.png"));
+            assert!(callback.contains("new0.png"));
+        }
+    }
+
+    #[test]
+    fn unfinished_review_failure_keeps_candidates_for_diagnostics_but_never_notifies_them() {
+        let (registry, node, access, job) = budget_fixture(2);
+        let claim = registry
+            .claim_screenshot_with_protocols(&node, true, false, true, true)
+            .unwrap()
+            .unwrap();
+        let lease = claim["lease"].as_str().unwrap();
+        let fp = oss_fingerprint(&registry.screenshot_settings().unwrap().oss).unwrap();
+        registry
+            .prepare_target_ticket(
+                &node,
+                &job,
+                lease,
+                0,
+                64,
+                &"a".repeat(64),
+                &"b".repeat(32),
+                &fp,
+                "materials/unreviewed.png",
+            )
+            .unwrap();
+        registry
+            .complete_target_ticket_for_object(
+                &node,
+                &job,
+                lease,
+                0,
+                &fp,
+                &json!({"imageUrl":"https://cdn.fixture/unreviewed.png","sha256":"a".repeat(64)}),
+                Some("materials/unreviewed.png"),
+            )
+            .unwrap();
+        registry
+            .finish_screenshot(&node, &job, lease, Err("capture_failed"), "running")
+            .unwrap();
+        assert_eq!(
+            registry.screenshot_status(&access, &job).unwrap()["result"]["images"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        let callback: String = registry
+            .db
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT body FROM screenshot_notifications WHERE job_id=?1",
+                [&job],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let callback: Value = serde_json::from_str(&callback).unwrap();
+        assert_eq!(callback["status"], "failed");
+        assert_eq!(callback["items"], json!([]));
     }
 
     #[test]

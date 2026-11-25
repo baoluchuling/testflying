@@ -14,6 +14,7 @@ pub(crate) mod accounts;
 pub use accounts::{Account, AccountInput, AccountPatch};
 mod integrations;
 pub(crate) mod screenshot_notifications;
+mod screenshot_review;
 mod screenshot_settings;
 pub(crate) mod screenshot_skill;
 pub(crate) mod screenshots;

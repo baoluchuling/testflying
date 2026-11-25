@@ -48,7 +48,7 @@ Content-Type: application/json
 
 使用私有 CA 时，通过 `caFile` 指向该 CA 文件。Rust Connector 从安装账号的 `PATH` 找到 Codex CLI，沿用该账号的登录和用户配置。截图 Goal 在 App Server 的 `thread/start` 显式设置 `sandbox:"danger-full-access"`、`approvalPolicy:"never"`，首轮 `turn/start` 同时设置 `sandboxPolicy:{"type":"dangerFullAccess"}`、`approvalPolicy:"never"`；后续 Goal 轮次继承该策略。Codex 可以按部署账号的操作系统权限管理临时目录以外的项目、开发工具与模拟器，无需自定义权限 profile 或修改全局 Codex 配置。该设置不替代 macOS 隐私授权或管理员 requirements 限制。特殊安装可通过 `codexPath` 或 `codexHome` 指定绝对路径。任务的私有临时目录仍用于存放产物，完成、失败或正常停止时清理。[App Server 协议](https://learn.chatgpt.com/docs/app-server#turns)
 
-需要支持 Goal 和 App Server 动态工具的 Codex CLI，已验证 0.139.0 的初始化协议。Connector 为该进程启用 Goal。Codex 自行决定复用、创建或启动模拟器，以及是否构建、安装和启动 App。会话先调用 `get_capture_task` 读取 jobId、应用与 target；`validate_simulator` 检查所选设备，`capture_screenshot` 按 targetIndex 截取该设备并返回 screenshotId，`upload_screenshot` 用相同 targetIndex 上传这张图。可恢复的工具失败会返回给当前 Goal，Codex 可以修复后重试。每张图确认后继续下一个目标，全部 target 均确认上传后 Goal 才算完成。[OpenAI Docs](https://learn.chatgpt.com/docs/app-server)
+需要支持 Goal 和 App Server 动态工具的 Codex CLI，已验证 0.139.0 的初始化协议。Connector 为该进程启用 Goal。Codex 自行决定复用、创建或启动模拟器，以及是否构建、安装和启动 App。会话先调用 `get_capture_task` 读取 jobId、应用与 target；`validate_simulator` 检查所选设备，`capture_screenshot` 按 targetIndex 截取该设备并返回 screenshotId，`upload_screenshot` 用相同 targetIndex 上传这张图。可恢复的工具失败会返回给当前 Goal，Codex 可以修复后重试。每张图确认后继续下一个目标，复核任务还需在全部图片合格后调用 finish_capture_task 最终确认，Goal 才完成；旧协议保持最后一张上传确认后自动完成。[OpenAI Docs](https://learn.chatgpt.com/docs/app-server)
 
 将解压目录移到截图账号的 `~/Library/Application Support/` 下，填好配置并设好文件权限后，在该目录执行安装。安装脚本会请求管理员授权，将节点注册为系统 LaunchDaemon，并以截图账号立即启动。开机后服务自动运行，无需保持终端打开。
 
@@ -81,6 +81,12 @@ SSH 远程执行、无本机 GUI 会话或无交互终端时，普通安装只�
 在安装目录执行 `tail -F connector.log` 即可查看后台日志。按 jobId 查找 `job_claimed`、`codex_goal_started`、`simulator_unavailable`、`image_ready` 或 `result_rejected`，可定位执行阶段。完整提示词用 JSON 字符串保存在领单记录中。日志只保存在 Mac 上，文件权限为 `0600`。服务启动时和运行期间每分钟清理超过 24 小时的记录。原生 Goal 会话历史由安装账号的 Codex 管理。
 
 节点收到通知后通过 `POST /v1/connectors/{id}/screenshot-jobs/claim` 并带 X-Screenshot-Protocol: 3 领取任务，空队列返回 204。执行失败通过 `POST /v1/connectors/{id}/screenshot-jobs/{jobId}/failure` 报告。截图后通过 POST /v1/connectors/{id}/screenshot-jobs/{jobId}/upload-ticket 获取短时上传地址，直接 PUT PNG 到 OSS，再 POST 同一路径下的 complete 确认结果。两次请求均传 targetIndex（从 0 开始）；jobId 与触发响应中的 UUID 相同。图片最大 16 MiB。中心接口要求节点 Bearer Token 和 X-Screenshot-Lease；OSS 请求只携带短时签名及绑定的图片元数据。任务超时后需要由外部显式决定是否创建新任务。
+
+## 上传候选图复核与重拍（0.2.6）
+
+中心和节点都支持复核协议时，Codex 的 `get_capture_task` 返回 `requiresFinalization:true`、当前未上传截图和已上传截图的 ID。每张上传确认后仍可复核；调用 `discard_screenshot`（截图 ID 与 `targetIndex`）可丢弃本地未上传图或确认上传的候选图，然后重拍同一目标。上传状态未知时先重试同一截图确认；撤销状态未知时先重试同一撤销，不能直接换图。丢弃会将旧图移出任务结果，OSS 旧文件暂保留，新图使用新链接。
+
+全部候选图合格后，Codex 调用 `finish_capture_task({})` 最终提交，中心才完成任务和回传；最后一张上传本身不会结束复核任务。提交响应未知时只重试提交，不能再改图；提交成功后和历史完成任务均不支持重拍。任务在提交前失败时，查询保留候选图便于排障，但回调不包含未确认图片。旧节点／旧中心保持原完成方式，原执行预算不因重拍延长。此能力需要截图 Mac 升级至 0.2.6；外部请求字段不变。
 
 ## OSS 与外部通知配置
 

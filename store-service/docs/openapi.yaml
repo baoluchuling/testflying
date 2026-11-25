@@ -265,11 +265,11 @@ components:
         result:
           type: [object, 'null']
           properties:
-            images: {type: array, items: {$ref: '#/components/schemas/ScreenshotImage'}, description: 'Confirmed images in target order; partial results remain visible when a later target fails.'}
+            images: {type: array, items: {$ref: '#/components/schemas/ScreenshotImage'}, description: 'Current uploaded images in target order. Review-capable tasks retain replaceable candidates while running and succeed only after explicit final submission. Candidates on pre-submission failure remain queryable but are omitted from external failure callbacks.'}
             notificationStatus: {type: string, enum: [not_configured, pending, sending, retrying, delivered, partial, failed, unauthorized]}
             notificationError: {type: [string, 'null'], description: Safe fixed error code; no remote response text or secrets.}
             notificationResults: {type: [array, 'null'], items: {type: object, properties: {index: {type: integer}, result: {type: string, enum: [created, skipped, rejected]}}}}
-          description: All targets must be confirmed before status becomes succeeded.
+          description: All targets must be confirmed before status becomes succeeded. Review-capable nodes also explicitly finalize the task; old nodes preserve automatic completion after the last upload.
         error: {type: [string, 'null']}
     CreateStoreRelease:
       type: object

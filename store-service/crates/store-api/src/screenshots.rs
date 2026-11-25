@@ -10,6 +10,7 @@ use zip::{write::SimpleFileOptions, ZipWriter};
 mod delivery;
 pub mod notification;
 pub(crate) mod oss;
+mod review;
 
 const MAX_IMAGE: usize = 16 * 1024 * 1024;
 const MAX_REPLY: usize = 64 * 1024;
@@ -205,6 +206,14 @@ pub(super) fn routes(
         .route(
             "/v1/connectors/{id}/screenshot-jobs/{job}/complete",
             post(delivery::complete),
+        )
+        .route(
+            "/v1/connectors/{id}/screenshot-jobs/{job}/discard",
+            post(review::discard),
+        )
+        .route(
+            "/v1/connectors/{id}/screenshot-jobs/{job}/finish",
+            post(review::finish),
         )
         .route(
             "/v1/connectors/{id}/screenshot-jobs/{job}/failure",
@@ -442,7 +451,7 @@ async fn claim(
 ) -> Result<Response> {
     authorize_worker(&state, &id, &headers)?;
     Ok(
-        match state.registry.claim_screenshot_with_timing_protocol(
+        match state.registry.claim_screenshot_with_protocols(
             &id,
             headers
                 .get("x-screenshot-protocol")
@@ -452,6 +461,9 @@ async fn claim(
                 .is_some_and(|v| v == "1"),
             headers
                 .get("x-screenshot-timing-protocol")
+                .is_some_and(|v| v == "1"),
+            headers
+                .get("x-screenshot-review-protocol")
                 .is_some_and(|v| v == "1"),
         )? {
             Some(job) => Json(job).into_response(),
