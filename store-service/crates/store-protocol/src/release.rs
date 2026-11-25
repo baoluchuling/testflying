@@ -1,6 +1,6 @@
 //! Shared Connector release identity and bounded, canonical numeric versions.
 
-pub const CONNECTOR_VERSION: &str = "0.2.4";
+pub const CONNECTOR_VERSION: &str = "0.2.5";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ConnectorVersion([u32; 3]);

@@ -51,6 +51,7 @@ def main() -> int:
         ["node", "--test", "crates/store-api/tests/setup-package.test.mjs"],
         ["cargo", "build", "--locked", "--package", "store-connector"],
         [sys.executable, "-B", "scripts/verify_connector_install.py"],
+        [sys.executable, "-B", "scripts/verify_screenshot_install.py"],
         ["/bin/sh", "-n", "packaging/screenshot-connector/run.sh"],
         ["/bin/sh", "-n", "packaging/screenshot-connector/install.sh"],
         ["cargo", "fmt", "--all", "--", "--check"],

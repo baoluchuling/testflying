@@ -62,6 +62,22 @@ sh ./install.sh
 
 升级已有节点时，把新版 ZIP 中的 `screenshot-connector`、`run.sh`、`install.sh` 和 `testflying-prod-ca.crt` 覆盖到原安装目录，保留原来的 `connector.json`，再运行 `sh ./install.sh` 重启服务。
 
+### 文件夹授权与自动拉起（0.2.5）
+
+本机交互式终端执行安装时，会打开 Finder 定位当前安装目录中的 `screenshot-connector`，并打开「系统设置 → 隐私与安全性 → 完全磁盘访问」。点击“+”，用 Command+Shift+G 输入安装器打印的完整程序路径，添加并开启；系统提供文件夹选择时也可只授权项目需要的目录。完成后回到终端按回车，再进行服务安装或重启。Codex 的完整访问模式不能替代 macOS 这一层授权。
+
+已经安装的节点可以单独补授权：
+
+```sh
+sh ./install.sh --permissions
+```
+
+确认完成后，脚本请求该节点优雅退出，`launchd` 的 `KeepAlive` 会在退出后自动拉起；系统授权窗口要求当前程序退出时也由同一机制恢复。`RunAtLoad` 保持开机自启动，不需要重启电脑。已经手动授权，只需重启服务时运行 `sh ./install.sh --restart`；未安装的节点不会被这个命令隐式安装。
+
+SSH 远程执行、无本机 GUI 会话或无交互终端时，普通安装只打印手工授权步骤并保留无人值守安装行为；单独执行 `--permissions` 只显示步骤，不打开窗口或重启。交互引导被取消或输入结束时，不安装或重启服务。脚本不会自动批准、读取隐私目录检测授权、修改 TCC 或重置既有权限，也不会申请摄像头、麦克风等无关权限；终端确认只是用户声明完成，实际授权以系统设置为准。后台服务不会弹出授权引导。
+
+当前没有稳定的 Developer ID 签名，升级可能要求重新授权。若旧条目已开启仍拒绝访问，移除旧条目、重新添加当前的 `screenshot-connector` 并开启，然后重启服务；不保证升级后自动保留授权。只手动运行 `run.sh` 的进程没有 `launchd` 自动拉起能力。[Apple 文件访问设置](https://support.apple.com/en-lk/guide/mac-help/mchl211c911f/mac)、[程序身份与系统权限](https://developer.apple.com/forums/thread/678819)。
+
 在安装目录执行 `tail -F connector.log` 即可查看后台日志。按 jobId 查找 `job_claimed`、`codex_goal_started`、`simulator_unavailable`、`image_ready` 或 `result_rejected`，可定位执行阶段。完整提示词用 JSON 字符串保存在领单记录中。日志只保存在 Mac 上，文件权限为 `0600`。服务启动时和运行期间每分钟清理超过 24 小时的记录。原生 Goal 会话历史由安装账号的 Codex 管理。
 
 节点收到通知后通过 `POST /v1/connectors/{id}/screenshot-jobs/claim` 并带 X-Screenshot-Protocol: 3 领取任务，空队列返回 204。执行失败通过 `POST /v1/connectors/{id}/screenshot-jobs/{jobId}/failure` 报告。截图后通过 POST /v1/connectors/{id}/screenshot-jobs/{jobId}/upload-ticket 获取短时上传地址，直接 PUT PNG 到 OSS，再 POST 同一路径下的 complete 确认结果。两次请求均传 targetIndex（从 0 开始）；jobId 与触发响应中的 UUID 相同。图片最大 16 MiB。中心接口要求节点 Bearer Token 和 X-Screenshot-Lease；OSS 请求只携带短时签名及绑定的图片元数据。任务超时后需要由外部显式决定是否创建新任务。

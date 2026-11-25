@@ -223,7 +223,7 @@ Firebase 错误只返回固定安全码：`firebase_not_configured`（503，Goog
 
 ### 节点升级与目录发现
 
-商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.4`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
+商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.5`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
 
 后续节点生产代码、依赖或安装脚本变化，必须先提升 `crates/store-connector/Cargo.toml` 的独立版本和 `store-protocol::release::CONNECTOR_VERSION`，并同步 Cargo.lock。固定发布守卫检查版本一致、禁止回退，并比较各平台上次发布的节点输入摘要；输入改变却未提升版本时构建直接失败。仅中心页面／接口文档改动可保留节点版本。商店三平台及 arm64 截图包必须使用同一版本与输入摘要才可部署；版本信息写入正式构建和发布报告。
 
@@ -1081,6 +1081,8 @@ Content-Type: application/json
 每次成功 POST 都创建一个新任务并返回新的 jobId。若响应丢失，不要自动重发，避免重复执行；正常业务不需要通过查询来推动任务完成。
 
 ### 截图执行预算（节点 0.2.4）
+
+截图节点 0.2.5 的安装脚本增加本机文件访问授权引导：安装／升级时在非 root 用户的交互式桌面终端打开系统「完全磁盘访问」，定位当前安装的 `screenshot-connector`，完成手工授权后回车再安装／重启。已有节点可执行 `sh ./install.sh --permissions` 补授权并重启，或 `sh ./install.sh --restart` 只重启已安装服务；`launchd` 在退出后自动拉起并保持开机自启。后台服务不打开系统设置；无 GUI／无交互终端时仅打印手工步骤，`--permissions` 不重启。引导不自动批准或验证授权；无稳定签名时升级可能需重新添加当前程序。详见[截图节点文件授权说明](screenshot-connector.md#文件夹授权与自动拉起025)。
 
 外部仍只提交现有平台、包名、提示词和 target，不增加时长参数。中心后台「截图上传与结果通知」增加准备时间与单张图片预算；管理员 PUT `/v1/screenshot-settings` 或原 HTTPS session 镜像可单独更新 `{"execution":{"preparationMinutes":30,"perImageMinutes":15}}`。准备时间范围 0–1440 分钟，单张 1–1440 分钟，省略保留原值。原有 OSS／通知密钥、配置和凭据保持，旧加密配置缺少 execution 时使用默认值。
 
