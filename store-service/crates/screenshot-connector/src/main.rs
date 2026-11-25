@@ -1,5 +1,4 @@
 #[cfg(unix)]
-#[path = "screenshot/connector.rs"]
 mod connector;
 
 fn main() -> std::process::ExitCode {

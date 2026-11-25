@@ -2,10 +2,12 @@ mod accounts;
 mod api_docs;
 mod firebase;
 pub mod forwarding;
+mod installer_assets;
 mod integrations;
 pub mod logs;
 mod node_logs;
 pub mod registry;
+pub mod releases;
 mod screenshot_settings;
 mod screenshot_skill;
 mod screenshots;
@@ -298,11 +300,12 @@ fn node_view(state: &ApiState, node: Connector) -> Value {
     let logs_available = node.kind == ConnectorKind::Store
         && (state.transport.logs_supported(&node.connector_id)
             || (!connected && node.base_url.is_some()));
-    let version_status = store_protocol::release::version_status(node.connector_version.as_deref());
+    let latest = releases::node_version(&state.release_root, node.kind);
+    let version_status = releases::status(node.connector_version.as_deref(), latest.as_deref());
     let mut value = serde_json::to_value(node).expect("Connector serialization");
     value["connected"] = json!(connected);
     value["logsAvailable"] = json!(logs_available);
-    value["latestConnectorVersion"] = json!(store_protocol::release::CONNECTOR_VERSION);
+    value["latestConnectorVersion"] = json!(latest);
     value["versionStatus"] = json!(version_status);
     value
 }
@@ -323,7 +326,7 @@ fn business_node_view(state: &ApiState, node: Connector) -> Value {
 
 async fn list_connectors(State(state): State<Arc<ApiState>>) -> Result<Json<Value>> {
     Ok(Json(
-        json!({"connectors":state.registry.list()?.into_iter().map(|n| node_view(&state,n)).collect::<Vec<_>>()}),
+        json!({"centerVersion":releases::CENTER_VERSION,"versions":releases::versions(&state.release_root),"connectors":state.registry.list()?.into_iter().map(|n| node_view(&state,n)).collect::<Vec<_>>()}),
     ))
 }
 async fn get_connector(

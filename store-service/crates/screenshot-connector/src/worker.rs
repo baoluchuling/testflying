@@ -28,6 +28,9 @@ use tokio::{
 };
 use uuid::Uuid;
 
+#[path = "codex_runtime.rs"]
+mod codex_runtime;
+
 const MAX_IMAGE: usize = 16 * 1024 * 1024;
 const CODEX_STDERR_LIMIT: usize = 8 * 1024;
 const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
@@ -282,6 +285,19 @@ impl<'a> Worker<'a> {
         payload
     }
 
+    fn codex_unavailable(
+        &self,
+        job: Option<Uuid>,
+        event: &'static str,
+        reason: &'static str,
+    ) -> &'static str {
+        self.log.event(job, event);
+        let mut details = self.failure_details.lock().unwrap();
+        details.event = Some(event.into());
+        details.reason = Some(reason.into());
+        "profile_unavailable"
+    }
+
     async fn run_goal(
         &self,
         job: &Job,
@@ -358,21 +374,16 @@ impl<'a> Worker<'a> {
         } else {
             None
         };
-        let unavailable = |_| "profile_unavailable";
-        let codex = match self
-            .config
-            .codex_path
-            .as_deref()
-            .filter(|path| !path.as_os_str().is_empty())
-        {
-            Some(path) => local_path(path, false)
-                .inspect_err(|_| self.log.event(id, "codex_path_invalid"))
-                .map_err(unavailable)?,
-            None => path_executable("codex").ok_or_else(|| {
-                self.log.event(id, "codex_not_found_on_path");
-                "profile_unavailable"
-            })?,
-        };
+        let codex = codex_runtime::for_service(
+            self.config
+                .codex_path
+                .as_deref()
+                .filter(|path| !path.as_os_str().is_empty()),
+        )
+        .map_err(|error| {
+            let (event, reason) = error.diagnostic();
+            self.codex_unavailable(id, event, reason)
+        })?;
         let codex_home = self
             .config
             .codex_home
@@ -380,11 +391,17 @@ impl<'a> Worker<'a> {
             .filter(|path| !path.as_os_str().is_empty())
             .map(|path| local_path(path, true))
             .transpose()
-            .inspect_err(|_| self.log.event(id, "codex_home_invalid"))
-            .map_err(unavailable)?;
+            .map_err(|_| {
+                self.codex_unavailable(
+                    id,
+                    "codex_home_invalid",
+                    "connector.json 的 codexHome 必须指向已存在的绝对目录",
+                )
+            })?;
         let adb = self.config.adb();
-        let mut command = Command::new(codex);
+        let mut command = Command::new(codex.executable);
         job_environment(&mut command, root, codex_home.as_deref());
+        command.env("PATH", codex.path);
         let mut instructions = match adb.as_deref() {
             Some(adb) => format!(
                 "{}\nThe local ADB executable is {adb:?}.",
@@ -2351,6 +2368,42 @@ mod tests {
                 Err(code)
             );
         }
+    }
+
+    #[tokio::test]
+    async fn invalid_codex_override_reports_a_safe_reason() {
+        let workspace = tempfile::tempdir().unwrap();
+        let config = Config {
+            kind: "screenshot".into(),
+            connector_id: Uuid::new_v4().to_string(),
+            token: "a".repeat(64),
+            server_url: Url::parse("https://fixture.example").unwrap(),
+            message_key: "fixture".into(),
+            codex_path: Some(workspace.path().join("private-codex-location")),
+            codex_home: None,
+            adb_path: None,
+            ca_file: None,
+        };
+        let worker = Worker::new(&config, &workspace.path().join("connector.json")).unwrap();
+        let job: Job = serde_json::from_value(json!({
+            "jobId": Uuid::new_v4(),
+            "lease": Uuid::new_v4(),
+            "prompt": "fixture",
+            "failureDetailsSupported": true,
+        }))
+        .unwrap();
+        let (_stop, mut stop) = watch::channel(false);
+        let code = worker
+            .run_goal_in(workspace.path(), &job, &mut stop)
+            .await
+            .unwrap_err();
+        let payload = worker.failure_payload(&job, code);
+        assert_eq!(payload["code"], "profile_unavailable");
+        assert_eq!(payload["details"]["event"], "codex_path_invalid");
+        assert!(payload["details"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("codexPath")));
+        assert!(!payload.to_string().contains("private-codex-location"));
     }
 
     #[tokio::test]

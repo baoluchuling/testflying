@@ -225,7 +225,22 @@ fn document(content_type: &'static str, bytes: &'static [u8]) -> Response {
     secure(([(header::CONTENT_TYPE, content_type)], bytes).into_response())
 }
 
-async fn asset(Path(name): Path<String>) -> Response {
+async fn asset(State(state): State<Arc<ApiState>>, Path(name): Path<String>) -> Response {
+    if matches!(
+        name.as_str(),
+        "start.cmd" | "start.sh" | "install.cmd" | "install.ps1" | "install.sh"
+    ) {
+        return match super::installer_assets::read(
+            &state.release_root,
+            super::registry::ConnectorKind::Store,
+            &name,
+        ) {
+            Ok(bytes) => secure(
+                ([(header::CONTENT_TYPE, "text/plain; charset=utf-8")], bytes).into_response(),
+            ),
+            Err(_) => secure(StatusCode::SERVICE_UNAVAILABLE.into_response()),
+        };
+    }
     let (kind, bytes): (&str, &[u8]) = match name.as_str() {
         "app.mjs" => (
             "text/javascript; charset=utf-8",
@@ -275,26 +290,6 @@ async fn asset(Path(name): Path<String>) -> Response {
         "ca.crt" => (
             "application/x-pem-file",
             include_bytes!("../../../deploy/testflying-prod-ca.crt"),
-        ),
-        "start.cmd" => (
-            "text/plain; charset=utf-8",
-            include_bytes!("../../../packaging/connector/start.cmd"),
-        ),
-        "start.sh" => (
-            "text/plain; charset=utf-8",
-            include_bytes!("../../../packaging/connector/start.sh"),
-        ),
-        "install.cmd" => (
-            "text/plain; charset=utf-8",
-            include_bytes!("../../../packaging/connector/install.cmd"),
-        ),
-        "install.ps1" => (
-            "text/plain; charset=utf-8",
-            include_bytes!("../../../packaging/connector/install.ps1"),
-        ),
-        "install.sh" => (
-            "text/plain; charset=utf-8",
-            include_bytes!("../../../packaging/connector/install.sh"),
         ),
         _ => return secure(StatusCode::NOT_FOUND.into_response()),
     };

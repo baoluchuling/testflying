@@ -307,7 +307,7 @@ if (!production) {
       }
       if (url.pathname === "/store-api/connector-setup/api/connectors" && req.method === "GET") {
         if (++listAttempts === 1) { res.writeHead(503).end("{}"); return; }
-        res.end(JSON.stringify({ connectors: nodes.map((node) => ({...unknownVersion, ...node})) })); return;
+        res.end(JSON.stringify({ centerVersion: "0.1.1", versions: {center:"0.1.1",store:"0.2.8",screenshot:"0.2.9"}, connectors: nodes.map((node) => ({...unknownVersion, ...node})) })); return;
       }
       if (url.pathname === "/store-api/connector-setup/api/connectors" && req.method === "POST") {
         let body = "";
@@ -689,6 +689,8 @@ try {
     const screenshotNode = { ...unknownVersion, connectorVersion:"0.2.0", versionStatus:"current", connectorId: randomUUID(), kind: "screenshot", name: "Fixture Screenshot Mac", enabled: true, connected: false };
     nodes.push(screenshotNode);
     await unlock();
+    await page.getByText("中心 0.1.1 · 截图节点 0.2.9 · 商店节点 0.2.8", {exact:true}).waitFor();
+    assert.equal(await page.locator("#componentVersions").textContent(), "中心 0.1.1 · 截图节点 0.2.9 · 商店节点 0.2.8");
     await page.getByText("接入凭据", { exact: true }).click();
     assert.equal(await page.locator(`#connector option[value="${screenshotNode.connectorId}"]`).count(), 0);
     assert.equal(await page.locator(`#screenshotNode option[value="${screenshotNode.connectorId}"]`).textContent(),

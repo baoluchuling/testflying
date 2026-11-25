@@ -211,6 +211,7 @@ function resetSession() {
     session = undefined;
   }
   nodes = [];
+  $("componentVersions").textContent = "";
   automaticKeyId = "";
   $("adminCredential").value = "";
   $("setupForm").reset();
@@ -251,6 +252,8 @@ async function restoreSession(token = "") {
       token = "";
     }
     const result = await request(active, setupPath);
+    const versions = result.versions || {};
+    $("componentVersions").textContent = `中心 ${result.centerVersion || versions.center || "未知"} · 截图节点 ${versions.screenshot || "未知"} · 商店节点 ${versions.store || "未知"}`;
     nodes = result.connectors;
     renderNodes();
     integrations.show();

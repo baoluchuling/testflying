@@ -537,6 +537,74 @@ async fn encrypted_version_reports_require_confirmation_and_duplicate_or_stale_s
 }
 
 #[tokio::test]
+async fn independent_versions_are_selected_by_kind_and_reload_without_restarting_the_center() {
+    let directory = tempfile::tempdir().unwrap();
+    let state = ApiState::new(
+        Registry::open(":memory:", SIGNING).unwrap(),
+        ADMIN.into(),
+        CLIENT.into(),
+        "http://127.0.0.1:8200".into(),
+        directory.path().to_path_buf(),
+        Duration::from_secs(2),
+    )
+    .unwrap();
+    let mut ids = Vec::new();
+    for kind in [
+        store_api::registry::ConnectorKind::Store,
+        store_api::registry::ConnectorKind::Screenshot,
+    ] {
+        let node = state.registry.create_with_kind(input(), kind).unwrap();
+        state
+            .registry
+            .register_connection(
+                &node.connector_id,
+                &state.registry.token(&node),
+                None,
+                Some("0.2.8"),
+            )
+            .unwrap();
+        ids.push(node.connector_id);
+    }
+    let path = directory.path().join("connector-versions.json");
+    std::fs::write(&path, r#"{"store":"0.2.8","screenshot":"0.2.9"}"#).unwrap();
+    let app = store_api::router(state.clone());
+    assert_eq!(
+        call(app.clone(), "GET", "/v1/connectors", CLIENT, Value::Null)
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    let (status, view) = call(app.clone(), "GET", "/v1/connectors", ADMIN, Value::Null).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(view["centerVersion"], store_api::releases::CENTER_VERSION);
+    assert_eq!(
+        view["versions"],
+        json!({"center":store_api::releases::CENTER_VERSION,"store":"0.2.8","screenshot":"0.2.9"})
+    );
+    for row in view["connectors"].as_array().unwrap() {
+        if row["kind"] == "store" {
+            assert_eq!(row["latestConnectorVersion"], "0.2.8");
+            assert_eq!(row["versionStatus"], "current");
+        } else {
+            assert_eq!(row["latestConnectorVersion"], "0.2.9");
+            assert_eq!(row["versionStatus"], "outdated");
+        }
+    }
+    std::fs::write(&path, r#"{"store":"0.2.8","screenshot":"0.3.0"}"#).unwrap();
+    let (_, view) = call(app.clone(), "GET", "/v1/connectors", ADMIN, Value::Null).await;
+    assert_eq!(view["versions"]["screenshot"], "0.3.0");
+    assert_eq!(view["centerVersion"], store_api::releases::CENTER_VERSION);
+    assert_eq!(view["versions"]["store"], "0.2.8");
+    std::fs::write(&path, "bad").unwrap();
+    let (_, view) = call(app, "GET", "/v1/connectors", ADMIN, Value::Null).await;
+    assert!(view["connectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r["versionStatus"] == "unknown"));
+}
+
+#[tokio::test]
 async fn store_and_screenshot_node_views_compare_numeric_versions_and_accept_legacy_nodes() {
     let state = state(Duration::from_secs(2));
     let (base, server) = serve(store_api::router(state.clone())).await;

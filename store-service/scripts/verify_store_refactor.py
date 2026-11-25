@@ -18,6 +18,7 @@ def source_hashes() -> dict[str, str]:
     crates = PROJECT / "crates"
     files = sorted([PROJECT / "Cargo.toml", PROJECT / "Cargo.lock", Path(__file__).resolve(),
                     PROJECT / "docs/store-api.md", PROJECT / "docs/openapi.yaml",
+                    PROJECT / "packaging/connector-versions.json",
                     PROJECT / "scripts/verify_connector_install.py",
                     PROJECT / "scripts/verify_setup_ui.py", PROJECT / "scripts/verify_setup_ui.mjs",
                     PROJECT / "scripts/managed_workspace.py",
@@ -35,6 +36,12 @@ def source_hashes() -> dict[str, str]:
                        + list((PROJECT / "packaging/screenshot-skill").rglob("*"))
                        + list(crates.rglob("*.mjs"))))
     files = [path for path in files if path.is_file()]
+    from component_release import COMPONENT_PACKAGES, component_source_hashes
+    for kind in COMPONENT_PACKAGES:
+        for relative in component_source_hashes(kind):
+            path=PROJECT/relative
+            if path.is_file():files.append(path)
+    files=sorted(set(files))
     return {str(p.relative_to(PROJECT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
 
 
@@ -57,11 +64,10 @@ def main() -> int:
         ["/bin/sh", "-n", "packaging/screenshot-connector/install.sh"],
         ["cargo", "fmt", "--all", "--", "--check"],
         ["cargo", "test", "--locked", "--workspace"],
-        ["cargo", "test", "--locked", "--package", "store-connector", "--example", "screenshot-connector"],
         ["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"],
         ["cargo", "build", "--locked", "--release", "--package", "store-api"],
         ["cargo", "build", "--locked", "--release", "--package", "store-connector"],
-        ["cargo", "build", "--locked", "--release", "--package", "store-connector", "--example", "screenshot-connector"],
+        ["cargo", "build", "--locked", "--release", "--package", "screenshot-connector"],
     ]
     checks = []
     passed = 0

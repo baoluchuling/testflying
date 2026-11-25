@@ -42,7 +42,9 @@ def main() -> None:
         binary.write_text("#!/bin/sh\nexit 0\n")
         binary.chmod(0o700)
         event_log = state / "events.jsonl"
+        service_path = f"{fixture / 'account bin'}:/usr/bin:/bin:/usr/sbin:/sbin"
         env = {**os.environ, "FIXTURE_PRIVILEGED": "0", "FIXTURE_GUI": "1",
+               "HOME": str(fixture / "caller-home"), "PATH": service_path, "FIXTURE_PATH": service_path,
                "FIXTURE_STATE": str(state), "FIXTURE_LOG": str(event_log),
                "FIXTURE_LAUNCHD": str(launchd), "FIXTURE_PLIST": str(plist),
                "FIXTURE_PACKAGE": str(package), "FIXTURE_ACCOUNT": str(account_home),
@@ -76,7 +78,7 @@ sys.exit(int(os.environ.get('FIXTURE_OPEN_FAIL','0')))
 """)
         fake("sudo", """
 assert args[:2]==['--','/bin/sh']
-env={**os.environ,'FIXTURE_PRIVILEGED':'1','SUDO_UID':os.environ['FIXTURE_UID'],'SUDO_USER':os.environ['FIXTURE_USER']}
+env={**os.environ,'FIXTURE_PRIVILEGED':'1','SUDO_UID':os.environ['FIXTURE_UID'],'SUDO_USER':os.environ['FIXTURE_USER'],'PATH':'/usr/sbin:/sbin'}
 os.execve('/bin/sh',['/bin/sh',*args[2:]],env)
 """)
         fake("launchctl", """
@@ -93,7 +95,7 @@ elif args[0]=='bootstrap':
  assert p['KeepAlive'] is True and p['RunAtLoad'] is True
  assert p['UserName']==os.environ['FIXTURE_USER']
  assert p['ProgramArguments']==['/bin/sh',os.environ['FIXTURE_PACKAGE']+'/run.sh','--service']
- assert p['EnvironmentVariables']['HOME']==os.environ['FIXTURE_ACCOUNT']
+ assert p['EnvironmentVariables']=={'HOME':os.environ['FIXTURE_ACCOUNT'],'PATH':os.environ['FIXTURE_PATH']}
  loaded.touch()
 else: sys.exit(1)
 generation.write_text(str(int(generation.read_text())+1 if generation.exists() else 1))
@@ -190,7 +192,7 @@ generation.write_text(str(int(generation.read_text())+1 if generation.exists() e
         assert '请按上方路径手动进入系统设置' in text
         before = len(events())
         previous = generation()
-        run(["--restart"])
+        run(["--restart"], extra={"PATH": "/usr/bin:/bin"})
         assert generation() == previous + 1 and not any(e['tool'] == 'open' for e in events()[before:])
         assert plist.read_bytes() == original_plist
         (state / "loaded").unlink()
@@ -202,7 +204,7 @@ generation.write_text(str(int(generation.read_text())+1 if generation.exists() e
         interactive([])
         assert plist.exists() and (state / "loaded").exists()
         assert not any(e['tool'] == 'open' and e['privileged'] != '0' for e in events())
-    print("Screenshot installer: local acknowledgement before service changes, private path selection, headless deferral, UI fallback, EOF cancellation, missing-install rejection, launchd restart and byte-preserving credentials passed")
+    print("Screenshot installer: local acknowledgement before service changes, private path selection, headless deferral, UI fallback, EOF cancellation, missing-install rejection, launchd HOME/PATH and restart, and byte-preserving credentials passed")
 
 
 if __name__ == "__main__":

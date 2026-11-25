@@ -225,7 +225,11 @@ Firebase 错误只返回固定安全码：`firebase_not_configured`（503，Goog
 
 商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.6`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
 
-后续节点生产代码、依赖或安装脚本变化，必须先提升 `crates/store-connector/Cargo.toml` 的独立版本和 `store-protocol::release::CONNECTOR_VERSION`，并同步 Cargo.lock。固定发布守卫检查版本一致、禁止回退，并比较各平台上次发布的节点输入摘要；输入改变却未提升版本时构建直接失败。仅中心页面／接口文档改动可保留节点版本。商店三平台及 arm64 截图包必须使用同一版本与输入摘要才可部署；版本信息写入正式构建和发布报告。
+中心后台、截图节点、商店节点在同一个 Git 仓库分别维护自己的 Cargo 版本：`crates/store-api/Cargo.toml`、`crates/screenshot-connector/Cargo.toml`、`crates/store-connector/Cargo.toml`，并与各自 Cargo.lock 条目一致。只修改哪个组件，就提升并构建该组件；共享生产代码影响到哪些组件，就检查哪些组件。后台同时展示三个版本，节点的 `latestConnectorVersion` 按 kind 比较，不再要求商店与截图版本一致。
+
+默认受管运行 `scripts/build_release.py changed` 自动选择组件；`center`／`screenshots`／`store` 分别只构建中心、macOS arm64 截图节点、商店三平台程序。未修改的组件保留原版本、SHA 和自己的构建来源，不因中心页面、其他节点版本、无关 workspace 成员或开发依赖变化强制重打。真实生产依赖升级须提升对应组件版本；共享 Cargo.lock 中不能证明属于该组件的特性边发生变化时，明确构建该组件会被守卫阻止，需要核对实际生产依赖，不能伪称它已重新编译。
+
+`deploy_setup.py changed` 只发布选定且通过版本／输入／SHA 校验的程序；只发节点时保留中心程序和进程。`packaging/connector-versions.json` 是独立的节点发布目录，部署后由中心从 `releases/connector-versions.json` 动态读取，更新节点版本目录不要求重编中心。管理员节点列表新增 `centerVersion` 和 `versions:{center,store,screenshot}`；旧 `connectorVersion`、`latestConnectorVersion`、`versionStatus` 字段继续保留。缺少目录时兼容现有 0.2.8 发布包，目录非法时显示版本未知。
 
 请在已有商店节点下载「仅升级程序」包并安装，保留本机配置、Apple 私钥和 Google 服务账号 JSON。升级后连接认证成功、每小时或管理员刷新会独立读取完整目录，不占用商店业务锁；同平台最小刷新间隔 60 秒并合并。旧节点无法上报目录；需要升级后成功上报目录才可自动归属应用，旧映射不再参与路由。截图节点协议不因账号目录改变，仍使用现有 arm64 包。
 

@@ -258,7 +258,7 @@ pub(super) async fn screenshot_installer(
     if !executable.starts_with(ARM64_MACHO_HEADER) {
         return Err(release_unavailable().into());
     }
-    let bytes = installer_archive(&config, &executable).map_err(|_| {
+    let bytes = installer_archive(&state.release_root, &config, &executable).map_err(|_| {
         StoreError::new(
             500,
             "installer_error",
@@ -284,26 +284,24 @@ fn release_unavailable() -> StoreError {
     )
 }
 
-fn installer_archive(config: &[u8], executable: &[u8]) -> zip::result::ZipResult<Vec<u8>> {
+fn installer_archive(
+    root: &std::path::Path,
+    config: &[u8],
+    executable: &[u8],
+) -> zip::result::ZipResult<Vec<u8>> {
     let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
+    let install = crate::installer_assets::read(root, ConnectorKind::Screenshot, "install.sh")
+        .map_err(std::io::Error::other)?;
+    let run = crate::installer_assets::read(root, ConnectorKind::Screenshot, "run.sh")
+        .map_err(std::io::Error::other)?;
+    let readme = crate::installer_assets::read(root, ConnectorKind::Screenshot, "README.md")
+        .map_err(std::io::Error::other)?;
     let files: [(&str, &[u8], u32); 6] = [
         ("connector.json", config, 0o600),
         ("screenshot-connector", executable, 0o700),
-        (
-            "install.sh",
-            include_bytes!("../../../packaging/screenshot-connector/install.sh"),
-            0o700,
-        ),
-        (
-            "run.sh",
-            include_bytes!("../../../packaging/screenshot-connector/run.sh"),
-            0o700,
-        ),
-        (
-            "README.md",
-            include_bytes!("../../../packaging/screenshot-connector/README.md"),
-            0o600,
-        ),
+        ("install.sh", &install, 0o700),
+        ("run.sh", &run, 0o700),
+        ("README.md", &readme, 0o600),
         (
             "testflying-prod-ca.crt",
             include_bytes!("../../../deploy/testflying-prod-ca.crt"),

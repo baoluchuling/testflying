@@ -15,6 +15,7 @@ import zipfile
 
 from verify_store_refactor import PROJECT, managed_root, source_hashes
 from connector_release import connector_source_fingerprint, connector_version
+from component_release import normalize_report, verify_output_binary
 
 REPO = "baoluchuling/testflying"
 VERSION = connector_version()
@@ -145,14 +146,16 @@ def main() -> None:
         raise RuntimeError("Push this release's source commit before publication")
     baseline = source_hashes()
     verified = json.loads(source_file("docs/verification.json"))
-    if verified["sourceHashes"] != baseline or verified["testsPassed"] != 42:
+    if verified["sourceHashes"] != baseline or not verified["testsPassed"] or any(c["exitCode"] for c in verified["checks"]):
         raise RuntimeError("Rust sources do not match the completed verification")
     reports = {path: json.loads(source_file(path)) for _, path, _ in TARGETS.values()}
-    if any(report["sourceHashes"] != baseline for report in reports.values()):
-        raise RuntimeError("Build and current source hashes differ")
-    if any(report.get("connectorVersion") != VERSION or report.get("connectorSourceFingerprint")
-           != connector_source_fingerprint() for report in reports.values()):
-        raise RuntimeError("All platform Connector builds must have this release version and inputs")
+    reports={name:normalize_report(report) for name,report in reports.items()}
+    for target,(_,report_name,_) in TARGETS.items():
+        relative=f"releases/{target}/"+("store-connector.exe" if target.startswith("windows") else "store-connector")
+        output=reports[report_name]["outputs"][relative]
+        if output["component"]!="store" or output["version"]!=VERSION or output["sourceFingerprint"]!=connector_source_fingerprint():
+            raise RuntimeError("Store platform programs must match their own release version and inputs")
+        verify_output_binary(relative,output)
     latest_before = api("releases/latest")["id"]
     release = release_for_tag(missing_ok=True)
     if release is not None and release["target_commitish"] != commit:

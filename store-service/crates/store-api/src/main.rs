@@ -3,6 +3,10 @@ use store_api::{registry::Registry, ApiState, ScreenshotUploader};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("--version")) {
+        println!("store-api {}", store_api::releases::CENTER_VERSION);
+        return Ok(());
+    }
     let database =
         env::var("STORE_API_DATABASE").unwrap_or_else(|_| "store-registry.sqlite3".into());
     let registry = Registry::open(database, &env::var("STORE_API_NODE_SIGNING_KEY")?)?;

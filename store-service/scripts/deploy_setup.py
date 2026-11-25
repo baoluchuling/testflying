@@ -17,7 +17,7 @@ import urllib.parse
 import zipfile
 
 from verify_store_refactor import PROJECT, managed_root, source_hashes
-from connector_release import connector_source_fingerprint, connector_version
+from release_catalog import deployment_outputs,git_source,installer_asset_names
 
 
 def expected_platform_screenshots(snapshot: dict) -> list[list]:
@@ -38,28 +38,13 @@ def expected_platform_screenshots(snapshot: dict) -> list[list]:
     return sorted(expected)
 
 
-def verified_connector_output(report: dict, relative: str, version: str,
-                              fingerprint: str, project: Path = PROJECT) -> dict:
-    output = report.get("outputs", {}).get(relative)
-    if (report.get("connectorVersion") != version
-            or report.get("connectorSourceFingerprint") != fingerprint
-            or not isinstance(output, dict)
-            or output.get("connectorVersion") != version
-            or output.get("connectorSourceFingerprint") != fingerprint):
-        raise RuntimeError("All Connector packages, including screenshots, must use the current version and inputs")
-    path = project / relative
-    if not path.is_file() or path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest() != output.get("sha256"):
-        raise RuntimeError("Connector package checksum mismatch")
-    return output
-
-
 def main() -> None:
     root = managed_root()
-    if sys.argv[1:] not in ([], ["integrations"], ["api-docs"], ["config-update"]):
-        raise RuntimeError("Use integrations, api-docs or config-update for a verified rollout")
-    replace_connectors = sys.argv[1:] == ["config-update"]
-    documents_only = sys.argv[1:] in (["api-docs"], ["config-update"])
-    integrations_only = sys.argv[1:] in (["integrations"], ["api-docs"], ["config-update"])
+    if len(sys.argv)>2:
+        raise RuntimeError("Use changed, center, store or screenshots")
+    mode=sys.argv[1] if len(sys.argv)==2 else "changed"
+    documents_only = True
+    integrations_only = True
     tmp = root / "tmp"
     tmp.mkdir(exist_ok=True)
     ssh = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o",
@@ -137,27 +122,26 @@ print(json.dumps(out))
                                       "--jq", ".object.sha"], cwd=PROJECT, text=True).strip()
     if pushed != commit:
         raise RuntimeError("Push the deployment commit first")
-    build = json.loads((PROJECT / "docs" / ("deployment-build.json" if replace_connectors else "setup-api-build.json")).read_text())
-    verified = json.loads((PROJECT / "docs/verification.json").read_text())
-    release_version = connector_version()
-    release_fingerprint = connector_source_fingerprint()
-    if build.get("connectorVersion") != release_version or build.get("connectorSourceFingerprint") != release_fingerprint:
-        raise RuntimeError("API build has inconsistent Connector release metadata")
-    if source_hashes() != build["sourceHashes"] or source_hashes() != verified["sourceHashes"]:
-        raise RuntimeError("API sources differ from the verified release")
-    api = PROJECT / "releases/linux-amd64/store-api"
-    expected_api = build["outputs"]["releases/linux-amd64/store-api"]["sha256"]
-    if hashlib.sha256(api.read_bytes()).hexdigest() != expected_api:
-        raise RuntimeError("Linux API checksum mismatch")
-    worker_relative = "releases/darwin-arm64/screenshot-connector"
-    worker = build["outputs"].get(worker_relative)
-    published_worker = verified_connector_output(
-        json.loads((PROJECT / "docs/deployment-build.json").read_text()),
-        worker_relative, release_version, release_fingerprint)
-    if replace_connectors and worker is None:
-        raise RuntimeError("Connector rollout requires a rebuilt Screenshot Connector")
-    if worker is not None:
-        worker = verified_connector_output(build, worker_relative, release_version, release_fingerprint)
+    verified=json.loads((PROJECT/"docs/verification.json").read_text())
+    if source_hashes()!=verified["sourceHashes"]:
+        raise RuntimeError("Deployment source differs from the final verified source")
+    previous_publication=json.loads((PROJECT/"docs/setup-deployment-verification.json").read_text())
+    published,changed_components=deployment_outputs(mode,previous_publication)
+    if not changed_components:
+        raise RuntimeError("No newly built selected component differs from the publication")
+    replace_connectors="store" in changed_components
+    restart_center="center" in changed_components
+    center_output=published["releases/linux-amd64/store-api"]
+    store_output=published["releases/linux-amd64/store-connector"]
+    screenshot_output=published["releases/darwin-arm64/screenshot-connector"]
+    release_version=store_output["version"]
+    release_fingerprint=store_output["sourceFingerprint"]
+    release_versions={"center":center_output["version"],"store":release_version,"screenshot":screenshot_output["version"]}
+    api=PROJECT/"releases/linux-amd64/store-api"
+    expected_api=center_output["sha256"]
+    worker_relative="releases/darwin-arm64/screenshot-connector"
+    worker=screenshot_output if "screenshot" in changed_components else None
+    center_source=lambda relative:git_source(center_output["sourceCommit"],relative)
     snapshot = json.loads(remote("""
 import os,json,hashlib,subprocess
 e=open('/etc/testflying-store-api/service.env','rb').read()
@@ -173,31 +157,26 @@ print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdig
  'url':v['STORE_API_PUBLIC_URL'],'admin':v['STORE_API_ADMIN_TOKEN'],'token':v['STORE_API_TOKEN'],
  'screenshotUploadConfigured':bool(v.get('STORE_API_SCREENSHOT_UPLOAD_URL')),
  'screenshotConnectorSha256':hashlib.sha256(open(worker,'rb').read()).hexdigest() if os.path.isfile(worker) else None,
+ 'apiSha256':hashlib.sha256(open(os.path.join(current,'bin/store-api'),'rb').read()).hexdigest(),
+ 'servicePid':int(subprocess.check_output(['systemctl','show','testflying-store-api','--property=MainPID','--value']).strip()),
  'binaries':hashes,'available':int(subprocess.check_output(['df','--output=avail','-B1','/opt']).decode().splitlines()[-1])}))
 """))
     routing_before = routing_snapshot() if documents_only else None
-    if worker is None and snapshot["screenshotConnectorSha256"] != published_worker["sha256"]:
-        raise RuntimeError("Published Screenshot Connector differs from its verified release")
-    if snapshot["available"] <= 21474836480:
+    if snapshot["apiSha256"]!=previous_publication["apiSha256"]:
+        raise RuntimeError("Running API differs from the last verified publication")
+    if snapshot["screenshotConnectorSha256"]!=previous_publication["screenshotConnectorSha256"]:
+        raise RuntimeError("Published Screenshot Connector differs from its last verified publication")
+    if snapshot["binaries"]!=previous_publication["connectorBinarySha256"]:
+        raise RuntimeError("Published Store programs differ from their last verified publication")
+    if snapshot["available"]<=21474836480:
         raise RuntimeError("Server free-space reserve is insufficient")
-    replacements = {}
-    previous_publication = json.loads((PROJECT / "docs/setup-deployment-verification.json").read_text())
-    for target, report_name in [("linux-amd64", "deployment-build.json"), ("darwin-arm64", "deployment-build.json"),
-                                ("windows-amd64", "windows-release-build.json")]:
-        old = json.loads((PROJECT / "docs" / report_name).read_text())
-        binary_name = "store-connector.exe" if target.startswith("windows") else "store-connector"
-        relative = f"releases/{target}/{binary_name}"
-        output = verified_connector_output(old, relative, release_version, release_fingerprint)
-        if replace_connectors:
-            if snapshot["binaries"][target] != previous_publication["storeConnectorPublication"]["downloadVerified"][target]:
-                raise RuntimeError("Published Connector differs from the previous verified publication")
-            if old["sourceHashes"] != verified["sourceHashes"]:
-                raise RuntimeError("Connector replacement sources differ from the verified center release")
-            expected = output["sha256"]
-            replacements[target] = {"relative": relative, "sha256": expected, "name": binary_name}
-            continue
-        if snapshot["binaries"][target] != old["outputs"][f"releases/{target}/{binary_name}"]["sha256"]:
-            raise RuntimeError("An existing Connector binary changed")
+    replacements={}
+    for target in ("linux-amd64","darwin-arm64","windows-amd64"):
+        name="store-connector.exe" if target.startswith("windows") else "store-connector"
+        relative=f"releases/{target}/{name}"
+        output=published[relative]
+        if output["sha256"]!=snapshot["binaries"][target]:
+            replacements[target]={"relative":relative,"sha256":output["sha256"],"name":name}
     source_archive = git("archive", "--format=tar", "--prefix=source/", commit + ":store-service")
     archive = io.BytesIO()
     with tarfile.open(fileobj=archive, mode="w") as output:
@@ -206,10 +185,17 @@ print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdig
                 if not (member.isfile() or member.isdir()) or ".." in member.name.split("/"):
                     raise RuntimeError("Unexpected committed source member")
                 output.addfile(member, source.extractfile(member) if member.isfile() else None)
-        member = tarfile.TarInfo("bin/store-api")
-        member.size, member.mode = api.stat().st_size, 0o755
-        with api.open("rb") as stream:
-            output.addfile(member, stream)
+        for kind,node_output in (("store",store_output),("screenshot",screenshot_output)):
+            source_directory="connector" if kind=="store" else "screenshot-connector"
+            for name in installer_asset_names(kind):
+                data=git_source(node_output["sourceCommit"],"packaging/"+source_directory+"/"+name)
+                member=tarfile.TarInfo("node-assets/"+kind+"/"+name)
+                member.size,member.mode=len(data),0o644
+                output.addfile(member,io.BytesIO(data))
+        if restart_center:
+            member=tarfile.TarInfo("bin/store-api")
+            member.size,member.mode=api.stat().st_size,0o755
+            with api.open("rb") as stream:output.addfile(member,stream)
         if worker:
             executable = PROJECT / worker_relative
             member = tarfile.TarInfo("bin/screenshot-connector")
@@ -230,7 +216,7 @@ print(json.dumps({'current':current,'environmentSha256':hashlib.sha256(e).hexdig
     if not previous.startswith("/opt/testflying-store-api/versions/") or previous == release:
         raise RuntimeError("Review the current deployment before replacing it")
     remote("""
-import os,sys,tarfile,io,shutil,hashlib
+import os,sys,tarfile,io,shutil,hashlib,json
 p=""" + repr(release) + """
 old=""" + repr(previous) + """
 assert os.path.realpath('/opt/testflying-store-api/current')==old
@@ -243,6 +229,13 @@ with tarfile.open(fileobj=io.BytesIO(sys.stdin.buffer.read()),mode='r:')as t:
 legacy=os.path.join(old,'releases/darwin-universal')
 shutil.copytree(os.path.join(old,'releases'),os.path.join(p,'releases'),symlinks=True,
                 ignore=lambda source,names: {'screenshot-connector'} if source==legacy else set())
+assets=os.path.join(p,'releases/installer-assets')
+if os.path.exists(assets): shutil.rmtree(assets)
+os.replace(os.path.join(p,'node-assets'),assets)
+if not os.path.isfile(os.path.join(p,'bin/store-api')):
+ shutil.copy2(os.path.join(old,'bin/store-api'),os.path.join(p,'bin/store-api'))
+catalog=""" + repr({"store":release_versions["store"],"screenshot":release_versions["screenshot"]}) + """
+with open(os.path.join(p,'releases/connector-versions.json'),'w') as f: json.dump(catalog,f)
 assert hashlib.sha256(open(os.path.join(p,'bin/store-api'),'rb').read()).hexdigest()==""" + repr(expected_api) + """
 worker_sha=""" + repr(worker["sha256"] if worker else None) + """
 if worker_sha:
@@ -316,14 +309,11 @@ assert current in (""" + repr(expected) + "," + repr(target) + """ )
 assert not os.path.lexists(p)
 os.symlink(""" + repr(target) + """,p)
 os.replace(p,'/opt/testflying-store-api/current')
-subprocess.check_call(['systemctl','restart','testflying-store-api'])
+if """ + repr(restart_center) + """ :
+ subprocess.check_call(['systemctl','restart','testflying-store-api'])
 """)
 
     changed = success = False
-    node = None
-    process = None
-    app = "com.testflying.setupverification." + root.name
-    mapped = []
     report_path = PROJECT / "docs/setup-deployment-verification.json"
     try:
         status, body = request("/v1/connectors", snapshot["admin"])
@@ -420,7 +410,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             for asset in ("logs.mjs", "app.mjs", "accounts.mjs", "versions.mjs", "skills.mjs", "packager.mjs", "index.html", "style.css", "forwarding.mjs", "screenshot-settings.mjs"):
                 path = "/connector-setup/" + ("" if asset == "index.html" else asset)
                 status, content = request(path)
-                check(status == 200 and content == (PROJECT / "crates/store-api/src/setup" / asset).read_bytes(),
+                check(status == 200 and content == center_source("crates/store-api/src/setup/"+asset),
                       "exact deployed log viewer asset " + asset)
             recovered = not previously_connected
             for _ in range(40):
@@ -432,8 +422,11 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                 time.sleep(0.5)
             check(recovered, "previously connected nodes recovered after center restart")
             status, body = request("/v1/connectors", snapshot["admin"])
-            node_versions = json.loads(body).get("connectors", [])
-            check(status == 200 and all(node.get("latestConnectorVersion") == release_version
+            version_response=json.loads(body)
+            node_versions=version_response.get("connectors",[])
+            check(version_response.get("versions")==release_versions and version_response.get("centerVersion")==release_versions["center"],
+                  "center and each node kind expose their own published version")
+            check(status == 200 and all(node.get("latestConnectorVersion") == release_versions["screenshot" if node.get("kind")=="screenshot" else "store"]
                   and node.get("versionStatus") in ("current", "outdated", "newer", "unknown")
                   and ((node.get("connectorVersion") is None) == (node.get("versionStatus") == "unknown"))
                   for node in node_versions),
@@ -450,7 +443,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
             docs = "/v1/store-management/api-docs"
             for asset in ("start.cmd", "install.ps1", "install.sh"):
                 status, content = request("/connector-setup/" + asset)
-                check(status == 200 and content == (PROJECT / "packaging/connector" / asset).read_bytes(),
+                check(status == 200 and content == git_source(store_output["sourceCommit"],"packaging/connector/"+asset),
                       "exact deployed installation asset " + asset)
             if replacements:
                 status, body = request("/v1/connectors", snapshot["admin"])
@@ -490,7 +483,7 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                       scheme + " language and device options with platform limits")
                 for format_name, relative in (("markdown", "docs/store-api.md"), ("openapi", "docs/openapi.yaml")):
                     status, content = request(docs + "?format=" + format_name, snapshot["token"], scheme=scheme)
-                    check(status == 200 and content == (PROJECT / relative).read_bytes(),
+                    check(status == 200 and content == center_source(relative),
                           scheme + " exact deployed " + format_name + " document")
                 check(request(docs, scheme=scheme)[0] == 401,
                       scheme + " anonymous documentation denied")
@@ -503,10 +496,11 @@ subprocess.check_call(['systemctl','restart','testflying-store-api'])
                 check(request(docs, existing_token, scheme="http")[0] == 403,
                       "integration documentation access still requires HTTPS")
             after = json.loads(remote("""
-import json,hashlib,os
+import json,hashlib,os,subprocess
 p=os.path.realpath('/opt/testflying-store-api/current')
 sha=lambda p:hashlib.sha256(open(p,'rb').read()).hexdigest()
 print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
+ 'servicePid':int(subprocess.check_output(['systemctl','show','testflying-store-api','--property=MainPID','--value']).strip()),
  'environmentSha256':sha('/etc/testflying-store-api/service.env'),
  'proxySha256':sha('/etc/bugsmith/zentao-tls/nginx.conf'),
  'screenshotConnectorSha256':sha(p+'/releases/darwin-arm64/screenshot-connector'),
@@ -517,7 +511,9 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
             check(after["environmentSha256"] == snapshot["environmentSha256"]
                   and after["proxySha256"] == snapshot["proxySha256"],
                   "persistent service and HTTP HTTPS proxy configuration preserved")
-            expected_connectors = {target: entry["sha256"] for target, entry in replacements.items()} if replacements else snapshot["binaries"]
+            if not restart_center:
+                check(after["servicePid"]==snapshot["servicePid"],"node-only publication preserves the running center process")
+            expected_connectors = {**snapshot["binaries"],**{target:entry["sha256"] for target,entry in replacements.items()}}
             check(after["binaries"] == expected_connectors
                   and after["screenshotConnectorSha256"] == (worker["sha256"] if worker else snapshot["screenshotConnectorSha256"]),
                   "store and screenshot Connector publication hashes verified")
@@ -621,9 +617,12 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
             previous_report = json.loads(report_path.read_text())
             report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
                       "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                      "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],
+                      "deploymentCommit": commit, "binarySourceCommit": center_output["sourceCommit"],
                       "apiSha256": expected_api, "connectorBinarySha256": expected_connectors,
                       "connectorVersion": release_version, "connectorSourceFingerprint": release_fingerprint,
+                      "centerVersion":release_versions["center"],"screenshotConnectorVersion":release_versions["screenshot"],
+                      "componentVersions":release_versions,"publishedOutputs":published,
+                      "changedComponents":sorted(changed_components),"centerRestarted":restart_center,
                       "firebaseDiagnostics": {"minimumConnectorVersion": "0.2.1", "publishedConnectorVersion": release_version,
                                               "readOnly": True, "actualFirebaseAccountsQueried": False,
                                               "automaticMembershipChanges": False, "publicCoreEndpointCountUnchanged": True},
@@ -651,233 +650,11 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
             report_path.write_text(json.dumps(report, indent=2) + "\n")
             success = True
             return
-        for suffix in ("", "app.mjs", "integrations.mjs", "packager.mjs", "style.css", "jszip.min.js", "ca.crt", "start.cmd", "start.sh",
-                       "install.cmd", "install.ps1", "install.sh"):
-            check(request("/connector-setup/" + suffix)[0] == 200, "setup asset " + (suffix or "index"))
-        check(request("/v1/connectors")[0] == 401, "administrator authentication still required")
-        setup = "/connector-setup/api/connectors"
-        check(request(setup, scheme="http")[0] == 403, "node setup requires HTTPS")
-        check(request(setup)[0] == 401, "anonymous node listing rejected")
-        check(request(setup, method="POST", data={"name": ""})[0] == 401, "anonymous node creation rejected")
-        check(request(setup + "/not-a-node/installer/windows-amd64")[0] == 401,
-              "anonymous installer download rejected before lookup")
-        check(request(setup, snapshot["token"])[0] == 401, "business token cannot access node setup")
-        status, setup_nodes = request(setup, snapshot["admin"])
-        check(status == 200, "administrator can access node setup")
-        if integrations_only:
-            discovery = "/v1/store-management/connectors"
-            login = "/connector-setup/api/session"
-            cookies = []
-            check(request(login, method="POST", scheme="http", setup_session="")[0] == 403,
-                  "administrator session login requires HTTPS")
-            check(request(login, method="POST", setup_session="")[0] == 401,
-                  "anonymous requests cannot issue administrator sessions")
-            try:
-                check(request(login, snapshot["admin"], "POST", setup_session="", cookies=cookies)[0] == 204,
-                      "administrator can establish an HTTPS setup session")
-                check(len(cookies) == 1 and cookies[0].startswith("__Secure-tf-setup="),
-                      "proxy passes through the setup session cookie")
-                check(cookies[0].endswith("; Secure; HttpOnly; SameSite=Strict"),
-                      "setup cookie is Secure, HttpOnly and SameSite Strict")
-                cookie = cookies[0].split(";", 1)[0]
-                check(request(setup, setup_session=cookie)[0] == 200,
-                      "setup session restores node management without sending the administrator token again")
-                check(request("/connector-setup/api/integrations", setup_session=cookie)[0] == 200,
-                      "setup session can list integrations through the scoped browser route")
-                check(request(management, setup_session=cookie)[0] == 401,
-                      "public management routes still require a bearer token")
-            finally:
-                if cookies:
-                    cookie = cookies[0].split(";", 1)[0]
-                    check(request(login, method="DELETE", setup_session=cookie)[0] == 204,
-                          "administrator setup session was revoked")
-                    check(request(setup, setup_session=cookie)[0] == 401,
-                          "revoked setup session cannot be replayed")
-            check(request(management, scheme="http")[0] == 403, "credential management requires HTTPS")
-            check(request(management)[0] == 401, "anonymous credential management rejected")
-            check(request(management, snapshot["token"])[0] == 401, "legacy business token cannot manage credentials")
-            status, body = request(discovery, snapshot["token"])
-            check(status == 200 and bool(json.loads(body)["connectors"]), "legacy business token can list enabled nodes")
-            business_nodes = {row["connectorId"] for row in json.loads(body)["connectors"]}
-            connector_id = next(iter(business_nodes))
-            status, body = request("/connector-setup/")
-            check(status == 200 and b'id="screenshotWorkspace"' in body and b'id="screenshotRefresh"' in body
-                  and b'id="integrationNodes"' not in body,
-                  "deployed setup includes screenshot download and connection status and issues global tokens")
-            installer = "/v1/connectors/" + connector_id + "/screenshot-installer"
-            check(request(installer)[0] == 401 and request(installer, snapshot["admin"])[0] == 422,
-                  "screenshot installer route is administrator-only and rejects a store node")
-            status, body = request(management, snapshot["admin"])
-            check(status == 200 and all(row.get("allConnectors") is True and "token" not in row
-                                        for row in json.loads(body)["integrations"]),
-                  "all existing integrations report full node access without exposing token values")
-            if existing_token:
-                status, body = request(discovery, existing_token)
-                check(status == 200 and {row["connectorId"] for row in json.loads(body)["connectors"]} == business_nodes,
-                      "original existing token can access all enabled store nodes")
-            name = "Integration verification " + root.name
-            token = None
-            try:
-                status, body = request(management, snapshot["admin"], "POST", {"name": name})
-                check(status == 201, "temporary integration credential issued")
-                created = json.loads(body)
-                check(created["integration"]["allConnectors"] is True, "new integration grants all nodes")
-                integration = management + "/" + created["integration"]["id"]
-                token = created["token"]
-                status, body = request(integration + "/token", snapshot["admin"])
-                check(status == 200 and json.loads(body)["token"] == token, "administrator can retrieve the same credential")
-                check(request(integration + "/token", token)[0] == 401, "integration cannot retrieve admin credentials")
-                status, body = request(discovery, token)
-                check(status == 200 and {row["connectorId"] for row in json.loads(body)["connectors"]} == business_nodes,
-                      "new integration lists all enabled store nodes")
-                status, body = request("/v1/screenshot-jobs", token, "POST",
-                                       {"platform":"ios","bundleIdentifier":"com.example.verify","prompt":"verify"})
-                check((status, json.loads(body)["error"]["code"]) == (404, "screenshot_app_not_found"),
-                      "profile-free screenshot submission requires app binding before upload configuration")
-            finally:
-                status, body = request(management, snapshot["admin"])
-                check(status == 200, "temporary integration cleanup listing available")
-                for item in json.loads(body)["integrations"]:
-                    if item["name"] == name:
-                        check(request(management + "/" + item["id"], snapshot["admin"], "DELETE")[0] == 204,
-                              "temporary integration credential revoked")
-            check(token is not None and request(discovery, token)[0] == 401, "revoked integration credential rejected")
-            after = json.loads(remote("""
-import json,hashlib,os
-print(json.dumps({'environmentSha256':hashlib.sha256(open('/etc/testflying-store-api/service.env','rb').read()).hexdigest(),
-'proxySha256':hashlib.sha256(open('/etc/bugsmith/zentao-tls/nginx.conf','rb').read()).hexdigest(),
-'current':os.path.realpath('/opt/testflying-store-api/current')}))
-"""))
-            check(after["current"] == release, "new API release selected")
-            check(after["environmentSha256"] == snapshot["environmentSha256"], "persistent API configuration unchanged")
-            check(after["proxySha256"] == snapshot["proxySha256"], "HTTP and HTTPS proxy configuration unchanged")
-            expected_worker = worker["sha256"] if worker else snapshot["screenshotConnectorSha256"]
-            if expected_worker:
-                check(remote("""
-import hashlib
-print(hashlib.sha256(open('/opt/testflying-store-api/current/releases/darwin-arm64/screenshot-connector','rb').read()).hexdigest())
-""").decode().strip() == expected_worker, "published Apple Silicon Screenshot Connector checksum")
-                screenshot_node = next((node for node in json.loads(setup_nodes)["connectors"]
-                                        if node["kind"] == "screenshot" and node["enabled"]), None)
-                if screenshot_node:
-                    screenshot_id = screenshot_node["connectorId"]
-                    status, package = request(f"/v1/connectors/{screenshot_id}/screenshot-installer", snapshot["admin"])
-                    check(status == 200, "administrator can download an existing screenshot node installer")
-                    with zipfile.ZipFile(io.BytesIO(package)) as archive:
-                        check(set(archive.namelist()) == {"connector.json", "screenshot-connector", "install.sh",
-                                                        "run.sh", "README.md", "testflying-prod-ca.crt"},
-                              "screenshot package contains the native worker and its installation files")
-                        config = json.loads(archive.read("connector.json"))
-                        check(archive.read("install.sh") == (PROJECT / "packaging/screenshot-connector/install.sh").read_bytes(),
-                              "download contains the current LaunchDaemon installer script")
-                        check("projectRoots" not in config and "profiles" not in config,
-                              "download supports machine-local discovery without predefined projects or profiles")
-                        check({"codexPath", "codexHome", "codexPermissionProfile"}.isdisjoint(config),
-                              "download uses the installed Codex without machine-specific settings")
-                        executable = archive.read("screenshot-connector")
-                        check(executable.startswith(b"\xcf\xfa\xed\xfe\x0c\0\0\x01"),
-                              "download contains a single-architecture Apple Silicon Mach-O")
-                        check(config["connectorId"] == screenshot_id and len(config["messageKey"]) == 64
-                              and archive.getinfo("install.sh").external_attr >> 16 & 0o700 == 0o700
-                              and hashlib.sha256(executable).hexdigest() == expected_worker,
-                              "download contains the node's WSS configuration, installer and verified macOS worker")
-            report = {"runId": root.name, "stage": "deployed-and-verified", "production": True,
-                      "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                      "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"],
-                      "apiSha256": expected_api, "connectorBinarySha256": snapshot["binaries"],
-                      "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
-                      "screenshotUploadConfigured": snapshot["screenshotUploadConfigured"],
-                      "screenshotConnectorSha256": expected_worker,
-                      "temporaryIntegrationRevoked": True, "cleanup": "See the supervisor cleanup report for this runId"}
-            report_path.write_text(json.dumps(report, indent=2) + "\n")
-            success = True
-            return
-        status, body = request(setup, snapshot["admin"], method="POST",
-                               data={"name": "Setup deployment verification (mock only)"})
-        check(status == 201, "temporary verification node created")
-        created = json.loads(body)
-        node = created["connector"]["connectorId"]
-        status, body = request(setup, snapshot["admin"])
-        check(status == 200 and any(item["connectorId"] == node for item in json.loads(body)["connectors"]),
-              "administrator list includes the verification node")
-        config = created["installation"]
-        config.update({"provider": {"mode": "mock"}, "listenAddr": "127.0.0.1:0"})
-        private = tmp / "connector.json"
-        fd = os.open(private, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        with os.fdopen(fd, "w") as stream:
-            json.dump(config, stream)
-        process = subprocess.Popen([str(PROJECT / "releases/darwin-arm64/store-connector"), str(private)],
-                                   env={**os.environ, "TMPDIR": str(tmp), "TOKIO_WORKER_THREADS": "2",
-                                        "SSL_CERT_FILE": str(PROJECT / "deploy/testflying-prod-ca.crt")},
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        connected = False
-        for _ in range(40):
-            status, body = request("/v1/connectors/" + node, snapshot["admin"])
-            if status == 200 and json.loads(body).get("connected"):
-                connected = True
-                break
-            if process.poll() is not None:
-                break
-            time.sleep(0.5)
-        check(connected, "existing Connector binary connects through encrypted WSS")
-        for platform in ("ios", "android"):
-            binding = "/v1/apps/" + platform + "/" + app + "/connector"
-            check(request(binding, snapshot["admin"])[0] == 404, "verification mapping unused " + platform)
-            check(request(binding, snapshot["admin"], "PUT", {"connectorId": node})[0] == 200, "same node mapped for " + platform)
-            mapped.append(binding)
-            check(request("/v1/store-management/apps/" + platform + "/" + app + "/store-listings", snapshot["token"])[0] == 200,
-                  "business request routed for " + platform)
-        after = json.loads(remote("""
-import json,hashlib,os
-print(json.dumps({'environmentSha256':hashlib.sha256(open('/etc/testflying-store-api/service.env','rb').read()).hexdigest(),
-'proxySha256':hashlib.sha256(open('/etc/bugsmith/zentao-tls/nginx.conf','rb').read()).hexdigest(),
-'current':os.path.realpath('/opt/testflying-store-api/current')}))
-"""))
-        check(after["environmentSha256"] == snapshot["environmentSha256"], "all persistent API credentials unchanged")
-        check(after["proxySha256"] == snapshot["proxySha256"], "HTTP HTTPS and other proxy routes unchanged")
-        check(after["current"] == release, "new API release selected")
-        report = {"runId": root.name, "stage": "api-deployed", "finishedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                  "deploymentCommit": commit, "binarySourceCommit": build["sourceCommit"], "checks": checks,
-                  "baseUrl": "https://store-api.example.com/store-api", "addressRedacted": True,
-                  "apiSha256": expected_api, "connectorBinarySha256": snapshot["binaries"],
-                  "actualStoreAccountsUsed": False, "cleanup": "See the supervisor cleanup report for this runId"}
-        report_path.write_text(json.dumps(report, indent=2) + "\n")
-        # Verify the real, deployed browser page before accepting the rollout.
-        subprocess.run([sys.executable, "-B", "scripts/verify_setup_ui.py", "production"], cwd=PROJECT, check=True)
-        success = True
+
     finally:
-        cleanup_ok = True
-        for binding in mapped:
-            try:
-                if request(binding, snapshot["admin"], "DELETE")[0] not in (200, 204, 404):
-                    cleanup_ok = False
-            except (OSError, http.client.HTTPException, RuntimeError):
-                cleanup_ok = False
-        if node:
-            try:
-                if request("/v1/connectors/" + node, snapshot["admin"], "PATCH", {"enabled": False})[0] != 200:
-                    cleanup_ok = False
-            except (OSError, http.client.HTTPException, RuntimeError):
-                cleanup_ok = False
-        if process is not None:
-            process.terminate()
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=5)
-        if changed and not (success and cleanup_ok):
-            select(previous, release)
-        for connection in connections.values():
-            connection.close()
-    if not cleanup_ok:
-        raise RuntimeError("Verification resources were not fully cleared")
-    report = json.loads(report_path.read_text())
-    if report.get("stage") != "browser-verified" or not report.get("verificationNodesDisabled"):
-        raise RuntimeError("Production browser verification did not complete")
-    report.update({"stage": "deployed-and-verified", "verificationNodeDisabled": True,
-                   "verificationMappingsRemoved": True})
-    report_path.write_text(json.dumps(report, indent=2) + "\n")
+        if changed and not success:
+            select(previous,release)
+
 
 
 if __name__ == "__main__":
