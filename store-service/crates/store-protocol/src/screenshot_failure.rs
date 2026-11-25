@@ -157,7 +157,11 @@ pub fn summary(
     let uploaded = result["images"].as_array().map_or(0, Vec::len);
     parts.push(format!("已确认候选图 {uploaded}/{count}"));
     let d = details.cloned().unwrap_or_default().sanitized(&[]);
-    parts.push(d.reason.or(d.native_message).unwrap_or_else(|| "未提供具体原因".into()));
+    parts.push(
+        d.reason
+            .or(d.native_message)
+            .unwrap_or_else(|| "未提供具体原因".into()),
+    );
     parts.join("；").chars().take(2000).collect()
 }
 
@@ -209,7 +213,7 @@ mod tests {
             &json!([{}, {}]),
             &json!({"images":[{}]}),
         );
-        assert_eq!(text,"任务已退出；已确认候选图 1/2；未提供具体原因");
+        assert_eq!(text, "任务已退出；已确认候选图 1/2；未提供具体原因");
         let d = FailureDetails {
             reason: Some("缺少可用的 Android 系统镜像".into()),
             goal_status: Some("blocked".into()),
