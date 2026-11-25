@@ -1,27 +1,27 @@
 {
-  "runId": "f08e78f641fb425785c8b978c14a413d",
+  "runId": "8c6323fa841642d38761bbb02be99f9a",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-24T10:16:40.155327+00:00",
-  "deploymentCommit": "b3ae45bd65b099591f49d132e97132c939905572",
-  "binarySourceCommit": "697f25f34ebed64e4951c76eaa82486b34bf6b97",
-  "apiSha256": "575ecba7ee06e8429544d09e8f5636867f7365fb459e4a8d2728cb7db57588bc",
+  "finishedAt": "2026-11-25T02:50:10.827758+00:00",
+  "deploymentCommit": "f90de4291e79734bf93f0445e4e645d8d900199e",
+  "binarySourceCommit": "4fc2bb1eaf1da801710ee0f29650b988954733d1",
+  "apiSha256": "ef259289bb1f2269adc2ad7bf7c1ce4143c23e32b923279c392a5f1b8af7e179",
   "connectorBinarySha256": {
-    "linux-amd64": "24cc1c53590b68916f3cea4797653d5eedb3b1ffaefb39c4291548a144648e6b",
-    "darwin-arm64": "cfdc99eda8fea3631ed048ba96f2c65c7098d4fd84889ac404b67978afad60db",
-    "windows-amd64": "76baef1bd801aa155880b6160bc48edaa6c199bb2fd39f8c1102116833eb492e"
+    "linux-amd64": "d7c7d9a060ce9fdc4a4edd637b8ac86cea2d6eb59d8286ba1d720a23cdd647b9",
+    "darwin-arm64": "a44b7791042cb167808cc2dad9e9b31eb8a634e2756be2e20d3e21aa5b963919",
+    "windows-amd64": "d1e774e6cd32c8041051c2cfba29d973fe4bd92aaa8e032208ac07578d1d441b"
   },
-  "connectorVersion": "0.2.4",
-  "connectorSourceFingerprint": "76804ad38026fd17804c0d95880e98c37a5dce54c835be3839153c5aea3bea00",
+  "connectorVersion": "0.2.5",
+  "connectorSourceFingerprint": "b89b9abd8ba9f8fb3e1d9fafe61d1a0830ccb7208eef83325ad8ef6026f9dc8f",
   "firebaseDiagnostics": {
     "minimumConnectorVersion": "0.2.1",
-    "publishedConnectorVersion": "0.2.4",
+    "publishedConnectorVersion": "0.2.5",
     "readOnly": true,
     "actualFirebaseAccountsQueried": false,
     "automaticMembershipChanges": false,
     "publicCoreEndpointCountUnchanged": true
   },
-  "screenshotConnectorSha256": "6e4bbf8794c313d05b3bfdb6116d07872337d01660b44906af4850599b534d9c",
+  "screenshotConnectorSha256": "b99122f5fcdbe4187cf5253fa40c557ec3b852ab7abeb8dd5134f6f45f8aea03",
   "screenshotUploadConfigured": false,
   "screenshotExecution": {
     "perImageMinutes": 15,
@@ -620,12 +620,12 @@
     "unavailableOrInconsistentBeforeRollout": []
   },
   "storeConnectorPublication": {
-    "runId": "f08e78f641fb425785c8b978c14a413d",
-    "sourceCommit": "b3ae45bd65b099591f49d132e97132c939905572",
+    "runId": "8c6323fa841642d38761bbb02be99f9a",
+    "sourceCommit": "f90de4291e79734bf93f0445e4e645d8d900199e",
     "downloadVerified": {
-      "linux-amd64": "24cc1c53590b68916f3cea4797653d5eedb3b1ffaefb39c4291548a144648e6b",
-      "darwin-arm64": "cfdc99eda8fea3631ed048ba96f2c65c7098d4fd84889ac404b67978afad60db",
-      "windows-amd64": "76baef1bd801aa155880b6160bc48edaa6c199bb2fd39f8c1102116833eb492e"
+      "linux-amd64": "d7c7d9a060ce9fdc4a4edd637b8ac86cea2d6eb59d8286ba1d720a23cdd647b9",
+      "darwin-arm64": "a44b7791042cb167808cc2dad9e9b31eb8a634e2756be2e20d3e21aa5b963919",
+      "windows-amd64": "d1e774e6cd32c8041051c2cfba29d973fe4bd92aaa8e032208ac07578d1d441b"
     },
     "serviceConfigPreserved": true,
     "screenshotBinaryPreserved": false,
