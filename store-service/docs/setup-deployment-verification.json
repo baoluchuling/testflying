@@ -971,17 +971,17 @@
     "actualStoreAccountsUsed": false
   },
   "screenshotSkillPublication": {
-    "runId": "f13a763e152744ba9355742930d8c667",
-    "finishedAt": "2026-11-26T04:32:37.166986+00:00",
-    "baseVersion": "9e0cd3e7fcdfa230c39c20d466cafe2cf6fe9a53544fd834d97904b30e0a9232",
+    "runId": "af6cfbda62824eef8e04cf772d0e3bea",
+    "finishedAt": "2026-11-26T06:28:36.532708+00:00",
+    "baseVersion": "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d",
     "active": {
       "schemaVersion": 1,
       "name": "mobile-localized-screenshots",
-      "version": "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d",
-      "sha256": "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d",
-      "bytes": 293081,
+      "version": "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51",
+      "sha256": "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51",
+      "bytes": 294977,
       "files": 19,
-      "publishedAt": 1795667556
+      "publishedAt": 1795674516
     },
     "previousVersionRetained": true,
     "unchangedFiles": 17,
@@ -1100,6 +1100,30 @@
     "allFiveProgramHashesPreserved": true,
     "centerPidPreserved": true,
     "runningJobSkillVersionsChecked": 1,
+    "runningJobSkillsPreserved": true,
+    "nodeUpgradeRequiredForThisSkill": false,
+    "actualModelWorkflowTested": false,
+    "realScreenshotTasksCreated": false
+  },
+  "screenshotVisualScope": {
+    "runId": "af6cfbda62824eef8e04cf772d0e3bea",
+    "finishedAt": "2026-11-26T06:28:44.444689+00:00",
+    "skillVersion": "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51",
+    "scope": "requested visuals on any page",
+    "dismissUnrelatedOverlays": true,
+    "unrelatedFunctionalTestingRequired": false,
+    "explicitFunctionalStatesRemainRequired": true,
+    "firstPassAndDeferredWorkflowPreserved": true,
+    "unknownDeliveryMustBeConfirmedBeforeMovingOn": true,
+    "finalResultContractUnchanged": true,
+    "componentVersionsUnchanged": {
+      "center": "0.1.1",
+      "store": "0.2.8",
+      "screenshot": "0.2.11"
+    },
+    "allFiveProgramHashesPreserved": true,
+    "centerPidPreserved": true,
+    "runningJobSkillVersionsChecked": 0,
     "runningJobSkillsPreserved": true,
     "nodeUpgradeRequiredForThisSkill": false,
     "actualModelWorkflowTested": false,
