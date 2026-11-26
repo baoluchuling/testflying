@@ -1,8 +1,8 @@
 {
-  "runId": "312a59610de74761bef0c1a301d8b37a",
-  "finishedAt": "2026-11-26T06:27:46.407886+00:00",
-  "sourceCommit": "112f52ae1661d73a86fe3dca946ef17866504feb",
-  "scope": "screenshot-skill-requested-visual-scope",
+  "runId": "ac71d4bc52f24f05b4b00f148309e6a2",
+  "finishedAt": "2026-11-26T10:06:09.506803+00:00",
+  "sourceCommit": "0699e63bde4bdec0f0eb4c1b3cc070384c37b84b",
+  "scope": "screenshot-skill-content-review-and-production-environment",
   "sourceHashes": {
     "AGENTS.md": "14fef86e522a3621beaee3c9b1d33bf31a9b8329d681c6a891ea5cfe9e0adfae",
     "Cargo.lock": "12cf00bb096ce8c0f7303e8fa9dd164bbf4d39c5939dcd81d780f4b15a72fc47",
@@ -128,8 +128,9 @@
     "packaging/screenshot-connector/README.md": "a4eaea6b1297a386765b5cae0345186232fdeca1a7e5e90d945953ae9a3e8f01",
     "packaging/screenshot-connector/install.sh": "68f3864acff942b8a063c9fcd704cccbc74a8b66580fd78afdd5ad8e716421a7",
     "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7",
-    "packaging/screenshot-skill/SKILL.md": "538dcac0ec28d1619e7686005b80361d1f042b1674c05c1000599d1b22a4fe7a",
-    "packaging/screenshot-skill/references/connector-protocol.md": "a7e79cd9bfabee45324cb175dd21a589c17beb4998855384cf3986b68814c724",
+    "packaging/screenshot-skill/SKILL.md": "79dcd26ef0d5f674c3b5f65bd01c245795040bc835b8e9a8ba8ffce6646fc11a",
+    "packaging/screenshot-skill/references/connector-protocol.md": "ee45ec3c07dc38cc202b363f25341c1aa8a2d9ee62ae89870d7bc367e29eeb9b",
+    "packaging/screenshot-skill/references/store-content-review.md": "b770e51bb44bbfa5e8b6dc0381336072d551d5d99950b07df3f0e1ad69a65fb4",
     "scripts/build_release.py": "7f396a22b82b70f75ccf896edc96be4764e54b4c1d506ee67fa88111884cbe1d",
     "scripts/component_release.py": "56130daf6e88f871cf42acd96e14e6d2c181ea8aee1e8c90524b9e67631397a6",
     "scripts/connector_release.py": "16b712b4dbd6f4d4fee0487096ba175d86fbf81118998120515818b815b05040",
@@ -138,7 +139,7 @@
     "scripts/enable_http.py": "76d3c0c72270be678ae3992da3332e8d9a3390489c775309cc0eec57c4d8b85d",
     "scripts/managed_workspace.py": "840a77c1c75de77372bacfcbd5049179340a5e910923f30b4a7ed0828a37e203",
     "scripts/publish_github_release.py": "a391d985639c35ce6a4e5b2ab8299aee94e2d3ac06db8e82bccfec2e5107d0a4",
-    "scripts/publish_screenshot_skill.py": "9008c41671ac57977b10df68fe2b0db4314245fddd5ff416fefd6baadf111829",
+    "scripts/publish_screenshot_skill.py": "cdfae4f23f4037e33d1d140bd5063cace4a7ec2d00e6f8897956082d06591dc1",
     "scripts/publish_windows.py": "7899b2f4ac872c9d6db14360f3646eeb2085a251b349f93b535dbe92c3b6057b",
     "scripts/release_catalog.py": "74f1a65ff19aebf666bfd7763da2f6e2355404dd669f2b84e1097d83a3d04b51",
     "scripts/rollout_uploads.py": "b6d6fe43686235a3673a39843a26dfdf1d91694f9b6b76e99c13223c920cf4b1",
@@ -160,7 +161,7 @@
       "exitCode": 0
     },
     {
-      "check": "Exact active bundle hash and maintained base files match committed 2e29c81",
+      "check": "Exact active bundle hash and maintained base files match committed 3acf1ad",
       "passed": true
     },
     {
@@ -169,8 +170,8 @@
     }
   ],
   "skillValidation": {
-    "baseVersion": "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d",
-    "expectedVersion": "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51",
+    "baseVersion": "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51",
+    "expectedVersion": "67c0c57a96fc3c1762bf41d74807477a01e320a22ce41eb0634e1917f3fe9693",
     "unchangedFiles": 17,
     "validated": true
   },
@@ -182,23 +183,63 @@
   "componentsToBuild": [],
   "manualScenarioReview": [
     {
-      "scenario": "Dismissible overlay is unrelated to requested visual",
-      "expected": "Dismiss through real UI, confirm requested content, capture and advance",
+      "scenario": "Male open shirt and bare chest on lower card in supplied tablet image",
+      "expected": "Reject visible candidate; select permitted real content and retake full image",
       "kind": "manual instruction review; not a model run"
     },
     {
-      "scenario": "Unrelated feature or optional data is empty",
-      "expected": "Do not investigate or defer when requested visual is satisfied",
+      "scenario": "Female cleavage or exposed thighs, underwear or sexualized pose on a thumbnail",
+      "expected": "Reject even when main card is clean",
       "kind": "manual instruction review; not a model run"
     },
     {
-      "scenario": "Target content is missing or navigation is blocked",
-      "expected": "Repair actual blocker; preserve two first-pass attempts and deferred backfill",
+      "scenario": "Characters kissing or excessive intimacy in background",
+      "expected": "Reject regardless of image size or art style",
       "kind": "manual instruction review; not a model run"
     },
     {
-      "scenario": "User explicitly requires a functional state",
-      "expected": "Reach that state genuinely; no hiding requested content or fabricated data",
+      "scenario": "Normal clothing and side-by-side standing or hand holding",
+      "expected": "Do not classify as sexual solely because of a romantic relationship",
+      "kind": "manual instruction review; not a model run"
+    },
+    {
+      "scenario": "Normal image but a title romanticizes bullying; or explicit sexual, violent, criminal text",
+      "expected": "Reject based on text; read semantics rather than image-only or isolated keyword matching",
+      "kind": "manual instruction review; not a model run"
+    },
+    {
+      "scenario": "Private data or misleading store ranking claim",
+      "expected": "Do not deliver; use permitted real alternatives without editing pixels or sensitive data",
+      "kind": "manual instruction review; not a model run"
+    },
+    {
+      "scenario": "Book ranking inside actual app UI",
+      "expected": "Do not automatically confuse content ranking with store performance claims",
+      "kind": "manual instruction review; not a model run"
+    },
+    {
+      "scenario": "Safe content unavailable within requested target",
+      "expected": "Keep target incomplete, follow two first-pass attempts and deferred backfill; do not delete collections or alter online data",
+      "kind": "manual instruction review; not a model run"
+    },
+    {
+      "scenario": "Release build but observed API host is a test endpoint",
+      "expected": "Not production; configure the real production environment and verify running app, or keep a concrete gap",
+      "kind": "manual instruction review; not a model run"
+    },
+    {
+      "scenario": "Production config with no observed runtime evidence",
+      "expected": "Do not claim production from build label/config alone; inspect necessary evidence without unrelated functional testing",
+      "kind": "manual instruction review; not a model run"
+    },
+    {
+      "scenario": "Production config and target-page runtime host match; H5 remote hosts also match where applicable",
+      "expected": "Environment condition satisfied; still review content and target requirements",
+      "kind": "manual instruction review; not a model run"
+    },
+    {
+      "scenario": "Upload or discard outcome unknown while candidate is rejected",
+      "expected": "Confirm same operation before replacing or skipping; keep external format unchanged",
       "kind": "manual instruction review; not a model run"
     }
   ],
@@ -213,12 +254,13 @@
     "reason": "No component production code, dependencies or installer changed."
   },
   "previousSkillVerification": {
-    "sourceCommit": "de9f4798bf8dc2748e3c32f51b3c9beab506ea8d",
-    "runId": "2b0531483f09445aace8669d19249246",
-    "reportSha256": "4a60366653b2249dff55b5673ddbabce3e9f888715782267eef0fdb7384ca758"
+    "sourceCommit": "112f52ae1661d73a86fe3dca946ef17866504feb",
+    "runId": "312a59610de74761bef0c1a301d8b37a",
+    "reportSha256": "0fc92f8febe2707aebad5586bfb1a5a29dea28ed84e7ac2d2ab44fa37867dd15"
   },
   "notVerified": [
-    "Actual Codex adherence to two attempts",
+    "Actual Codex visual or text moderation behavior",
+    "Production environment of any real screenshot App",
     "Real app builds or screenshots",
     "Live store/OSS/Studio actions"
   ],
