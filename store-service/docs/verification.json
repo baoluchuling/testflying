@@ -1,8 +1,8 @@
 {
-  "runId": "2b0531483f09445aace8669d19249246",
-  "finishedAt": "2026-11-26T04:30:43.143646+00:00",
-  "sourceCommit": "de9f4798bf8dc2748e3c32f51b3c9beab506ea8d",
-  "scope": "screenshot-skill-two-pass-target-workflow",
+  "runId": "312a59610de74761bef0c1a301d8b37a",
+  "finishedAt": "2026-11-26T06:27:46.407886+00:00",
+  "sourceCommit": "112f52ae1661d73a86fe3dca946ef17866504feb",
+  "scope": "screenshot-skill-requested-visual-scope",
   "sourceHashes": {
     "AGENTS.md": "14fef86e522a3621beaee3c9b1d33bf31a9b8329d681c6a891ea5cfe9e0adfae",
     "Cargo.lock": "12cf00bb096ce8c0f7303e8fa9dd164bbf4d39c5939dcd81d780f4b15a72fc47",
@@ -128,8 +128,8 @@
     "packaging/screenshot-connector/README.md": "a4eaea6b1297a386765b5cae0345186232fdeca1a7e5e90d945953ae9a3e8f01",
     "packaging/screenshot-connector/install.sh": "68f3864acff942b8a063c9fcd704cccbc74a8b66580fd78afdd5ad8e716421a7",
     "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7",
-    "packaging/screenshot-skill/SKILL.md": "1b472432f37019a4862d703ec67945780211ccdda0f6823725df8efb17c8d78c",
-    "packaging/screenshot-skill/references/connector-protocol.md": "539c341d9d3456e0ce69e2906e193434a7a65ab1f673b6d786a80143e6775205",
+    "packaging/screenshot-skill/SKILL.md": "538dcac0ec28d1619e7686005b80361d1f042b1674c05c1000599d1b22a4fe7a",
+    "packaging/screenshot-skill/references/connector-protocol.md": "a7e79cd9bfabee45324cb175dd21a589c17beb4998855384cf3986b68814c724",
     "scripts/build_release.py": "7f396a22b82b70f75ccf896edc96be4764e54b4c1d506ee67fa88111884cbe1d",
     "scripts/component_release.py": "56130daf6e88f871cf42acd96e14e6d2c181ea8aee1e8c90524b9e67631397a6",
     "scripts/connector_release.py": "16b712b4dbd6f4d4fee0487096ba175d86fbf81118998120515818b815b05040",
@@ -138,7 +138,7 @@
     "scripts/enable_http.py": "76d3c0c72270be678ae3992da3332e8d9a3390489c775309cc0eec57c4d8b85d",
     "scripts/managed_workspace.py": "840a77c1c75de77372bacfcbd5049179340a5e910923f30b4a7ed0828a37e203",
     "scripts/publish_github_release.py": "a391d985639c35ce6a4e5b2ab8299aee94e2d3ac06db8e82bccfec2e5107d0a4",
-    "scripts/publish_screenshot_skill.py": "0e3dab194e4228ef19e980195c5a63b9e0450056964cdfcb691a7ca08f9aa847",
+    "scripts/publish_screenshot_skill.py": "9008c41671ac57977b10df68fe2b0db4314245fddd5ff416fefd6baadf111829",
     "scripts/publish_windows.py": "7899b2f4ac872c9d6db14360f3646eeb2085a251b349f93b535dbe92c3b6057b",
     "scripts/release_catalog.py": "74f1a65ff19aebf666bfd7763da2f6e2355404dd669f2b84e1097d83a3d04b51",
     "scripts/rollout_uploads.py": "b6d6fe43686235a3673a39843a26dfdf1d91694f9b6b76e99c13223c920cf4b1",
@@ -160,7 +160,7 @@
       "exitCode": 0
     },
     {
-      "check": "Exact active bundle hash and maintained base files match committed f777d06",
+      "check": "Exact active bundle hash and maintained base files match committed 2e29c81",
       "passed": true
     },
     {
@@ -169,8 +169,8 @@
     }
   ],
   "skillValidation": {
-    "baseVersion": "9e0cd3e7fcdfa230c39c20d466cafe2cf6fe9a53544fd834d97904b30e0a9232",
-    "expectedVersion": "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d",
+    "baseVersion": "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d",
+    "expectedVersion": "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51",
     "unchangedFiles": 17,
     "validated": true
   },
@@ -182,18 +182,23 @@
   "componentsToBuild": [],
   "manualScenarioReview": [
     {
-      "scenario": "A succeeds; B fails twice; C succeeds; B is repairable",
-      "expected": "A, B attempt 1, B recovery+attempt 2, C, then B repair/backfill; final delivery only after all targets pass",
+      "scenario": "Dismissible overlay is unrelated to requested visual",
+      "expected": "Dismiss through real UI, confirm requested content, capture and advance",
       "kind": "manual instruction review; not a model run"
     },
     {
-      "scenario": "B remains unrecoverable after other targets and repair attempts",
-      "expected": "Record the remaining B and actual blocker; fail after the available work and repairs, without deleting B from targets",
+      "scenario": "Unrelated feature or optional data is empty",
+      "expected": "Do not investigate or defer when requested visual is satisfied",
       "kind": "manual instruction review; not a model run"
     },
     {
-      "scenario": "B upload/discard outcome is unknown",
-      "expected": "Confirm the same operation before moving to another target; do not bypass delivery consistency",
+      "scenario": "Target content is missing or navigation is blocked",
+      "expected": "Repair actual blocker; preserve two first-pass attempts and deferred backfill",
+      "kind": "manual instruction review; not a model run"
+    },
+    {
+      "scenario": "User explicitly requires a functional state",
+      "expected": "Reach that state genuinely; no hiding requested content or fabricated data",
       "kind": "manual instruction review; not a model run"
     }
   ],
@@ -206,6 +211,11 @@
     "reportSha256": "6dc2e45d7a00f5603c79426991ddac2ea71d29dc5eab3b966c840f0fe0a2dfca",
     "notRerun": true,
     "reason": "No component production code, dependencies or installer changed."
+  },
+  "previousSkillVerification": {
+    "sourceCommit": "de9f4798bf8dc2748e3c32f51b3c9beab506ea8d",
+    "runId": "2b0531483f09445aace8669d19249246",
+    "reportSha256": "4a60366653b2249dff55b5673ddbabce3e9f888715782267eef0fdb7384ca758"
   },
   "notVerified": [
     "Actual Codex adherence to two attempts",
