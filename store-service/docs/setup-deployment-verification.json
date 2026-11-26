@@ -1,9 +1,9 @@
 {
-  "runId": "4a3140c2f78a4df6b2abb1784d5a5a21",
+  "runId": "d25041dd1b33434eb303fff48fc19b8b",
   "stage": "deployed-and-verified",
   "production": true,
-  "finishedAt": "2026-11-26T03:56:01.724863+00:00",
-  "deploymentCommit": "445c90abc659f1bda47876b11f4070418f891607",
+  "finishedAt": "2026-11-26T04:15:34.031400+00:00",
+  "deploymentCommit": "425eb195ba87ab5a434490cf00c8959920f6cc39",
   "binarySourceCommit": "1c1622b7b5fe885a9ee894fa3c2faec382a1a1a0",
   "apiSha256": "32ce52730febf79caa596b28e4b95e46a2e77c130f25a63e33f6a1548d329a3a",
   "connectorBinarySha256": {
@@ -14,11 +14,11 @@
   "connectorVersion": "0.2.8",
   "connectorSourceFingerprint": "98bb22df05de43ca54f7623a0785490a25b5e9e9825115ea1853eb04998b27f3",
   "centerVersion": "0.1.1",
-  "screenshotConnectorVersion": "0.2.10",
+  "screenshotConnectorVersion": "0.2.11",
   "componentVersions": {
     "center": "0.1.1",
     "store": "0.2.8",
-    "screenshot": "0.2.10"
+    "screenshot": "0.2.11"
   },
   "publishedOutputs": {
     "releases/linux-amd64/store-api": {
@@ -233,16 +233,16 @@
     },
     "releases/darwin-arm64/screenshot-connector": {
       "component": "screenshot",
-      "version": "0.2.10",
-      "sourceFingerprint": "f1deba0c7177cd67bfde285b77d7b6c81e7f17ab2505c7e0af105f61cb5c782b",
+      "version": "0.2.11",
+      "sourceFingerprint": "2904f49c9648336b1d1488ca9747a46627d2741f61bbb47e48a253c832ddce8f",
       "sourceHashes": {
-        "Cargo.lock": "5d2ef67302c4620ba8b9f4637523730ed00db7f28f82801a2d6cc2e9ee510a10",
+        "Cargo.lock": "fe8a2327f1825cc5d3d474d129a9ff9fd270649e8112a2ba1f993fd1b217141b",
         "Cargo.toml": "69c870def484fa1146ce65f447461f61a1a1ace065678199920ea9c92985d298",
-        "crates/screenshot-connector/Cargo.toml": "93e5d7b4b1a14bb9ebc9b125bdb970cde80893288308b8884fa924160355eda5",
+        "crates/screenshot-connector/Cargo.toml": "fc12a2510a6fc93dbd2b68e09c1c2dbc302e1b2ba03357945d11c69be4310faf",
         "crates/screenshot-connector/src/codex_runtime.rs": "195e72e42c1b9cfca4c6d709d9582290d253abd726d997706407b59e695b058c",
         "crates/screenshot-connector/src/connector.rs": "7a1a13c6b65caf5a4dbbec3a19ab65747e8f1ef33fdfdc69a043e90e5950b15a",
         "crates/screenshot-connector/src/diagnostic.rs": "b3f7d687b7c842b5bf3a920ac01067449db78acd685ea82dd07b1a361332cd48",
-        "crates/screenshot-connector/src/goal.rs": "bd98c23ccffdd03e8b7ded7b70cba98b03b90458d5495e987cb66bcc37192a41",
+        "crates/screenshot-connector/src/goal.rs": "2dbd9ed27b822266b2ecee3936e20f65148d9006e5f9e9b3751018c0eb7c64a1",
         "crates/screenshot-connector/src/main.rs": "041d70f19860442c22b89fa404ebe6757a19cf359cf2c5f771c320a9e165cc06",
         "crates/screenshot-connector/src/skill.rs": "499818db87cb35e3372558fb383f288e0b0ff58f94f73cf43ec9e0a5f31e65e6",
         "crates/screenshot-connector/src/worker.rs": "8269845b7a35927deff1296c5afcfa8e3742dac17c39d19f4ab512d99f09fc81",
@@ -266,10 +266,10 @@
         "packaging/screenshot-connector/install.sh": "68f3864acff942b8a063c9fcd704cccbc74a8b66580fd78afdd5ad8e716421a7",
         "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7"
       },
-      "sourceCommit": "339c8255c3f1212b08e4c1a454ee58072611d96c",
-      "builtAt": "2026-11-26T03:53:32.565537+00:00",
-      "sha256": "addf08dfc30e40b577b7736a02db75ea10024d9dc34e1c7b72fd87a43a11d89e",
-      "bytes": 5859184,
+      "sourceCommit": "ff0acb5129805c9f90f6992c50206af5c7689f59",
+      "builtAt": "2026-11-26T04:12:48.047381+00:00",
+      "sha256": "adb384b288bba36fd52f49435ed21150bc3796933823eb79a50b6edb3eb861e8",
+      "bytes": 5859520,
       "format": "Mach-O 64-bit executable arm64"
     },
     "releases/windows-amd64/store-connector.exe": {
@@ -364,7 +364,7 @@
     "automaticMembershipChanges": false,
     "publicCoreEndpointCountUnchanged": true
   },
-  "screenshotConnectorSha256": "addf08dfc30e40b577b7736a02db75ea10024d9dc34e1c7b72fd87a43a11d89e",
+  "screenshotConnectorSha256": "adb384b288bba36fd52f49435ed21150bc3796933823eb79a50b6edb3eb861e8",
   "screenshotUploadConfigured": false,
   "screenshotExecution": {
     "perImageMinutes": 15,
@@ -1046,32 +1046,40 @@
     "requiresNodeUpgrade": false
   },
   "screenshotInstallerVerification": {
-    "runId": "4a3140c2f78a4df6b2abb1784d5a5a21",
+    "runId": "d25041dd1b33434eb303fff48fc19b8b",
     "nodeId": "340cd42e-9041-475a-bed2-bcbddb66e88a",
     "versions": {
       "center": "0.1.1",
-      "screenshot": "0.2.10",
+      "screenshot": "0.2.11",
       "store": "0.2.8"
     },
-    "binarySha256": "addf08dfc30e40b577b7736a02db75ea10024d9dc34e1c7b72fd87a43a11d89e",
+    "binarySha256": "adb384b288bba36fd52f49435ed21150bc3796933823eb79a50b6edb3eb861e8",
     "zipEntryCount": 6,
     "installerAssetsVerified": true,
     "configurationIdentityVerified": true,
     "realTasksCreated": false
   },
   "screenshotBuildRecovery": {
-    "runId": "4a3140c2f78a4df6b2abb1784d5a5a21",
-    "screenshotConnectorVersion": "0.2.10",
+    "screenshotConnectorVersion": "0.2.11",
+    "sourceRepairsSupportedSince": "0.2.10",
     "sourceRepairsAuthorized": true,
     "buildFailureInstructions": "diagnose, repair and retry in the same Goal within the existing execution budget",
-    "rustTestsPassed": 32,
-    "releaseTestsPassed": 26,
-    "fakeBuildRepairAndDeliveryRegressionPassed": true,
     "skillVersion": "9e0cd3e7fcdfa230c39c20d466cafe2cf6fe9a53544fd834d97904b30e0a9232",
+    "rustTestsPassed": 35,
+    "releaseTestsPassed": 26,
+    "actualModelOrAppBuildsTested": false,
+    "nodeProgramsRemotelyInstalled": false,
+    "realScreenshotTasksCreated": false
+  },
+  "screenshotLargeMessages": {
+    "runId": "d25041dd1b33434eb303fff48fc19b8b",
+    "screenshotConnectorVersion": "0.2.11",
+    "maxMessageBytes": 67108864,
+    "previousMaxMessageBytes": 1048576,
+    "largeRpcAndBuildEventTestsPassed": true,
+    "frameAlignmentAndSizeEofTimeoutTestsPassed": true,
     "centerProgramReplaced": false,
     "storeProgramsReplaced": false,
-    "nodeProgramsRemotelyInstalled": false,
-    "realScreenshotTasksCreated": false,
-    "actualModelOrAppBuildsTested": false
+    "skillRepublished": false
   }
 }
