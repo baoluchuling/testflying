@@ -1,38 +1,44 @@
 {
-  "runId": "de6e47b8641e4963b59ef8a7694e7841",
-  "finishedAt": "2026-11-26T03:52:17.849734+00:00",
-  "sourceCommit": "339c8255c3f1212b08e4c1a454ee58072611d96c",
-  "scope": "screenshot-build-recovery",
+  "runId": "42cff594722f4910a380462029f79f47",
+  "finishedAt": "2026-11-26T04:11:41.246610+00:00",
+  "sourceCommit": "ff0acb5129805c9f90f6992c50206af5c7689f59",
+  "scope": "screenshot-build-recovery-and-large-messages",
   "checks": [
     {
       "command": [
         "/opt/homebrew/opt/python@3.14/bin/python3.14",
         "-B",
-        "scripts/publish_screenshot_skill.py",
-        "--check"
+        "scripts/test_connector_release.py"
       ],
-      "exitCode": 0
-    }
-  ],
-  "reusedChecks": {
-    "runId": "f755c1ddfa9146e895a5576b5c529ecd",
-    "sourceCommit": "339c8255c3f1212b08e4c1a454ee58072611d96c",
-    "commands": [
-      [
+      "exitCode": 0,
+      "testSummaries": []
+    },
+    {
+      "command": [
         "cargo",
         "fmt",
         "--all",
         "--",
         "--check"
       ],
-      [
+      "exitCode": 0,
+      "testSummaries": []
+    },
+    {
+      "command": [
         "cargo",
         "test",
         "--locked",
         "-p",
         "screenshot-connector"
       ],
-      [
+      "exitCode": 0,
+      "testSummaries": [
+        "test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.19s"
+      ]
+    },
+    {
+      "command": [
         "cargo",
         "clippy",
         "--locked",
@@ -43,27 +49,21 @@
         "-D",
         "warnings"
       ],
-      [
-        "/opt/homebrew/opt/python@3.14/bin/python3.14",
-        "-B",
-        "scripts/test_connector_release.py"
-      ]
-    ],
-    "rustTestsPassed": 32,
-    "releaseTestsPassed": 26,
-    "reason": "All checks passed before the separate Skill validator hit a missing PyYAML dependency; relevant source and configuration remain unchanged."
-  },
-  "testsPassed": 32,
+      "exitCode": 0,
+      "testSummaries": []
+    }
+  ],
+  "testsPassed": 35,
   "releaseTestsPassed": 26,
   "sourceHashes": {
     "AGENTS.md": "14fef86e522a3621beaee3c9b1d33bf31a9b8329d681c6a891ea5cfe9e0adfae",
-    "Cargo.lock": "c46d5c14193c751b7caad489594a0cdd13a2b36ec7390a0538380c7c7c75d967",
+    "Cargo.lock": "12cf00bb096ce8c0f7303e8fa9dd164bbf4d39c5939dcd81d780f4b15a72fc47",
     "Cargo.toml": "949dedcdac4f97570336bfe7ca72500d676ff1d15f39d6f0b4ee1823d555d233",
-    "crates/screenshot-connector/Cargo.toml": "8577fe28b7b2c13fbd45ac7b96fafa15d1f0f0f0e39be2241badda0929fd0faf",
+    "crates/screenshot-connector/Cargo.toml": "7f2ac7e39147c86211706e0888bcdf9b9fc7883f6dd172118f2cb83751f9bc66",
     "crates/screenshot-connector/src/codex_runtime.rs": "ae7a5abb8826e1c6fb9cd5ec41afa4b947b69a68fc6837735ae31eeb72e0d3e1",
     "crates/screenshot-connector/src/connector.rs": "9a57b76e69e3e897a54967cbb2c25dc1e0018bb37a0d2bbda9cb2a0cde78be80",
     "crates/screenshot-connector/src/diagnostic.rs": "ef916e1312de2e90c9b6a0ef766e0f1b81004640099aa34c14fcd0d83cc67ca4",
-    "crates/screenshot-connector/src/goal.rs": "299f745e32a523b1f40dab5ea7e45df259b7e121c6472dff5b405363f56c12db",
+    "crates/screenshot-connector/src/goal.rs": "dd77639fe4122ab721c35da60267296777596f884ed4a14fce57741e54f19f84",
     "crates/screenshot-connector/src/main.rs": "6b64ddf137a2aa4bc06da323b039fd3687b98fe7d93693d5f36792403f39e77d",
     "crates/screenshot-connector/src/skill.rs": "43d80099a23fd2dc7f5169df319df60153c1bab98f8fe4ed5a63071ccd81afff",
     "crates/screenshot-connector/src/worker.rs": "08e6e2192e4f12791232d25e6f971f678a77e56d476757015e7c88f9e2a20de8",
@@ -176,7 +176,7 @@
     "packaging/connector/install.sh": "d2e1dc66abe6394e622c7510098571e57fd36e577306db59012ebc97e53b4cb6",
     "packaging/connector/start.cmd": "8d004a7f62d2a5028b308d4c6f22d3dcece518ec4eb2f4543614718c5e8ad5e5",
     "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
-    "packaging/connector-versions.json": "d8b7bb4e99a6445286cda89c93df984ccb34d09281ebe3d36eaf2cc2cab29562",
+    "packaging/connector-versions.json": "cf847086d8215715ccd5bffed0869c7283a7b2554f024f01a2d9e502dee5114d",
     "packaging/screenshot-connector/README.md": "a4eaea6b1297a386765b5cae0345186232fdeca1a7e5e90d945953ae9a3e8f01",
     "packaging/screenshot-connector/install.sh": "68f3864acff942b8a063c9fcd704cccbc74a8b66580fd78afdd5ad8e716421a7",
     "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7",
@@ -204,18 +204,10 @@
   "selectedComponents": [
     "screenshot"
   ],
-  "skillValidation": {
-    "previousVersion": "938bf9c1d27c69271ae43cb5efb040d4711453ad7040c2160c14f4e08f92a245",
-    "unmodifiedReferenceConflicts": []
-  },
-  "previousFullVerification": {
-    "sourceCommit": "1c1622b7b5fe885a9ee894fa3c2faec382a1a1a0",
-    "rustTestsPassed": 283,
-    "notRerun": true
-  },
+  "skillVersionUnchanged": "9e0cd3e7fcdfa230c39c20d466cafe2cf6fe9a53544fd834d97904b30e0a9232",
   "notVerified": [
     "Actual Codex model repair",
-    "Live app builds or simulators",
+    "Live app builds/simulators",
     "Live store accounts",
     "OSS writes",
     "Studio callbacks",
