@@ -15,7 +15,7 @@ import zipfile
 
 from verify_store_refactor import PROJECT, managed_root, source_hashes
 
-BASE_VERSION = "9e0cd3e7fcdfa230c39c20d466cafe2cf6fe9a53544fd834d97904b30e0a9232"
+BASE_VERSION = "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d"
 PATCHES = ("SKILL.md", "references/connector-protocol.md")
 
 REMOTE_PREFIX = """
