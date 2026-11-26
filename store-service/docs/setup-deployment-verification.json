@@ -971,17 +971,17 @@
     "actualStoreAccountsUsed": false
   },
   "screenshotSkillPublication": {
-    "runId": "4a3140c2f78a4df6b2abb1784d5a5a21",
-    "finishedAt": "2026-11-26T03:56:21.908334+00:00",
-    "baseVersion": "938bf9c1d27c69271ae43cb5efb040d4711453ad7040c2160c14f4e08f92a245",
+    "runId": "f13a763e152744ba9355742930d8c667",
+    "finishedAt": "2026-11-26T04:32:37.166986+00:00",
+    "baseVersion": "9e0cd3e7fcdfa230c39c20d466cafe2cf6fe9a53544fd834d97904b30e0a9232",
     "active": {
       "schemaVersion": 1,
       "name": "mobile-localized-screenshots",
-      "version": "9e0cd3e7fcdfa230c39c20d466cafe2cf6fe9a53544fd834d97904b30e0a9232",
-      "sha256": "9e0cd3e7fcdfa230c39c20d466cafe2cf6fe9a53544fd834d97904b30e0a9232",
-      "bytes": 289565,
+      "version": "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d",
+      "sha256": "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d",
+      "bytes": 293081,
       "files": 19,
-      "publishedAt": 1795665381
+      "publishedAt": 1795667556
     },
     "previousVersionRetained": true,
     "unchangedFiles": 17,
@@ -1081,5 +1081,28 @@
     "centerProgramReplaced": false,
     "storeProgramsReplaced": false,
     "skillRepublished": false
+  },
+  "screenshotTargetTraversal": {
+    "runId": "f13a763e152744ba9355742930d8c667",
+    "finishedAt": "2026-11-26T04:32:47.122531+00:00",
+    "skillVersion": "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d",
+    "firstPassOrder": "original target array",
+    "firstPassMaxAttemptsIncludingFirst": 2,
+    "retryDeferredAfterWholeFirstPass": true,
+    "skippedTargetsRemainIncomplete": true,
+    "unknownDeliveryMustBeConfirmedBeforeMovingOn": true,
+    "finalResultContractUnchanged": true,
+    "componentVersionsUnchanged": {
+      "center": "0.1.1",
+      "store": "0.2.8",
+      "screenshot": "0.2.11"
+    },
+    "allFiveProgramHashesPreserved": true,
+    "centerPidPreserved": true,
+    "runningJobSkillVersionsChecked": 1,
+    "runningJobSkillsPreserved": true,
+    "nodeUpgradeRequiredForThisSkill": false,
+    "actualModelWorkflowTested": false,
+    "realScreenshotTasksCreated": false
   }
 }
