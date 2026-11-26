@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::{io, path::Path, process::Stdio, time::Duration};
 use store_protocol::screenshot_failure::{sanitize, FailureDetails};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{ChildStdin, ChildStdout, Command},
     sync::watch,
     time::{timeout, timeout_at, Instant},
@@ -16,7 +16,8 @@ use tokio::{
 use uuid::Uuid;
 
 const GOAL: &str = "Fulfill the screenshot request, review the current images, and obtain confirmed final delivery using the Connector tools.";
-const MAX_MESSAGE: u64 = 1024 * 1024;
+// Completed build/tool events can contain the whole command output or an image.
+const MAX_MESSAGE: u64 = 64 * 1024 * 1024;
 
 pub(super) const INSTRUCTIONS: &str = concat!(
     "You own the screenshot task. Call get_capture_task first to read the task identity, center-generated jobId, app, ordered target array, requiresFinalization and current screenshot IDs. The user message is the original visual request. Fulfill targets separately without a Cartesian product. Use the zero-based targetIndex with capture_screenshot, upload_screenshot and discard_screenshot; omit it only for legacy target=null. ",
@@ -108,6 +109,47 @@ impl std::fmt::Display for RpcFailure {
 }
 impl std::error::Error for RpcFailure {}
 
+#[derive(Debug)]
+struct MessageTooLarge {
+    limit: u64,
+}
+
+impl std::fmt::Display for MessageTooLarge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "App Server message exceeds {} bytes", self.limit)
+    }
+}
+
+impl std::error::Error for MessageTooLarge {}
+
+async fn read_message(
+    output: &mut (impl AsyncBufRead + Unpin),
+    deadline: Instant,
+    limit: u64,
+) -> io::Result<Value> {
+    let mut line = Vec::new();
+    let count = timeout_at(
+        deadline,
+        output
+            .take(limit.saturating_add(1))
+            .read_until(b'\n', &mut line),
+    )
+    .await??;
+    if count as u64 > limit {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            MessageTooLarge { limit },
+        ));
+    }
+    if count == 0 || !line.ends_with(b"\n") {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "Incomplete App Server frame",
+        ));
+    }
+    Ok(serde_json::from_slice(&line)?)
+}
+
 impl Protocol {
     async fn send(&mut self, message: Value) -> io::Result<()> {
         let mut line = serde_json::to_vec(&message)?;
@@ -116,21 +158,7 @@ impl Protocol {
     }
 
     async fn recv(&mut self) -> io::Result<Value> {
-        let mut line = Vec::new();
-        let count = timeout_at(
-            self.deadline,
-            (&mut self.output)
-                .take(MAX_MESSAGE)
-                .read_until(b'\n', &mut line),
-        )
-        .await??;
-        if count == 0 || !line.ends_with(b"\n") {
-            return Err(io::Error::new(
-                io::ErrorKind::UnexpectedEof,
-                "Invalid App Server frame",
-            ));
-        }
-        Ok(serde_json::from_slice(&line)?)
+        read_message(&mut self.output, self.deadline, MAX_MESSAGE).await
     }
 
     async fn request(&mut self, id: u64, method: &str, params: Value) -> io::Result<Value> {
@@ -185,6 +213,7 @@ impl Session<'_> {
     }
 
     fn rpc_failure(&self, method: &str, error: &io::Error) {
+        self.record_oversized_message(error);
         self.record(|d| {
             d.rpc_method = Some(method.into());
             if let Some(error) = error.get_ref().and_then(|e| e.downcast_ref::<RpcFailure>()) {
@@ -192,6 +221,23 @@ impl Session<'_> {
                 d.native_message = Some(error.message.clone());
             }
         });
+    }
+
+    fn record_oversized_message(&self, error: &io::Error) -> bool {
+        let Some(error) = error
+            .get_ref()
+            .and_then(|e| e.downcast_ref::<MessageTooLarge>())
+        else {
+            return false;
+        };
+        self.record(|d| {
+            d.event = Some("codex_message_too_large".into());
+            d.reason = Some(format!(
+                "Codex 单条消息超过 {} MiB 读取上限，无法继续处理该消息。",
+                error.limit / (1024 * 1024)
+            ));
+        });
+        true
     }
     pub(super) async fn run(
         &self,
@@ -379,7 +425,16 @@ impl Session<'_> {
         rpc.deadline = limit;
         loop {
             let message = tokio::select! {
-                result = rpc.recv() => result.map_err(|_| if Instant::now()>=limit {"codex_execution_timeout"}else{"codex_goal_stream_closed"})?,
+                result = rpc.recv() => result.map_err(|error| {
+                    if Instant::now() >= limit {
+                        "codex_execution_timeout"
+                    } else if self.record_oversized_message(&error) {
+                        log.event(Some(self.job), format_args!("codex_message_too_large limit_bytes={MAX_MESSAGE}"));
+                        "codex_failed"
+                    } else {
+                        "codex_goal_stream_closed"
+                    }
+                })?,
                 _ = stop.wait_for(|stopped| *stopped) => return Err("codex_interrupted"),
             };
             let params = &message["params"];
@@ -506,6 +561,134 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn large_messages_keep_the_next_frame_aligned() {
+        let expected = json!({"id":42,"result":{"output":"x".repeat(1024 * 1024 + 4096)}});
+        let mut bytes = serde_json::to_vec(&expected).unwrap();
+        bytes.extend_from_slice(b"\n{\"id\":43,\"result\":{}}\n");
+        let mut output = BufReader::new(bytes.as_slice());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        assert_eq!(
+            read_message(&mut output, deadline, MAX_MESSAGE)
+                .await
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            read_message(&mut output, deadline, MAX_MESSAGE)
+                .await
+                .unwrap(),
+            json!({"id":43,"result":{}})
+        );
+    }
+
+    #[tokio::test]
+    async fn message_size_eof_and_timeout_have_distinct_causes() {
+        let frame = b"{\"id\":1}\n";
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut exact = BufReader::new(&frame[..]);
+        assert_eq!(
+            read_message(&mut exact, deadline, frame.len() as u64)
+                .await
+                .unwrap(),
+            json!({"id":1})
+        );
+        let mut oversized = BufReader::new(&frame[..]);
+        let error = read_message(&mut oversized, deadline, frame.len() as u64 - 1)
+            .await
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error
+            .get_ref()
+            .unwrap()
+            .downcast_ref::<MessageTooLarge>()
+            .is_some());
+        for bytes in [&b""[..], &b"{\"id\":1}"[..]] {
+            let mut output = BufReader::new(bytes);
+            assert_eq!(
+                read_message(&mut output, deadline, 1024)
+                    .await
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::UnexpectedEof
+            );
+        }
+        let (_writer, reader) = tokio::io::duplex(64);
+        assert_eq!(
+            read_message(
+                &mut BufReader::new(reader),
+                Instant::now() + Duration::from_millis(20),
+                1024
+            )
+            .await
+            .unwrap_err()
+            .kind(),
+            io::ErrorKind::TimedOut
+        );
+        let root = tempfile::tempdir().unwrap();
+        let details = Mutex::new(FailureDetails::default());
+        let session = Session {
+            failure_details: Some(&details),
+            execution_timeout: None,
+            root: root.path(),
+            instructions: INSTRUCTIONS.into(),
+            prompt: "Capture",
+            job: Uuid::new_v4(),
+            skill: None,
+        };
+        let error = io::Error::new(
+            io::ErrorKind::InvalidData,
+            MessageTooLarge { limit: MAX_MESSAGE },
+        );
+        assert!(session.record_oversized_message(&error));
+        let details = details.lock().unwrap();
+        assert_eq!(details.event.as_deref(), Some("codex_message_too_large"));
+        assert!(details.reason.as_ref().unwrap().contains("64 MiB"));
+    }
+
+    #[tokio::test]
+    async fn large_rpc_response_does_not_prevent_goal_delivery() {
+        let root = tempfile::tempdir().unwrap();
+        let fixture = budget_fixture(
+            root.path(),
+            r#"
+reply '{"id":"finish","method":"item/tool/call","params":{"threadId":"fixture-thread","tool":"finish_capture_task","arguments":{}}}'
+read_request
+read_request
+reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
+"#,
+        );
+        let script = std::fs::read_to_string(&fixture).unwrap().replace(
+            "reply '{\"id\":0,\"result\":{}}'",
+            r#"printf '%s' '{"id":0,"result":{"output":"'
+head -c 1100000 /dev/zero | tr '\000' x
+printf '%s\n' '"}}'"#,
+        );
+        std::fs::write(&fixture, script).unwrap();
+        let session = Session {
+            failure_details: None,
+            execution_timeout: Some(Duration::from_secs(10)),
+            root: root.path(),
+            instructions: INSTRUCTIONS.into(),
+            prompt: "Capture",
+            job: Uuid::new_v4(),
+            skill: None,
+        };
+        let mut command = Command::new("/bin/sh");
+        command.arg(fixture);
+        let log = Log::for_config(&root.path().join("connector.json"));
+        let (_stop, mut stop) = watch::channel(false);
+        assert_eq!(
+            session
+                .run(&mut command, &log, &mut stop, async |name, _, _| {
+                    assert_eq!(name, "finish_capture_task");
+                    ToolReply::ok(json!({"delivered":true}), GoalChange::Delivered)
+                })
+                .await,
+            Ok(())
+        );
+    }
+
+    #[tokio::test]
     async fn native_goal_and_turn_errors_preserve_context_without_guessing_reasons() {
         for (tail,code,status,message) in [
             ("reply '{\"method\":\"thread/goal/updated\",\"params\":{\"threadId\":\"fixture-thread\",\"goal\":{\"status\":\"blocked\"}}}'","codex_goal_unconfirmed",Some("blocked"),None),
@@ -597,7 +780,9 @@ reply '{{"id":3,"result":{{"turn":{{"id":"first-turn"}}}}}}'
             r#"
 printf '%s' broken > "$control/project-source"
 if [ "$(cat "$control/project-source")" = repaired ]; then exit 9; fi
-reply '{"method":"item/completed","params":{"threadId":"fixture-thread","item":{"type":"commandExecution","status":"completed","exitCode":1,"aggregatedOutput":"fixture build failed"}}}'
+printf '%s' '{"method":"item/completed","params":{"threadId":"fixture-thread","item":{"type":"commandExecution","status":"completed","exitCode":1,"aggregatedOutput":"'
+head -c 1100000 /dev/zero | tr '\000' x
+printf '%s\n' '"}}}'
 reply '{"id":"after-build-failure","method":"item/tool/call","params":{"threadId":"fixture-thread","tool":"get_capture_task","arguments":{}}}'
 read_request
 reply '{"method":"turn/completed","params":{"threadId":"fixture-thread","turn":{"status":"completed"}}}'
