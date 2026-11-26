@@ -15,8 +15,8 @@ import zipfile
 
 from verify_store_refactor import PROJECT, managed_root, source_hashes
 
-BASE_VERSION = "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d"
-PATCHES = ("SKILL.md", "references/connector-protocol.md")
+BASE_VERSION = "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51"
+PATCHES = ("SKILL.md", "references/connector-protocol.md", "references/store-content-review.md")
 
 REMOTE_PREFIX = """
 import base64,hashlib,http.client,json,os,sqlite3,sys,urllib.parse
@@ -84,6 +84,8 @@ def main() -> None:
     import re
     for path in PATCHES:
         for link in re.findall(r"\]\(([^)]+)\)",(temporary/path).read_text()):
+            if link.startswith(("https://", "http://")):
+                continue
             assert (temporary/path).parent.joinpath(link).is_file(), "Missing Skill reference"
     assert source_hashes() == baseline
     if sys.argv[1:] == ["--check"]:
