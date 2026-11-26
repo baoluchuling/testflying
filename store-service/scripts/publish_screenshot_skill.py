@@ -15,7 +15,7 @@ import zipfile
 
 from verify_store_refactor import PROJECT, managed_root, source_hashes
 
-BASE_VERSION = "d9326dce135e627beec732dfc7a8a0f3764b6626529d67f9dceb77e3f6deca9e"
+BASE_VERSION = "938bf9c1d27c69271ae43cb5efb040d4711453ad7040c2160c14f4e08f92a245"
 PATCHES = ("SKILL.md", "references/connector-protocol.md")
 
 REMOTE_PREFIX = """
@@ -87,7 +87,7 @@ def main() -> None:
             assert (temporary/path).parent.joinpath(link).is_file(), "Missing Skill reference"
     assert source_hashes() == baseline
     if sys.argv[1:] == ["--check"]:
-        print(json.dumps({"baseVersion":BASE_VERSION,"expectedVersion":expected,"unchangedFiles":len(original)-1,"validated":True}))
+        print(json.dumps({"baseVersion":BASE_VERSION,"expectedVersion":expected,"unchangedFiles":len(set(original)-set(PATCHES)),"validated":True}))
         return
     verification = json.loads((PROJECT/"docs/setup-deployment-verification.json").read_text())
     assert verification["stage"] == "deployed-and-verified"
@@ -116,7 +116,7 @@ print(json.dumps({'active':after['manifest'],'previousVersionRetained':True}))
         "runId":root.name,"finishedAt":datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "baseVersion":BASE_VERSION,"active":response["active"],
         "previousVersionRetained":response["previousVersionRetained"],
-        "unchangedFiles":len(original)-1,"updatedFiles":list(PATCHES),
+        "unchangedFiles":len(set(original)-set(PATCHES)),"updatedFiles":list(PATCHES),
         "realScreenshotTasksCreated":False,"externalCallbacksSent":False,
     }
     (PROJECT/"docs/setup-deployment-verification.json").write_text(json.dumps(verification,ensure_ascii=False,indent=2)+"\n")

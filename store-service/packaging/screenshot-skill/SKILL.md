@@ -9,7 +9,7 @@ description: 采集 iPhone、iPad、安卓手机和平板的真实应用商店�
 
 ## Connector 任务
 
-通过截图 Connector 执行时，先阅读 [Connector 交付与失败协议](references/connector-protocol.md)，再按下文准备、采集和审阅。以 `get_capture_task` 的目标数组逐项执行，不展开为笛卡尔积；交付、撤销和整单确认使用节点实际提供的工具。
+通过截图 Connector 执行时，先阅读 [Connector 交付与失败协议](references/connector-protocol.md)，再按下文准备、采集和审阅。以 `get_capture_task` 的目标数组逐项执行，不展开为笛卡尔积；交付、撤销和整单确认使用节点实际提供的工具。允许按任务需要修复项目源码、依赖及构建配置，保护不相关用户改动。构建、安装或启动失败后自行排查、修复和重试，在同一 Goal 内继续；只有实际无法恢复或执行预算耗尽才结束为失败。
 
 ## 执行顺序
 

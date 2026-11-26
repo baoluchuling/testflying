@@ -18,7 +18,14 @@ use uuid::Uuid;
 const GOAL: &str = "Fulfill the screenshot request, review the current images, and obtain confirmed final delivery using the Connector tools.";
 const MAX_MESSAGE: u64 = 1024 * 1024;
 
-pub(super) const INSTRUCTIONS: &str = "You own the screenshot task. Call get_capture_task first to read the task identity, center-generated jobId, app, ordered target array, requiresFinalization and current screenshot IDs. The user message is the original visual request. Fulfill targets separately without a Cartesian product. Use the zero-based targetIndex with capture_screenshot, upload_screenshot and discard_screenshot; omit it only for legacy target=null. Find the project on this computer, prepare a suitable iOS Simulator or Android Emulator, reuse one or create and boot it as needed, and decide whether to build, install or launch the app. Treat project source as read-only and use the provided build output paths. A missing existing simulator is not a blocker; only missing development tools or runtimes that prevent preparation are blockers. Validate the selected simulator, navigate to the requested screen and capture it. Upload or discard the current capture before capturing another. Use discard_screenshot to reject an unsuitable local image or an already confirmed uploaded image, then fix the screen and recapture that target. If upload has started or its outcome is unknown, first confirm upload_screenshot using the same screenshotId; do not abandon or replay an unknown upload. get_capture_task lists the screenshot IDs available for discard. When requiresFinalization=true, uploading every target is only staging: review all images, discard and retake unsuitable ones, then call finish_capture_task with an empty object. Only its delivered=true response completes this review-enabled task. If a discard or final submission is uncertain, retry that same operation before any other change. Legacy tasks with requiresFinalization=false finish when upload_screenshot returns delivered=true. Retryable tool errors stay in this same Goal: fix or wait and retry; report an unrecoverable blocker using report_capture_failure with a concise factual reason and attempted recovery, without secrets or full logs. Confirm pending upload, discard or final submission first. Do not mark the Goal complete before confirmed delivery. Use the provided tools for delivery and preserve the requested app screen until capture completes.";
+pub(super) const INSTRUCTIONS: &str = concat!(
+    "You own the screenshot task. Call get_capture_task first to read the task identity, center-generated jobId, app, ordered target array, requiresFinalization and current screenshot IDs. The user message is the original visual request. Fulfill targets separately without a Cartesian product. Use the zero-based targetIndex with capture_screenshot, upload_screenshot and discard_screenshot; omit it only for legacy target=null. ",
+    "Find the project on this computer, prepare a suitable iOS Simulator or Android Emulator, reuse one or create and boot it as needed, and decide whether to build, install or launch the app. You may modify project source, dependencies and build configuration as needed to build and run the requested app. Preserve unrelated user changes and use the provided build output paths. ",
+    "A failed build, install, launch or shell command is feedback for recovery, not a terminal task failure. Inspect the relevant diagnostics, identify the cause, repair the source, dependencies, configuration or environment as appropriate, then retry and continue this same Goal and its original targets. Choose a different valid approach when needed. Do not report failure or mark the Goal blocked merely because a command failed. Keep working within the task execution budget; only an actual blocker that remains after attempted recovery, or budget exhaustion, justifies failure. Preserve the requested app's real behavior and visual requirements while repairing it. ",
+    "A missing existing simulator is not a blocker; prepare or create one, and attempt to resolve missing development tools or runtimes before declaring preparation impossible. Validate the selected simulator, navigate to the requested screen and capture it. Upload or discard the current capture before capturing another. Use discard_screenshot to reject an unsuitable local image or an already confirmed uploaded image, then fix the screen and recapture that target. ",
+    "If upload has started or its outcome is unknown, first confirm upload_screenshot using the same screenshotId; do not abandon or replay an unknown upload. get_capture_task lists the screenshot IDs available for discard. When requiresFinalization=true, uploading every target is only staging: review all images, discard and retake unsuitable ones, then call finish_capture_task with an empty object. Only its delivered=true response completes this review-enabled task. If a discard or final submission is uncertain, retry that same operation before any other change. Legacy tasks with requiresFinalization=false finish when upload_screenshot returns delivered=true. ",
+    "Retryable tool errors stay in this same Goal: fix or wait and retry. Only after recovery cannot succeed, report an unrecoverable blocker using report_capture_failure with the specific blocker, attempted repairs and remaining missing conditions, without secrets or full logs. Confirm pending upload, discard or final submission first. Do not mark the Goal complete before confirmed delivery. Use the provided tools for delivery and preserve the requested app screen until capture completes."
+);
 
 pub(super) const SKILL_INSTRUCTIONS: &str = "Use the attached screenshot skill for preparation, navigation and visual checks on the original captured images. Discard and retake unsuitable images before final submission. Connector tools, task identity, target order, one current capture at a time and confirmed final delivery remain authoritative. Skill product examples are historical examples; use the app and targets from get_capture_task.";
 
@@ -78,7 +85,7 @@ fn tool_specs() -> Value {
             "required":["screenshotId"],"additionalProperties":false
         }},
         {"name":"finish_capture_task","description":"Finalize the task only after every current target image is uploaded and visually acceptable. Retry this tool if final submission is uncertain.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
-        {"name":"report_capture_failure","description":"End this task with a factual blocker only after recovery attempts cannot succeed. Do not include secrets, full prompts or logs. Pending upload, discard or final submission must be confirmed first.","inputSchema":{"type":"object","properties":{"reason":{"type":"string","minLength":1,"maxLength":2000}},"required":["reason"],"additionalProperties":false}}
+        {"name":"report_capture_failure","description":"End this task only for a factual blocker that remains after attempted recovery. A failed build or command alone is not a blocker: diagnose, repair and retry in the same Goal first. State the attempted repairs and remaining missing conditions, without secrets, full prompts or logs. Pending upload, discard or final submission must be confirmed first.","inputSchema":{"type":"object","properties":{"reason":{"type":"string","minLength":1,"maxLength":2000}},"required":["reason"],"additionalProperties":false}}
     ])
 }
 
@@ -580,6 +587,89 @@ reply '{{"id":3,"result":{{"turn":{{"id":"first-turn"}}}}}}'
         );
         std::fs::write(&path, script).unwrap();
         path
+    }
+
+    #[tokio::test]
+    async fn failed_build_can_be_repaired_in_the_same_goal_before_delivery() {
+        let root = tempfile::tempdir().unwrap();
+        let fixture = budget_fixture(
+            root.path(),
+            r#"
+printf '%s' broken > "$control/project-source"
+if [ "$(cat "$control/project-source")" = repaired ]; then exit 9; fi
+reply '{"method":"item/completed","params":{"threadId":"fixture-thread","item":{"type":"commandExecution","status":"completed","exitCode":1,"aggregatedOutput":"fixture build failed"}}}'
+reply '{"id":"after-build-failure","method":"item/tool/call","params":{"threadId":"fixture-thread","tool":"get_capture_task","arguments":{}}}'
+read_request
+reply '{"method":"turn/completed","params":{"threadId":"fixture-thread","turn":{"status":"completed"}}}'
+reply '{"method":"turn/started","params":{"threadId":"fixture-thread","turn":{"id":"repair-turn"}}}'
+printf '%s' repaired > "$control/project-source"
+[ "$(cat "$control/project-source")" = repaired ]
+reply '{"method":"item/completed","params":{"threadId":"fixture-thread","item":{"type":"commandExecution","status":"completed","exitCode":0}}}'
+reply '{"id":"finish","method":"item/tool/call","params":{"threadId":"fixture-thread","tool":"finish_capture_task","arguments":{}}}'
+read_request
+read_request
+reply '{"id":4,"result":{"goal":{"status":"complete"}}}'
+"#,
+        );
+        let script = std::fs::read_to_string(&fixture)
+            .unwrap()
+            .replace("set -eu\n", "set -eu\ncontrol=$1\n")
+            .replace(
+                "read_request() { IFS= read -r line; }",
+                "read_request() { IFS= read -r line; printf '%s\\n' \"$line\" >> \"$control/input.jsonl\"; }",
+            );
+        std::fs::write(&fixture, script).unwrap();
+        let session = Session {
+            failure_details: None,
+            execution_timeout: Some(Duration::from_secs(10)),
+            root: root.path(),
+            instructions: INSTRUCTIONS.into(),
+            prompt: "Build this app and capture its home screen.",
+            job: Uuid::new_v4(),
+            skill: None,
+        };
+        let log = Log::for_config(&root.path().join("connector.json"));
+        let mut command = Command::new("/bin/sh");
+        command.arg(fixture).arg(root.path());
+        let (_stop, mut stop) = watch::channel(false);
+        let mut calls = Vec::new();
+        let outcome = session
+            .run(&mut command, &log, &mut stop, async |name, _, _| {
+                calls.push(name.clone());
+                let source = std::fs::read_to_string(root.path().join("project-source")).unwrap();
+                match name.as_str() {
+                    "get_capture_task" => {
+                        assert_eq!(source, "broken");
+                        ToolReply::ok(json!({"delivered":false}), GoalChange::Continue)
+                    }
+                    "finish_capture_task" => {
+                        assert_eq!(source, "repaired");
+                        ToolReply::ok(json!({"delivered":true}), GoalChange::Delivered)
+                    }
+                    _ => panic!("Unexpected fixture tool"),
+                }
+            })
+            .await;
+        assert_eq!(outcome, Ok(()));
+        assert_eq!(calls, ["get_capture_task", "finish_capture_task"]);
+        let messages: Vec<Value> = std::fs::read_to_string(root.path().join("input.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|m| m["method"] == "thread/start")
+                .count(),
+            1
+        );
+        let goal_states: Vec<_> = messages
+            .iter()
+            .filter(|m| m["method"] == "thread/goal/set")
+            .map(|m| m["params"]["status"].as_str().unwrap())
+            .collect();
+        assert_eq!(goal_states, ["active", "complete"]);
     }
 
     #[tokio::test]
