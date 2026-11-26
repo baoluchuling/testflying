@@ -971,23 +971,24 @@
     "actualStoreAccountsUsed": false
   },
   "screenshotSkillPublication": {
-    "runId": "af6cfbda62824eef8e04cf772d0e3bea",
-    "finishedAt": "2026-11-26T06:28:36.532708+00:00",
-    "baseVersion": "c15a8260ccf219c17617f55b42b68860e36c6e94e2a84689671c78563d019f7d",
+    "runId": "330cbb295f864558a351af8831097146",
+    "finishedAt": "2026-11-26T10:06:59.071164+00:00",
+    "baseVersion": "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51",
     "active": {
       "schemaVersion": 1,
       "name": "mobile-localized-screenshots",
-      "version": "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51",
-      "sha256": "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51",
-      "bytes": 294977,
-      "files": 19,
-      "publishedAt": 1795674516
+      "version": "67c0c57a96fc3c1762bf41d74807477a01e320a22ce41eb0634e1917f3fe9693",
+      "sha256": "67c0c57a96fc3c1762bf41d74807477a01e320a22ce41eb0634e1917f3fe9693",
+      "bytes": 305528,
+      "files": 20,
+      "publishedAt": 1795687618
     },
     "previousVersionRetained": true,
     "unchangedFiles": 17,
     "updatedFiles": [
       "SKILL.md",
-      "references/connector-protocol.md"
+      "references/connector-protocol.md",
+      "references/store-content-review.md"
     ],
     "realScreenshotTasksCreated": false,
     "externalCallbacksSent": false
@@ -1124,6 +1125,35 @@
     "allFiveProgramHashesPreserved": true,
     "centerPidPreserved": true,
     "runningJobSkillVersionsChecked": 0,
+    "runningJobSkillsPreserved": true,
+    "nodeUpgradeRequiredForThisSkill": false,
+    "actualModelWorkflowTested": false,
+    "realScreenshotTasksCreated": false
+  },
+  "screenshotContentAndProduction": {
+    "runId": "330cbb295f864558a351af8831097146",
+    "finishedAt": "2026-11-26T10:07:06.361803+00:00",
+    "skillVersion": "67c0c57a96fc3c1762bf41d74807477a01e320a22ce41eb0634e1917f3fe9693",
+    "scope": "default image and text content review and production runtime environment",
+    "allVisibleImagesAndTextReviewRequired": true,
+    "productionEnvironmentRequired": true,
+    "runtimeHostEvidenceRequired": true,
+    "releaseLabelAloneInsufficient": true,
+    "preserveRequestedVisualScope": true,
+    "maintainedFilesUpdated": 3,
+    "totalSkillFiles": 20,
+    "unrelatedFilesPreserved": 17,
+    "firstPassAndDeferredWorkflowPreserved": true,
+    "unknownDeliveryMustBeConfirmedBeforeMovingOn": true,
+    "finalResultContractUnchanged": true,
+    "componentVersionsUnchanged": {
+      "center": "0.1.1",
+      "store": "0.2.8",
+      "screenshot": "0.2.11"
+    },
+    "allFiveProgramHashesPreserved": true,
+    "centerPidPreserved": true,
+    "runningJobSkillVersionsChecked": 1,
     "runningJobSkillsPreserved": true,
     "nodeUpgradeRequiredForThisSkill": false,
     "actualModelWorkflowTested": false,
