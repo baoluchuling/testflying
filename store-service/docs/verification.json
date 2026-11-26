@@ -1,183 +1,69 @@
 {
-  "runId": "d469358abf2b4bcf90d812b6dfc0fe01",
-  "finishedAt": "2026-11-25T09:18:24.562633+00:00",
+  "runId": "de6e47b8641e4963b59ef8a7694e7841",
+  "finishedAt": "2026-11-26T03:52:17.849734+00:00",
+  "sourceCommit": "339c8255c3f1212b08e4c1a454ee58072611d96c",
+  "scope": "screenshot-build-recovery",
   "checks": [
     {
       "command": [
         "/opt/homebrew/opt/python@3.14/bin/python3.14",
         "-B",
-        "scripts/test_connector_release.py"
+        "scripts/publish_screenshot_skill.py",
+        "--check"
       ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
-        "node",
-        "--test",
-        "crates/store-api/tests/setup-package.test.mjs"
-      ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
-        "cargo",
-        "build",
-        "--locked",
-        "--package",
-        "store-connector"
-      ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
-        "/opt/homebrew/opt/python@3.14/bin/python3.14",
-        "-B",
-        "scripts/verify_connector_install.py"
-      ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
-        "/opt/homebrew/opt/python@3.14/bin/python3.14",
-        "-B",
-        "scripts/verify_screenshot_install.py"
-      ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
-        "/bin/sh",
-        "-n",
-        "packaging/screenshot-connector/run.sh"
-      ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
-        "/bin/sh",
-        "-n",
-        "packaging/screenshot-connector/install.sh"
-      ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
+      "exitCode": 0
+    }
+  ],
+  "reusedChecks": {
+    "runId": "f755c1ddfa9146e895a5576b5c529ecd",
+    "sourceCommit": "339c8255c3f1212b08e4c1a454ee58072611d96c",
+    "commands": [
+      [
         "cargo",
         "fmt",
         "--all",
         "--",
         "--check"
       ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
+      [
         "cargo",
         "test",
         "--locked",
-        "--workspace"
+        "-p",
+        "screenshot-connector"
       ],
-      "exitCode": 0,
-      "testSummaries": [
-        "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.92s",
-        "test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s",
-        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s",
-        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.38s",
-        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
-        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.27s",
-        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.43s",
-        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.92s",
-        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
-        "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
-        "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.84s",
-        "test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 164.23s",
-        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
-      ]
-    },
-    {
-      "command": [
+      [
         "cargo",
         "clippy",
         "--locked",
-        "--workspace",
+        "-p",
+        "screenshot-connector",
         "--all-targets",
         "--",
         "-D",
         "warnings"
       ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
-        "cargo",
-        "build",
-        "--locked",
-        "--release",
-        "--package",
-        "store-api"
-      ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
-        "cargo",
-        "build",
-        "--locked",
-        "--release",
-        "--package",
-        "store-connector"
-      ],
-      "exitCode": 0,
-      "testSummaries": []
-    },
-    {
-      "command": [
-        "cargo",
-        "build",
-        "--locked",
-        "--release",
-        "--package",
-        "screenshot-connector"
-      ],
-      "exitCode": 0,
-      "testSummaries": []
-    }
-  ],
-  "testsPassed": 283,
+      [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "-B",
+        "scripts/test_connector_release.py"
+      ]
+    ],
+    "rustTestsPassed": 32,
+    "releaseTestsPassed": 26,
+    "reason": "All checks passed before the separate Skill validator hit a missing PyYAML dependency; relevant source and configuration remain unchanged."
+  },
+  "testsPassed": 32,
+  "releaseTestsPassed": 26,
   "sourceHashes": {
     "AGENTS.md": "14fef86e522a3621beaee3c9b1d33bf31a9b8329d681c6a891ea5cfe9e0adfae",
-    "Cargo.lock": "ab830fc63f180457b06582a210d5ba52c37f4bc77b44610715af4678744e758e",
+    "Cargo.lock": "c46d5c14193c751b7caad489594a0cdd13a2b36ec7390a0538380c7c7c75d967",
     "Cargo.toml": "949dedcdac4f97570336bfe7ca72500d676ff1d15f39d6f0b4ee1823d555d233",
-    "crates/screenshot-connector/Cargo.toml": "6392e1a8c4bef94f9a5f638ea6dcfcb748dace3cf8544a0969c1508413658a29",
+    "crates/screenshot-connector/Cargo.toml": "8577fe28b7b2c13fbd45ac7b96fafa15d1f0f0f0e39be2241badda0929fd0faf",
     "crates/screenshot-connector/src/codex_runtime.rs": "ae7a5abb8826e1c6fb9cd5ec41afa4b947b69a68fc6837735ae31eeb72e0d3e1",
     "crates/screenshot-connector/src/connector.rs": "9a57b76e69e3e897a54967cbb2c25dc1e0018bb37a0d2bbda9cb2a0cde78be80",
     "crates/screenshot-connector/src/diagnostic.rs": "ef916e1312de2e90c9b6a0ef766e0f1b81004640099aa34c14fcd0d83cc67ca4",
-    "crates/screenshot-connector/src/goal.rs": "81f7ba5b0894f11835a4d7f355f4ecf37b61f4d2c62b63a0b443cc1dc048a053",
+    "crates/screenshot-connector/src/goal.rs": "299f745e32a523b1f40dab5ea7e45df259b7e121c6472dff5b405363f56c12db",
     "crates/screenshot-connector/src/main.rs": "6b64ddf137a2aa4bc06da323b039fd3687b98fe7d93693d5f36792403f39e77d",
     "crates/screenshot-connector/src/skill.rs": "43d80099a23fd2dc7f5169df319df60153c1bab98f8fe4ed5a63071ccd81afff",
     "crates/screenshot-connector/src/worker.rs": "08e6e2192e4f12791232d25e6f971f678a77e56d476757015e7c88f9e2a20de8",
@@ -290,12 +176,12 @@
     "packaging/connector/install.sh": "d2e1dc66abe6394e622c7510098571e57fd36e577306db59012ebc97e53b4cb6",
     "packaging/connector/start.cmd": "8d004a7f62d2a5028b308d4c6f22d3dcece518ec4eb2f4543614718c5e8ad5e5",
     "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
-    "packaging/connector-versions.json": "335dc0635085e2798709cf842f1aa952760afbbd1a3702a036bdf498b9f92f54",
+    "packaging/connector-versions.json": "d8b7bb4e99a6445286cda89c93df984ccb34d09281ebe3d36eaf2cc2cab29562",
     "packaging/screenshot-connector/README.md": "a4eaea6b1297a386765b5cae0345186232fdeca1a7e5e90d945953ae9a3e8f01",
     "packaging/screenshot-connector/install.sh": "68f3864acff942b8a063c9fcd704cccbc74a8b66580fd78afdd5ad8e716421a7",
     "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7",
-    "packaging/screenshot-skill/SKILL.md": "05f9fad51fb5c26f6e4914e5a5ed9f23f0ec85a5d3cf2a36cc2f961c7c5c8c8f",
-    "packaging/screenshot-skill/references/connector-protocol.md": "5ffe37d449f4c2218f0ba388069c9a0947eca69f4c942702b6f12e97ab6ef288",
+    "packaging/screenshot-skill/SKILL.md": "facf2052f969fe37b18d558593678e201b09daaa6691037f86cfb3bceb215400",
+    "packaging/screenshot-skill/references/connector-protocol.md": "04349f4be9dc6c6189e4587ed4102181f1b0fbd872e4efd15ed054d26f2f3632",
     "scripts/build_release.py": "7f396a22b82b70f75ccf896edc96be4764e54b4c1d506ee67fa88111884cbe1d",
     "scripts/component_release.py": "56130daf6e88f871cf42acd96e14e6d2c181ea8aee1e8c90524b9e67631397a6",
     "scripts/connector_release.py": "16b712b4dbd6f4d4fee0487096ba175d86fbf81118998120515818b815b05040",
@@ -304,7 +190,7 @@
     "scripts/enable_http.py": "76d3c0c72270be678ae3992da3332e8d9a3390489c775309cc0eec57c4d8b85d",
     "scripts/managed_workspace.py": "840a77c1c75de77372bacfcbd5049179340a5e910923f30b4a7ed0828a37e203",
     "scripts/publish_github_release.py": "a391d985639c35ce6a4e5b2ab8299aee94e2d3ac06db8e82bccfec2e5107d0a4",
-    "scripts/publish_screenshot_skill.py": "bc2f484870705f3191ffaae53784d40b85dbe9c110aeb0fe52f11a3cd099c359",
+    "scripts/publish_screenshot_skill.py": "cc66860d6e1921006ed63216a1de494791c554dbcdac40c1c1d34d83e0873ee1",
     "scripts/publish_windows.py": "7899b2f4ac872c9d6db14360f3646eeb2085a251b349f93b535dbe92c3b6057b",
     "scripts/release_catalog.py": "74f1a65ff19aebf666bfd7763da2f6e2355404dd669f2b84e1097d83a3d04b51",
     "scripts/rollout_uploads.py": "b6d6fe43686235a3673a39843a26dfdf1d91694f9b6b76e99c13223c920cf4b1",
@@ -315,12 +201,25 @@
     "scripts/verify_setup_ui.py": "fe7a011495656968f6f3a97bbef72473c8d3c1a3f3e48601534ae5fac359e118",
     "scripts/verify_store_refactor.py": "ebaa25ef57d06b216907521f2e6d501145ac2fce12cbfac5a9aaa344bf4cc588"
   },
-  "notVerified": [
-    "Live store accounts",
-    "Docker build",
-    "Cross-platform CI",
-    "Deployment"
+  "selectedComponents": [
+    "screenshot"
   ],
-  "cleanup": "See the supervisor cleanup report for this runId",
-  "openapiValidated": true
+  "skillValidation": {
+    "previousVersion": "938bf9c1d27c69271ae43cb5efb040d4711453ad7040c2160c14f4e08f92a245",
+    "unmodifiedReferenceConflicts": []
+  },
+  "previousFullVerification": {
+    "sourceCommit": "1c1622b7b5fe885a9ee894fa3c2faec382a1a1a0",
+    "rustTestsPassed": 283,
+    "notRerun": true
+  },
+  "notVerified": [
+    "Actual Codex model repair",
+    "Live app builds or simulators",
+    "Live store accounts",
+    "OSS writes",
+    "Studio callbacks",
+    "Full workspace suite"
+  ],
+  "cleanup": "See supervisor cleanup report"
 }
