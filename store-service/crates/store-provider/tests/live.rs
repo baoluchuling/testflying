@@ -271,7 +271,7 @@ async fn apple_versions_report_all_states_and_only_writes_stop_when_latest_locke
         .execute(&request(
             Platform::Ios,
             Operation::Sync,
-            json!({"operation":"update_release_notes","locale":"en-US","releaseNotes":"notes"}),
+            json!({"operation":"update_app_metadata","locale":"en-US","metadata":{"releaseNotes":"notes"}}),
         ))
         .await
         .unwrap();
@@ -505,7 +505,7 @@ async fn apple_latest_version_is_selected_across_pages_before_editability_check(
     }).await;
     let keys = Keys::new();
     let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
-    let result=gateway.execute(&request(Platform::Ios,Operation::Sync,json!({"operation":"update_release_notes","locale":"en-US","releaseNotes":"do not change old version"}))).await.unwrap();
+    let result=gateway.execute(&request(Platform::Ios,Operation::Sync,json!({"operation":"update_app_metadata","locale":"en-US","metadata":{"releaseNotes":"do not change old version"}}))).await.unwrap();
     assert_eq!(result["errorCode"], "store_version_not_editable");
     assert_eq!(
         fake.records()
@@ -1399,6 +1399,201 @@ async fn google_multilocale_late_failure_discards_without_commit_or_replay() {
 }
 
 #[tokio::test]
+async fn google_metadata_notes_merge_all_languages_with_images_in_one_edit() {
+    let tracks = json!({"tracks":[{"track":"production","releases":[
+        {"name":"latest","status":"inProgress","userFraction":0.25,"versionCodes":["25"],"releaseNotes":[{"language":"EN-us","text":"old"},{"language":"fr-FR","text":"keep"}]},
+        {"name":"old","status":"completed","versionCodes":["20"]}
+    ]}]});
+    let expected = tracks.clone();
+    let fake = Fake::new(move |r| {
+        if r.uri == "/batch-image" {
+            return (StatusCode::OK, vec![], png());
+        }
+        if r.uri.ends_with("/tracks") {
+            return ok(tracks.clone());
+        }
+        google_base(r).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let mut payload = google_batch_payload(&fake.url);
+    for (i, text) in ["English notes", "Japanese notes"].iter().enumerate() {
+        payload["localizations"][i]["metadata"]["releaseNotes"] = json!(text);
+        payload["localizations"][i]["syncScopes"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!("release_notes"));
+    }
+    let result = gateway
+        .execute(&request(Platform::Android, Operation::Sync, payload))
+        .await
+        .unwrap();
+    assert_eq!(result["status"], "succeeded");
+    assert_eq!(result["storeState"]["versionCode"], "25");
+    let records = fake.records();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.method == "POST" && r.uri.ends_with("/edits"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.method == "GET" && r.uri.ends_with("/tracks"))
+            .count(),
+        1
+    );
+    let puts: Vec<_> = records
+        .iter()
+        .filter(|r| r.method == "PUT" && r.uri.contains("/tracks/"))
+        .collect();
+    assert_eq!(puts.len(), 1);
+    let mut track = expected["tracks"][0].clone();
+    track["releases"][0]["releaseNotes"] = json!([{"language":"en-US","text":"English notes"},{"language":"fr-FR","text":"keep"},{"language":"ja","text":"Japanese notes"}]);
+    assert_eq!(puts[0].body(), track);
+    assert_eq!(records.iter().filter(|r| r.method == "PATCH").count(), 2);
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.uri.starts_with("/upload/"))
+            .count(),
+        3
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.uri.contains(":commit?"))
+            .count(),
+        1
+    );
+    assert!(records
+        .iter()
+        .filter(|r| r.method == "PATCH")
+        .all(|r| r.body().get("releaseNotes").is_none()));
+    let commit = records
+        .iter()
+        .position(|r| r.uri.contains(":commit?"))
+        .unwrap();
+    let put = records
+        .iter()
+        .position(|r| r.method == "PUT" && r.uri.contains("/tracks/"))
+        .unwrap();
+    assert!(put < commit);
+}
+
+#[tokio::test]
+async fn metadata_notes_are_optional_selected_and_reject_the_removed_operation_before_network() {
+    let keys = Keys::new();
+    for platform in [Platform::Ios, Platform::Android] {
+        let fake = Fake::new(|r| {
+            apple_base(r)
+                .or_else(|| google_base(r))
+                .unwrap_or_else(|| ok(json!({})))
+        })
+        .await;
+        let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+        for metadata in [
+            json!({"description":"Copy"}),
+            json!({"description":"Copy","releaseNotes":"Do not write"}),
+        ] {
+            let payload = json!({"operation":"update_app_metadata","locale":"en-US","syncScopes":["description"],"metadata":metadata});
+            let req = request(platform, Operation::Sync, payload);
+            assert!(!store_provider::includes_release_notes(&req));
+            assert_eq!(gateway.execute(&req).await.unwrap()["status"], "succeeded");
+        }
+        assert!(fake.records().iter().all(|r| !r.uri.contains("/tracks")));
+        assert!(fake
+            .records()
+            .iter()
+            .filter(|r| r.method == "PATCH")
+            .all(|r| r.body()["data"]["attributes"].get("whatsNew").is_none()));
+        let count = fake.records().len();
+        for payload in [
+            json!({"operation":"update_release_notes","locale":"en-US","releaseNotes":"Removed"}),
+            json!({"operation":"update_app_metadata","locale":"en-US","metadata":{"releaseNotes":123}}),
+            json!({"operation":"update_app_metadata","locale":"en-US","releaseNotes":"Wrong level","metadata":{"description":"Copy"}}),
+            json!({"operation":"update_app_metadata","localizations":[{"locale":"en-US","metadata":{"description":"Copy"}},{"locale":"ja","metadata":{"releaseNotes":false}}]}),
+        ] {
+            assert_eq!(
+                gateway
+                    .execute(&request(platform, Operation::Sync, payload))
+                    .await
+                    .unwrap_err()
+                    .status,
+                422
+            );
+        }
+        assert_eq!(fake.records().len(), count);
+        for payload in [
+            json!({"operation":"update_app_metadata","locale":"en-US","metadata":{"releaseNotes":""}}),
+            json!({"operation":"update_app_metadata","localizations":[{"locale":"en-US","syncScopes":["release_notes"],"metadata":{"releaseNotes":"Notes"}}]}),
+        ] {
+            let req = request(platform, Operation::Sync, payload);
+            store_provider::validate_request(&req).unwrap();
+            assert!(store_provider::includes_release_notes(&req));
+        }
+        let summary = store_provider::diagnostics::summary(
+            &json!({"syncScopes":["release_notes"],"metadata":{"releaseNotes":"private version notes"}}),
+        );
+        assert_eq!(summary["syncScopes"], json!(["release_notes"]));
+        assert!(!summary.to_string().contains("private version notes"));
+    }
+}
+
+#[tokio::test]
+async fn google_metadata_notes_failures_never_commit_or_replay() {
+    let keys = Keys::new();
+    for scenario in 0..3 {
+        let fake=Fake::new(move|r| {
+            if r.uri.ends_with("/tracks") {
+                return ok(if scenario==0 {json!({"tracks":[]})} else {json!({"tracks":[{"track":"production","releases":[{"versionCodes":["1"],"status":"completed"}]}]})});
+            }
+            if r.method=="PUT"&&r.uri.contains("/tracks/") {
+                return (if scenario==1 {StatusCode::BAD_REQUEST}else{StatusCode::OK},vec![],b"unusable response".to_vec());
+            }
+            google_base(r).unwrap_or_else(||ok(json!({})))
+        }).await;
+        let assets = store_provider::assets::AssetStore::new("notes-node".into(), "33".repeat(32));
+        let gateway = Gateway::with_assets(keys.config(&fake.url), Some(assets.clone())).unwrap();
+        let req = request(
+            Platform::Android,
+            Operation::Sync,
+            json!({"operation":"update_app_metadata","localizations":[{"locale":"en-US","metadata":{"description":"Copy","releaseNotes":"Notes"}},{"locale":"ja","metadata":{"releaseNotes":"Japanese notes"}}]}),
+        );
+        let outcome = gateway
+            .execute_with_assets(&req, assets.claim(&req).unwrap())
+            .await;
+        if scenario == 0 {
+            assert_eq!(
+                outcome.unwrap()["errorCode"],
+                "google_release_target_missing"
+            );
+        } else {
+            assert_eq!(outcome.unwrap_err().outcome_unknown, scenario == 2);
+        }
+        let records = fake.records();
+        assert!(!records.iter().any(|r| r.uri.contains(":commit")));
+        assert_eq!(
+            records
+                .iter()
+                .filter(|r| r.method == "DELETE" && r.uri.ends_with("/edits/edit"))
+                .count(),
+            1
+        );
+        assert_eq!(
+            records
+                .iter()
+                .filter(|r| r.method == "PUT" && r.uri.contains("/tracks/"))
+                .count(),
+            usize::from(scenario != 0)
+        );
+    }
+}
+
+#[tokio::test]
 async fn google_multilocale_validates_entire_batch_before_any_network() {
     let fake = Fake::new(|_| panic!("Invalid batch reached upstream")).await;
     let keys = Keys::new();
@@ -1772,17 +1967,17 @@ async fn google_oauth_cache_targeted_release_and_safe_commit() {
         .execute(&request(
             Platform::Android,
             Operation::Sync,
-            json!({"operation":"update_release_notes","locale":"en-US","releaseNotes":"New notes",
+            json!({"operation":"update_app_metadata","locale":"en-US","metadata":{"releaseNotes":"New notes"},
         "storeRelease":{"track":"production","versionCode":"9"},"app":{"packageName":"evil"}}),
         ))
         .await
         .unwrap();
     assert_eq!(result["storeState"]["versionCode"], "9");
-    let automatic=gateway.execute(&request(Platform::Android,Operation::Sync,json!({"operation":"update_release_notes","locale":"en-US","releaseNotes":"Latest notes"}))).await.unwrap();
+    let automatic=gateway.execute(&request(Platform::Android,Operation::Sync,json!({"operation":"update_app_metadata","locale":"en-US","metadata":{"releaseNotes":"Latest notes"}}))).await.unwrap();
     assert_eq!(automatic["storeState"]["track"], "internal");
     assert_eq!(automatic["storeState"]["versionCode"], "20");
     let named = gateway.execute(&request(Platform::Android, Operation::Sync, json!({
-        "operation":"update_release_notes", "locale":"en-US", "releaseNotes":"Named release notes", "storeRelease":{"versionName":"old"}
+        "operation":"update_app_metadata", "locale":"en-US", "metadata":{"releaseNotes":"Named release notes"}, "storeRelease":{"versionName":"old"}
     }))).await.unwrap();
     assert_eq!(named["storeState"]["track"], "production");
     assert_eq!(named["storeState"]["versionCode"], "9");
@@ -1897,7 +2092,7 @@ async fn apple_missing_locale_creation_and_locked_version_preflight() {
     .await;
     let keys = Keys::new();
     let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
-    gateway.execute(&request(Platform::Ios,Operation::Sync,json!({"operation":"update_release_notes","version":"1.0","locale":"fr-FR","releaseNotes":"Bonjour"}))).await.unwrap();
+    gateway.execute(&request(Platform::Ios,Operation::Sync,json!({"operation":"update_app_metadata","version":"1.0","locale":"fr-FR","metadata":{"releaseNotes":"Bonjour"}}))).await.unwrap();
     let records = fake.records();
     let created = records
         .iter()
@@ -1927,12 +2122,12 @@ async fn apple_missing_locale_creation_and_locked_version_preflight() {
         .execute(&request(
             Platform::Ios,
             Operation::Preflight,
-            json!({"operation":"update_release_notes","version":"1.0"}),
+            json!({"operation":"update_app_metadata","version":"1.0"}),
         ))
         .await
         .unwrap();
     assert_eq!(preflight["canSync"], false);
-    let result=gateway.execute(&request(Platform::Ios,Operation::Sync,json!({"operation":"update_release_notes","version":"1.0","locale":"fr-FR","releaseNotes":"blocked"}))).await.unwrap();
+    let result=gateway.execute(&request(Platform::Ios,Operation::Sync,json!({"operation":"update_app_metadata","version":"1.0","locale":"fr-FR","metadata":{"releaseNotes":"blocked"}}))).await.unwrap();
     assert_eq!(result["errorCode"], "store_version_not_editable");
     assert_eq!(
         fake.records()
@@ -2048,8 +2243,8 @@ async fn apple_multilocale_text_and_images_pin_one_version_and_never_submit_for_
     let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
     let images = json!({"phone_screenshots":{"urls":[format!("{}/image.png",fake.url)]}});
     let payload = json!({"operation":"update_app_metadata","localizations":[
-        {"locale":"en-US","syncScopes":["description","store_images"],"metadata":{"description":"English","storeImages":images.clone()}},
-        {"locale":"ja","syncScopes":["description","store_images"],"metadata":{"description":"Japanese","storeImages":images}}
+        {"locale":"en-US","syncScopes":["description","release_notes","store_images"],"metadata":{"description":"English","releaseNotes":"English notes","storeImages":images.clone()}},
+        {"locale":"ja","syncScopes":["description","release_notes","store_images"],"metadata":{"description":"Japanese","releaseNotes":"Japanese notes","storeImages":images}}
     ]});
     let result = gateway
         .execute(&request(Platform::Ios, Operation::Sync, payload))
@@ -2085,7 +2280,16 @@ async fn apple_multilocale_text_and_images_pin_one_version_and_never_submit_for_
     for (id, description) in [("locen", "English"), ("locja", "Japanese")] {
         assert!(records.iter().any(|r| r.method == "PATCH"
             && r.uri == format!("/v1/appStoreVersionLocalizations/{id}")
-            && r.body()["data"]["attributes"]["description"] == description));
+            && r.body()["data"]["attributes"]["description"] == description
+            && r.body()["data"]["attributes"]["whatsNew"] == format!("{description} notes")));
+        assert_eq!(
+            records
+                .iter()
+                .filter(|r| r.method == "PATCH"
+                    && r.uri == format!("/v1/appStoreVersionLocalizations/{id}"))
+                .count(),
+            1
+        );
         assert!(records
             .iter()
             .any(|r| r.uri == "/v1/appAssetLibraryPlacements"
@@ -3091,7 +3295,7 @@ async fn apple_adaptive_rate_limit_and_identity_mismatch_fail_closed() {
     })
     .await;
     let gateway = Gateway::new(keys.config(&other.url)).unwrap();
-    assert!(gateway.execute(&request(Platform::Ios,Operation::Sync,json!({"operation":"update_release_notes","version":"1.0","locale":"en-US","releaseNotes":"never"}))).await.is_err());
+    assert!(gateway.execute(&request(Platform::Ios,Operation::Sync,json!({"operation":"update_app_metadata","version":"1.0","locale":"en-US","metadata":{"releaseNotes":"never"}}))).await.is_err());
     assert_eq!(other.records().len(), 1);
 }
 
@@ -3128,7 +3332,7 @@ async fn apple_info_localization_creation_supplies_selected_name_and_validates_b
     .await;
     let gateway = Gateway::new(keys.config(&no_fallback.url)).unwrap();
     for payload in [
-        json!({"operation":"update_release_notes", "version":"1.0", "locale":"fr-FR", "releaseNotes":"Notes"}),
+        json!({"operation":"update_app_metadata", "version":"1.0", "locale":"fr-FR", "metadata":{"releaseNotes":"Notes"}}),
         json!({"operation":"update_app_metadata", "version":"1.0", "locale":"fr-FR", "syncScopes":["description"], "metadata":{"description":"Description"}}),
         json!({"operation":"update_app_metadata", "version":"1.0", "locale":"fr-FR", "syncScopes":["title"], "metadata":{"title":""}}),
     ] {
@@ -3259,7 +3463,7 @@ async fn malformed_sync_selectors_fail_before_any_upstream_request() {
             json!({"versionCode":""}),
             json!({"track":"production", "versionCodes":["7"]}),
         ] {
-            let payload = json!({"operation":"update_release_notes", "version":"1.0", "locale":"en-US", "releaseNotes":"Never apply to another release", "storeRelease":selector});
+            let payload = json!({"operation":"update_app_metadata", "version":"1.0", "locale":"en-US", "metadata":{"releaseNotes":"Never apply to another release"}, "storeRelease":selector});
             assert_eq!(
                 gateway
                     .execute(&request(platform, Operation::Sync, payload))

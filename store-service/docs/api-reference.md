@@ -287,7 +287,7 @@ POST /v1/store-management/apps/ios/com.example.reader/preflight
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| operation | 是 | update_app_metadata / update_release_notes / update_marketing_page |
+| operation | 是 | update_app_metadata / update_marketing_page |
 | version | 条件必填 | iOS 非 CPP 操作必填；Android 不使用 |
 | locale | 否 | 可以传，但当前预检查不强制要求 |
 
@@ -343,7 +343,7 @@ POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
 | videoUrl | video | 不写入 | listing 视频链接 |
 | storeImages | store_images | 截图 | 图片和截图 |
 
-`metadata` 这个 scope 表示所有受支持文字字段。允许的 scope 还包括 CPP 的 `marketing_text`；应按实际平台和操作选择，不能将“参数被识别”理解为所有平台都会写入该字段。`release_notes` 不是合法 scope，版本说明使用单独 operation。
+`metadata` scope 表示所有受支持文字字段，包括可选metadata.releaseNotes；release_notes可单独选择版本说明。CPP的marketing_text保持原规则。
 
 - 缺失的字段保持原值，选中的字段显式传 `""` 表示清空。
 - `syncScopes` 一旦提供，必须是非空的已知字符串数组；不能传字符串、null 或空数组。
@@ -354,21 +354,21 @@ POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
 iOS：
 
 ```json
-{"operation":"update_release_notes","version":"1.2.0","locale":"en-US","releaseNotes":"Fixes and improvements"}
+{"operation":"update_app_metadata","locale":"en-US","metadata":{"releaseNotes":"Fixes and improvements"}}
 ```
 
 Android：
 
 ```json
 {
-  "operation":"update_release_notes",
+  "operation":"update_app_metadata",
   "locale":"en-US",
-  "releaseNotes":"Fixes and improvements",
+  "metadata":{"releaseNotes":"Fixes and improvements"},
   "storeRelease":{"track":"production","versionCode":"123","versionName":"1.2.0"}
 }
 ```
 
-`locale`、非空 `releaseNotes` 必填；iOS 还需 `version`。Android 的 `storeRelease` 可省略，规则如下：
+版本说明为可选metadata.releaseNotes，可与单语言／多语言文案图片同批，需商店节点0.2.10。未传保留；默认文字scope包含本次提供的说明。iOS自动选择最新可编辑版本，不传version；独立update_release_notes已移除。完整批次格式见[统一接口文档](store-api.md#911-iosandroid-多语言文案与图片同批更新)。Android单语言storeRelease可省略，规则如下：
 
 | 字段 | 类型 | 用途 |
 |---|---|---|
@@ -378,7 +378,7 @@ Android：
 
 多个条件同时提供时必须同时满足。省略整个 storeRelease 时选择现有最高数值 versionCode 对应的 release；提供部分条件时在匹配范围内选择。不能传空对象、null 或未知字段。更新时保留其他语言说明及其他 release。
 
-Android edit 提交带 `changesNotSentForReview=true` 和 `changesInReviewBehavior=ERROR_IF_IN_REVIEW`；当前接口不负责送审或发布。
+Android在一个Edit中合并图文和说明，最后正常commit一次，省略changesNotSentForReview并保留ERROR_IF_IN_REVIEW；可能触发送审。仅选中说明才更新现有release对应track，保留构建及发布配置，不创建release。
 
 ### 5.3 更新截图／图片
 

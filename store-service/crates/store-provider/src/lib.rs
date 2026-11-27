@@ -29,6 +29,30 @@ use store_protocol::{Operation, Platform, StoreError, StoreRequest};
 use tokio::sync::Mutex;
 
 type Result<T> = std::result::Result<T, StoreError>;
+
+fn selected_release_notes(payload: &Value) -> Option<&Value> {
+    scopes(payload, "release_notes", true)
+        .then(|| payload["metadata"].get("releaseNotes"))
+        .flatten()
+}
+
+/// True only for version notes selected for writing, including localization batches.
+pub fn includes_release_notes(request: &StoreRequest) -> bool {
+    if !matches!(
+        request.operation,
+        Operation::Sync | Operation::StartStoreImageSync
+    ) || s(&request.payload, "operation") != "update_app_metadata"
+    {
+        return false;
+    }
+    if is_multilocale_sync(request) {
+        arr(&request.payload, "localizations")
+            .iter()
+            .any(|item| selected_release_notes(item).is_some())
+    } else {
+        selected_release_notes(&request.payload).is_some()
+    }
+}
 tokio::task_local! { static IMAGE_EXECUTION: (); }
 
 fn mutation_error(mut error: StoreError, mutation: bool) -> StoreError {

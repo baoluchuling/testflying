@@ -537,7 +537,7 @@ POST /v1/store-management/apps/ios/com.example.reader/preflight
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| operation | 是 | update_app_metadata / update_release_notes / update_marketing_page |
+| operation | 是 | update_app_metadata / update_marketing_page |
 | locale | 否 | 当前预检查不强制要求 |
 
 ```json
@@ -590,13 +590,14 @@ POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
 | promotionalText | promotional_text | 宣传文本 | 可作为简短描述的备用输入 |
 | shortDescription | short_description | 不写入 | 简短描述，优先于 promotionalText |
 | videoUrl | video | 不写入 | 视频链接 |
+| releaseNotes | release_notes | 当前版本更新说明 whatsNew | 现有 release 的多语言版本说明 |
 | storeImages | store_images | 截图 | 图片／截图 |
 
 `metadata` scope 表示全部受支持文字字段。字段不传则保留，选中的文字字段传 `""` 表示清空。syncScopes 提供时必须是非空的已知字符串数组；空数组、字符串、null、未知 scope 都会拒绝。iOS 新语言还需要合法应用名称，未提供 title 时尝试已有主语言名称。
 
 ### 9.1.1 iOS／Android 多语言文案与图片同批更新
 
-仍调用同一个 `POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync`，platform 为 `ios` 或 `android`，商店节点需 **0.2.9 或更新版本**。一个请求包含同一应用的全部本次语言和设备素材；中心完整转发，商店节点后台逐项执行。Google 共用一个 Edit，全部成功后只 commit 一次；iOS 固定同一个最新可编辑版本写入各语言，不自动送审。两个平台均不创建构建／版本，也不修改 Google track。
+仍调用同一个 `POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync`，platform 为 `ios` 或 `android`，普通批次需商店节点 **0.2.9**，实际更新 `metadata.releaseNotes` 需 **0.2.10**。一个请求包含同一应用的本次语言、可选文案、版本说明和设备素材。Google 共用一个 Edit，只 commit 一次；选中版本说明时合并更新现有 release 的说明，保留 track、构建和发布配置。iOS 固定同一个最新可编辑版本，不自动送审。均不创建构建／版本。
 
 ```json
 {
@@ -604,19 +605,21 @@ POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
   "localizations":[
     {
       "locale":"en-US",
-      "syncScopes":["title","description","store_images"],
+      "syncScopes":["title","description","release_notes","store_images"],
       "metadata":{
         "title":"Reader",
         "description":"English description",
+        "releaseNotes":"Fixes and improvements",
         "storeImages":{"phone_screenshots":{"urls":["https://assets.example.com/en-phone.png"]}}
       }
     },
     {
       "locale":"ja",
-      "syncScopes":["title","description","store_images"],
+      "syncScopes":["title","description","release_notes","store_images"],
       "metadata":{
         "title":"Reader 日本語",
         "description":"日本語の説明",
+        "releaseNotes":"不具合の修正と改善",
         "storeImages":{
           "phone_screenshots":{"urls":["https://assets.example.com/ja-phone.png"]},
           "tablet_screenshots":{"urls":["https://assets.example.com/ja-tablet.png"]}
@@ -628,31 +631,26 @@ POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
 ```
 
 - `localizations` 为1至50项；每项只接受 `locale`、`syncScopes`、`metadata`。locale 为不带空白的 ASCII BCP-47 样式语言标签，忽略大小写去重。每项必须提供有效的选中文字或图片；全部项在开始执行前统一校验，后面的项非法也不会先写前面的项。
-- 顶层只传 `operation` 和 `localizations`，不能混用单语言的 `locale`／`metadata`／`syncScopes`。本格式仅支持 `update_app_metadata`，不支持版本说明或 CPP。中心仍按原规则移除顶层旧 `version`。
-- 两个平台共同支持 scope `metadata`、`title`、`description`、`promotional_text`、`store_images`；iOS 另支持 `subtitle`、`keywords`，Android 另支持 `short_description`、`video`。不支持的平台 scope 会被拒绝。省略 scope 时处理提供的文字，图片仍需显式选择 `store_images`。未传字段／设备槽保留，选中文字传空字符串或图片槽传空数组仍表示清空该项。支持原 `urls`、`assets.downloadUrl` 和预上传 `assetId`；图片设备槽和规格仍按平台规则。
+- 顶层只传 `operation` 和 `localizations`，不能混用单语言的 `locale`／`metadata`／`syncScopes`。本格式仅支持 `update_app_metadata`，版本说明放在每项可选 `metadata.releaseNotes`，不支持 CPP。中心仍按原规则移除顶层旧 `version`。
+- 两个平台共同支持 scope `metadata`、`title`、`description`、`promotional_text`、`release_notes`、`store_images`；iOS 另支持 `subtitle`、`keywords`，Android 另支持 `short_description`、`video`。不支持的平台 scope 会被拒绝。省略 scope 或选择 `metadata` 时处理提供的受支持文字（包括releaseNotes），图片仍需显式选择 `store_images`。未传字段／设备槽保留，选中文字传空字符串或图片槽传空数组表示清空。支持原 `urls`、`assets.downloadUrl` 和预上传 `assetId`；图片设备槽和规格仍按平台规则。
 - 整批纯文案、纯图片或图文混合都异步执行，返回既有 `status:"succeeded"`、`executionStatus:"queued"`、`jobId`，仅表示校验接受。保存 jobId，通过同一应用的 `GET /v1/store-management/apps/{platform}/{bundleIdentifier}/sync-jobs/{jobId}` 查看 `queued/running/succeeded/failed/unknown`。全部语言完成才为最终 succeeded；成功结果 `result.storeState.locales` 为本批语言。
 - **Google：** 所有语言共用一个 Edit。最终 commit 前任一语言下载、写入或上传失败，就不提交并尝试 discard；最终提交结果未知时不重放。成功结果 `commitCount:1` 表示统一提交一次，不表示已审核通过或上线。既有 `ERROR_IF_IN_REVIEW` 保护保留。执行期间避免同时从 Play Console 或其他客户端修改同一应用，以免 Edit 失效；配额与上传限制仍适用。
 - **iOS：** 在节点只解析一次最新版本，先检查存在且可编辑，再按顺序写入固定 versionId，继续使用 Asset Library／placements 流程，不自动送审或发布。Apple 不提供跨语言事务；失败停止后续语言，可能已写入部分内容，不自动回滚或重放。查询失败结果中的 `result.storeState.versionId`、`localeResults`、`completedLocales`、`remainingLocales`、`failedLocale`、`partialUpdatesPossible`；当前失败语言内部也可能部分写入，不能只看 completedLocales 判断全部副作用。结果未知则任务为 unknown。最新版本不存在或不可编辑时在写入前直接失败，不回退旧版本。
 - 节点版本不足、版本未知或不支持后台任务时返回 HTTP409 `store_batch_upgrade_required`，不会拆分批次降级提交。原单语言请求兼容旧节点；原提交行为保持。
+- 实际选中版本说明的单语言或多语言请求需要节点0.2.10，否则HTTP409 `store_release_notes_upgrade_required`，不会静默忽略；未传或未选中说明的普通批次继续兼容0.2.9。
 - 中心不保存图片／图文草稿；节点只持有后台执行所需数据，预上传文件认领到整批结束再清理，URL下载临时文件沿用现有清理机制。中心保存任务结果七天，查询权限沿用原任务归属。
 
-### 9.2 更新版本说明
+### 9.2 可选版本说明
 
-iOS：
-
-```json
-{"operation":"update_release_notes","locale":"en-US","releaseNotes":"Fixes and improvements"}
-```
-
-Android：
+版本说明与文案、图片统一使用 `update_app_metadata`。`metadata.releaseNotes` 可省略，不传保留现有内容；省略 `syncScopes` 时默认包含传入说明，也可显式选 `release_notes`。选中空字符串表示清空，平台仍可能按实际版本状态拒绝。只更新一种语言的说明：
 
 ```json
-{"operation":"update_release_notes","locale":"en-US","releaseNotes":"Fixes and improvements","storeRelease":{"track":"production","versionCode":"123","versionName":"1.2.0"}}
+{"operation":"update_app_metadata","locale":"en-US","metadata":{"releaseNotes":"Fixes and improvements"}}
 ```
 
-locale 和非空 releaseNotes 必填，iOS 自动使用最新版本，无需 version。Android storeRelease 可省略；若提供，可用非空字符串 track、versionCode、versionName 组合筛选，versionCode 必须传字符串。条件同时满足才匹配；不指定时选现有最高数值 versionCode，指定部分条件时在匹配范围内选择。保留其他语言和其他 release。
+多语言直接放入9.1.1的各语言metadata中，也可与文案及图片同批处理。独立 `update_release_notes` operation 已移除，返回422；顶层releaseNotes不接收，请放入metadata。
 
-`release_notes` 不是合法 scope，版本说明通过本 operation 更新。
+iOS写入最新可编辑版本的whatsNew，无需版本号，不送审。Google说明属于现有release：只在选中说明时，在同一Edit内读取tracks一次，选择现有最高数值versionCode的release，合并本次语言后更新对应track一次并统一commit，保留其他语言、release、versionCodes、状态及灰度配置；没有release则失败并discard，不创建新release。普通文案图片不读取或修改tracks。单语言原storeRelease可选筛选保留：track、versionCode、versionName为非空字符串，同时满足；批次不提供选择器，按现有最高versionCode选择。
 
 Android 的文案、图片及版本说明同步使用普通 Google edit commit：不发送 `changesNotSentForReview`，保留 `changesInReviewBehavior=ERROR_IF_IN_REVIEW`。已有更改审核中时拒绝提交，不主动取消已有审核；否则正常提交可触发送审，审核通过后的上线行为由 Google Play 状态和自管式发布设置决定。提交还可能带上 Play Console 其他待送审修改，调用前应协调该应用的后台操作。这不是只保存草稿的接口，不保证留待人工送审；失败不切换参数自动重试。
 

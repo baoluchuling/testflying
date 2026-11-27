@@ -118,7 +118,9 @@ print(json.dumps(out))
     commit = git("rev-parse", "HEAD").decode().strip()
     if git("diff", "--name-only", "HEAD", "--", *source_hashes()).strip():
         raise RuntimeError("Commit the Store API source before deploying")
-    pushed = subprocess.check_output(["gh", "api", "repos/baoluchuling/testflying/git/ref/heads/refactor/store-service-rust",
+    if git("branch", "--show-current").decode().strip() != "main":
+        raise RuntimeError("Deploy the reviewed main branch")
+    pushed = subprocess.check_output(["gh", "api", "repos/baoluchuling/testflying/git/ref/heads/main",
                                       "--jq", ".object.sha"], cwd=PROJECT, text=True).strip()
     if pushed != commit:
         raise RuntimeError("Push the deployment commit first")
@@ -467,6 +469,12 @@ if """ + repr(restart_center) + """ :
                       and catalog["sync"]["multiLocaleSync"]["ios"]["autoSubmitForReview"] is False
                       and catalog["sync"]["multiLocaleSync"]["async"] is True,
                       scheme + " multi-language iOS and Google sync contract available")
+                check(catalog["sync"]["releaseNotes"]["field"] == "metadata.releaseNotes"
+                      and catalog["sync"]["releaseNotes"]["optional"] is True
+                      and catalog["sync"]["releaseNotes"]["minimumStoreConnectorVersion"] == "0.2.10"
+                      and catalog["sync"]["releaseNotes"]["standaloneOperationSupported"] is False
+                      and "update_release_notes" not in catalog["sync"]["operations"],
+                      scheme + " optional version notes are part of metadata sync")
                 endpoints = catalog["endpoints"]
                 check(len(endpoints) == 23
                       and sum(row["group"] == "store" for row in endpoints) == 11

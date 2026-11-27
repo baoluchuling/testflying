@@ -13,6 +13,7 @@ const SYNC_SCOPES: &[&str] = &[
     "video",
     "store_images",
     "marketing_text",
+    "release_notes",
 ];
 
 pub(super) fn validate(request: &StoreRequest) -> Result<()> {
@@ -83,13 +84,13 @@ pub(super) fn validate(request: &StoreRequest) -> Result<()> {
     }
     if matches!(request.operation, Operation::Preflight | Operation::Sync) {
         let operation = required(payload, "operation")?;
-        if !matches!(
-            operation,
-            "update_app_metadata" | "update_release_notes" | "update_marketing_page"
-        ) {
+        if !matches!(operation, "update_app_metadata" | "update_marketing_page") {
             return Err(invalid("Unsupported sync operation"));
         }
         if request.operation == Operation::Sync {
+            if payload.get("releaseNotes").is_some() {
+                return Err(invalid("Version notes belong in metadata.releaseNotes"));
+            }
             match operation {
                 "update_app_metadata" => {
                     required(payload, "locale")?;
@@ -108,12 +109,9 @@ pub(super) fn validate(request: &StoreRequest) -> Result<()> {
                             "promotionalText",
                             "shortDescription",
                             "videoUrl",
+                            "releaseNotes",
                         ],
                     )?;
-                }
-                "update_release_notes" => {
-                    required(payload, "locale")?;
-                    required(payload, "releaseNotes")?;
                 }
                 "update_marketing_page" => {
                     let page = payload

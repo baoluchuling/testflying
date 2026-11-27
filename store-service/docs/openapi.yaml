@@ -360,6 +360,8 @@ components:
         HTTP 200/status=succeeded means validation and admission; save jobId and query sync-jobs for actual completion.
         Single-language text-only and mixed requests remain synchronous; legacy nodes remain synchronous without jobId.
         iOS and Android update_app_metadata with localizations accept 1..50 languages as one asynchronous job on Store Connector >=0.2.9.
+        Optional metadata.releaseNotes is part of the same operation in either form and requires Store Connector >=0.2.10.
+        Only selected notes read/update one existing Google track release, preserving other locales and release settings within the same edit/commit.
         Google locales share one edit and final commit; failure before commit discards the edit. iOS pins one latest editable version,
         never auto-submits for review and may have partial writes on failure; inspect localeResults/completedLocales/remainingLocales/partialUpdatesPossible.
         Unknown outcomes are never replayed. Old/unknown node versions return 409 store_batch_upgrade_required, never split the batch.
@@ -371,10 +373,10 @@ components:
       allOf:
         - if:
             properties:
-              operation: {enum: [update_app_metadata, update_release_notes]}
+              operation: {const: update_app_metadata}
           then:
             anyOf:
-              - required: [locale]
+              - required: [locale, metadata]
               - required: [localizations]
         - if:
             required: [localizations]
@@ -399,7 +401,7 @@ components:
                 properties:
                   marketingPage: {required: [locale]}
       properties:
-        operation: {type: string, enum: [update_app_metadata, update_release_notes, update_marketing_page]}
+        operation: {type: string, enum: [update_app_metadata, update_marketing_page]}
         locale: {type: string, minLength: 1}
         localizations:
           type: array
@@ -410,7 +412,7 @@ components:
         syncScopes:
           type: array
           minItems: 1
-          items: {type: string, enum: [metadata, description, keywords, promotional_text, short_description, title, subtitle, video, store_images, marketing_text]}
+          items: {type: string, enum: [metadata, description, keywords, promotional_text, short_description, title, subtitle, video, store_images, marketing_text, release_notes]}
           description: Omit for defaults. Explicit empty/malformed selections are rejected.
         metadata:
           type: object
@@ -424,8 +426,10 @@ components:
             promotionalText: {type: string}
             keywords: {type: string}
             videoUrl: {type: string}
+            releaseNotes:
+              type: string
+              description: Optional version notes, included in default/metadata text scopes or selected by release_notes. Missing preserves existing notes; empty string clears selected notes. Requires Store Connector >=0.2.10 or 409 store_release_notes_upgrade_required. Both single-language and localizations batches supported; never use the removed update_release_notes operation.
             storeImages: {$ref: '#/components/schemas/StoreImages'}
-        releaseNotes: {type: string}
         storeRelease:
           type: object
           additionalProperties: false
@@ -451,8 +455,8 @@ components:
         syncScopes:
           type: array
           minItems: 1
-          description: iOS supports metadata/title/subtitle/description/keywords/promotional_text/store_images; Android supports metadata/title/description/short_description/promotional_text/video/store_images. Unsupported platform scopes are rejected.
-          items: {enum: [metadata, title, subtitle, description, keywords, short_description, promotional_text, video, store_images]}
+          description: iOS supports metadata/title/subtitle/description/keywords/promotional_text/store_images/release_notes; Android supports metadata/title/description/short_description/promotional_text/video/store_images/release_notes. Unsupported platform scopes are rejected. Selected releaseNotes requires Store Connector >=0.2.10; other batches retain >=0.2.9 compatibility.
+          items: {enum: [metadata, title, subtitle, description, keywords, short_description, promotional_text, video, store_images, release_notes]}
         metadata: {$ref: '#/components/schemas/Sync/properties/metadata'}
     StoreImages:
       type: object
@@ -517,7 +521,7 @@ components:
       type: object
       required: [operation]
       properties:
-        operation: {type: string, enum: [update_app_metadata, update_release_notes, update_marketing_page]}
+        operation: {type: string, enum: [update_app_metadata, update_marketing_page]}
         locale: {type: string, description: Optional in current preflight implementation.}
     StoreImageSyncJob:
       type: object

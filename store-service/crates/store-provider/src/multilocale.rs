@@ -61,6 +61,7 @@ pub(super) fn validate_batch(request: &StoreRequest) -> Result<()> {
                         "promotional_text",
                         "video",
                         "store_images",
+                        "release_notes",
                     ],
                     Platform::Ios => &[
                         "metadata",
@@ -70,6 +71,7 @@ pub(super) fn validate_batch(request: &StoreRequest) -> Result<()> {
                         "keywords",
                         "promotional_text",
                         "store_images",
+                        "release_notes",
                     ],
                 };
                 !v.as_str().is_some_and(|scope| allowed.contains(&scope))
@@ -101,7 +103,7 @@ pub(super) fn validate_batch(request: &StoreRequest) -> Result<()> {
         };
         let selected_images =
             scopes(item, "store_images", false) && item["metadata"].get("storeImages").is_some();
-        if !selected_text && !selected_images {
+        if !selected_text && !selected_images && selected_release_notes(item).is_none() {
             return Err(invalid(
                 "Each localization must supply selected metadata or image content",
             ));

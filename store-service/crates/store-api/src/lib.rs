@@ -624,6 +624,25 @@ async fn write_store(
         payload: payload.clone(),
     };
     let batch = store_provider::is_multilocale_sync(&request);
+    if store_provider::includes_release_notes(&request) {
+        state.registry.require_forwarding(platform)?;
+        request.validate()?;
+        store_provider::validate_request(&request)?;
+        let node = state.registry.resolve(platform, &identifier)?;
+        if node
+            .connector_version
+            .as_deref()
+            .and_then(store_protocol::release::ConnectorVersion::parse)
+            .is_none_or(|v| v < store_protocol::release::ConnectorVersion::parse("0.2.10").unwrap())
+        {
+            return Err(StoreError::new(
+                409,
+                "store_release_notes_upgrade_required",
+                "Upgrade this Store Connector to 0.2.10 or later for metadata.releaseNotes",
+            )
+            .into());
+        }
+    }
     if request.is_image_only_sync() || batch {
         state.registry.require_forwarding(platform)?;
         request.validate()?;

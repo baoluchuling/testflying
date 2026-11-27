@@ -30,7 +30,7 @@ impl Gateway {
                     "Marketing pages require iOS",
                 ));
             }
-            if !matches!(operation, "update_release_notes" | "update_app_metadata") {
+            if operation != "update_app_metadata" {
                 return Err(invalid("Unsupported sync operation"));
             }
             if !is_multilocale_sync(r) {
@@ -180,55 +180,55 @@ impl Gateway {
                     for item in items {
                         self.google_write_listing(path, item).await?;
                     }
-                    json!({"locales":items.iter().map(|item|s(item,"locale")).collect::<Vec<_>>(),"commitCount":1})
-                } else if s(p, "operation") == "update_release_notes" {
-                    required(p, "releaseNotes")?;
-                    let response = self
-                        .api(
-                            Platform::Android,
-                            Method::GET,
-                            &format!("{path}/tracks"),
-                            None,
-                        )
-                        .await?;
-                    let mut tracks = arr(&response, "tracks").to_vec();
-                    let Some((ti, ri, code)) = release_target(&tracks, &p["storeRelease"]) else {
-                        return Ok(failed(
-                            "google_release_target_missing",
-                            "Google Play has no matching release",
-                        ));
-                    };
-                    let locale = s(p, "locale");
-                    let release = &mut tracks[ti]["releases"][ri];
-                    let mut notes = arr(release, "releaseNotes").to_vec();
-                    if let Some(note) = notes
-                        .iter_mut()
-                        .find(|v| s(v, "language").eq_ignore_ascii_case(locale))
-                    {
-                        note["language"] = json!(locale);
-                        note["text"] = p["releaseNotes"].clone();
-                    } else {
-                        notes.push(json!({"language":locale,"text":p["releaseNotes"]}));
+                    let notes: Vec<_> = items
+                        .iter()
+                        .filter_map(|item| {
+                            selected_release_notes(item)
+                                .map(|text| json!({"language":item["locale"],"text":text}))
+                        })
+                        .collect();
+                    let mut state = json!({"locales":items.iter().map(|item|s(item,"locale")).collect::<Vec<_>>(),"commitCount":1});
+                    if !notes.is_empty() {
+                        let Some(release) = self
+                            .google_write_release_notes(path, &Value::Null, notes)
+                            .await?
+                        else {
+                            return Ok(failed(
+                                "google_release_target_missing",
+                                "Google Play has no matching release",
+                            ));
+                        };
+                        state
+                            .as_object_mut()
+                            .unwrap()
+                            .extend(release.as_object().unwrap().clone());
                     }
-                    release["releaseNotes"] = json!(notes);
-                    let name = release["name"].clone();
-                    let track = s(&tracks[ti], "track").to_owned();
-                    self.api(
-                        Platform::Android,
-                        Method::PUT,
-                        &format!("{path}/tracks/{}", escape(&track)),
-                        Some(tracks[ti].clone()),
-                    )
-                    .await?;
-                    json!({"track":track,"versionCode":code,"versionName":name})
+                    state
                 } else {
-                    if !self.google_write_listing(path, p).await? {
+                    let changed = self.google_write_listing(path, p).await?;
+                    if let Some(text) = selected_release_notes(p) {
+                        let Some(release) = self
+                            .google_write_release_notes(
+                                path,
+                                &p["storeRelease"],
+                                vec![json!({"language":p["locale"],"text":text})],
+                            )
+                            .await?
+                        else {
+                            return Ok(failed(
+                                "google_release_target_missing",
+                                "Google Play has no matching release",
+                            ));
+                        };
+                        release
+                    } else if !changed {
                         return Ok(failed(
                             "empty_sync_payload",
                             "No selected store content was supplied",
                         ));
+                    } else {
+                        json!({})
                     }
-                    json!({})
                 };
                 self.api(
                     Platform::Android,
@@ -241,6 +241,50 @@ impl Gateway {
             }
             _ => Err(invalid("Unsupported Google edit operation")),
         }
+    }
+    async fn google_write_release_notes(
+        &self,
+        path: &str,
+        target: &Value,
+        updates: Vec<Value>,
+    ) -> Result<Option<Value>> {
+        let response = self
+            .api(
+                Platform::Android,
+                Method::GET,
+                &format!("{path}/tracks"),
+                None,
+            )
+            .await?;
+        let mut tracks = arr(&response, "tracks").to_vec();
+        let Some((ti, ri, code)) = release_target(&tracks, target) else {
+            return Ok(None);
+        };
+        let release = &mut tracks[ti]["releases"][ri];
+        let mut notes = arr(release, "releaseNotes").to_vec();
+        for update in updates {
+            if let Some(note) = notes
+                .iter_mut()
+                .find(|note| s(note, "language").eq_ignore_ascii_case(s(&update, "language")))
+            {
+                *note = update;
+            } else {
+                notes.push(update);
+            }
+        }
+        release["releaseNotes"] = json!(notes);
+        let name = release["name"].clone();
+        let track = s(&tracks[ti], "track").to_owned();
+        self.api(
+            Platform::Android,
+            Method::PUT,
+            &format!("{path}/tracks/{}", escape(&track)),
+            Some(tracks[ti].clone()),
+        )
+        .await?;
+        Ok(Some(
+            json!({"track":track,"versionCode":code,"versionName":name}),
+        ))
     }
     async fn google_write_listing(&self, path: &str, p: &Value) -> Result<bool> {
         let body = metadata_body(p)?;

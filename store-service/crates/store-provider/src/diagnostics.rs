@@ -546,6 +546,7 @@ pub fn summary(payload: &Value) -> Value {
                 Some("store_images") => "store_images",
                 Some("marketing_text") => "marketing_text",
                 Some("video") => "video",
+                Some("release_notes") => "release_notes",
                 _ => "unknown",
             })
             .collect::<Vec<_>>());

@@ -507,6 +507,7 @@ pub(crate) fn payload_summary(payload: &Value) -> Value {
                 Some("promotional_text") => "promotional_text",
                 Some("video") => "video",
                 Some("store_images") => "store_images",
+                Some("release_notes") => "release_notes",
                 _ => "unknown",
             })
             .collect::<Vec<_>>()));

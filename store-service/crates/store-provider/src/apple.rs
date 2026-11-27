@@ -402,7 +402,7 @@ impl Gateway {
         version: Option<Value>,
     ) -> Result<Value> {
         let operation = required(p, "operation")?;
-        if !matches!(operation, "update_app_metadata" | "update_release_notes") {
+        if operation != "update_app_metadata" {
             return Err(invalid("Unsupported sync operation"));
         }
         let locale = required(p, "locale")?;
@@ -421,10 +421,7 @@ impl Gateway {
         let version_id = id(&version)?;
         let mut attrs = serde_json::Map::new();
         let mut info_attrs = serde_json::Map::new();
-        if operation == "update_release_notes" {
-            required(p, "releaseNotes")?;
-            attrs.insert("whatsNew".into(), p["releaseNotes"].clone());
-        } else {
+        {
             let metadata = p
                 .get("metadata")
                 .filter(|m| m.is_object())
@@ -436,6 +433,7 @@ impl Gateway {
                     &["description", "fullDescription"][..],
                 ),
                 ("keywords", "keywords", &["keywords"][..]),
+                ("release_notes", "whatsNew", &["releaseNotes"][..]),
                 (
                     "promotional_text",
                     "promotionalText",

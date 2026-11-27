@@ -81,6 +81,22 @@ async fn platform_batch_requires_new_node_then_preserves_payload_and_uses_existi
             )
             .unwrap();
         let mut invalid = payload.clone();
+        let mut notes = payload.clone();
+        notes["localizations"][0]["metadata"]["releaseNotes"] = json!("Notes");
+        for candidate in [
+            notes.clone(),
+            json!({"operation":"update_app_metadata","locale":"en-US","metadata":{"releaseNotes":"Notes"}}),
+        ] {
+            let (status, error) = call(app.clone(), "POST", &path, candidate).await;
+            assert_eq!(status, 409);
+            assert_eq!(
+                error["error"]["code"],
+                "store_release_notes_upgrade_required"
+            );
+        }
+        let mut invalid_notes = notes.clone();
+        invalid_notes["localizations"][0]["metadata"]["releaseNotes"] = json!(123);
+        assert_eq!(call(app.clone(), "POST", &path, invalid_notes).await.0, 422);
         invalid["localizations"][1]["locale"] = json!("EN-us");
         assert_eq!(call(app.clone(), "POST", &path, invalid).await.0, 422);
         assert!(received.lock().unwrap().is_empty());
@@ -93,10 +109,26 @@ async fn platform_batch_requires_new_node_then_preserves_payload_and_uses_existi
         assert_eq!(requests[0]["payload"], payload);
         let job = body["jobId"].as_str().unwrap();
         let query = format!("/v1/store-management/apps/{platform}/{APP}/sync-jobs/{job}");
-        let (status, snapshot) = call(app, "GET", &query, Value::Null).await;
+        let (status, snapshot) = call(app.clone(), "GET", &query, Value::Null).await;
         assert_eq!(status, 200);
         assert_eq!(snapshot["jobId"], job);
         assert_eq!(snapshot["status"], "queued");
+        state
+            .registry
+            .register_connection(
+                &node.connector_id,
+                &state.registry.token(&node),
+                Some(&url),
+                Some("0.2.10"),
+            )
+            .unwrap();
+        let (status, result) = call(app.clone(), "POST", &path, notes.clone()).await;
+        assert_eq!(status, 200, "{result}");
+        assert_eq!(result["executionStatus"], "queued");
+        assert_eq!(received.lock().unwrap().last().unwrap()["payload"], notes);
+        let single = json!({"operation":"update_app_metadata","locale":"en-US","metadata":{"releaseNotes":"Single notes"}});
+        assert_eq!(call(app, "POST", &path, single.clone()).await.0, 200);
+        assert_eq!(received.lock().unwrap().last().unwrap()["payload"], single);
         server.abort();
     }
 }

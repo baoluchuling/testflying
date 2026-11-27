@@ -76,6 +76,19 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert_eq!(catalog["schemaVersion"], 1);
     assert_eq!(catalog["contractVersion"], "2026-11-27");
     assert_eq!(
+        catalog["sync"]["releaseNotes"]["field"],
+        "metadata.releaseNotes"
+    );
+    assert_eq!(
+        catalog["sync"]["releaseNotes"]["minimumStoreConnectorVersion"],
+        "0.2.10"
+    );
+    assert_eq!(catalog["sync"]["releaseNotes"]["optional"], true);
+    assert_eq!(
+        catalog["sync"]["operations"],
+        json!(["update_app_metadata", "update_marketing_page"])
+    );
+    assert_eq!(
         catalog["sync"]["multiLocaleSync"]["android"]["commitCount"],
         1
     );

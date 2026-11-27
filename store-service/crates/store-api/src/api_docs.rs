@@ -168,6 +168,16 @@ fn catalog() -> Value {
     let mut store_image_jobs = store_image_jobs;
     store_image_jobs["textAndMixedRequests"] = json!("single-language requests remain synchronous; iOS and Android localizations batches are asynchronous");
     let multi_locale_sync = json!({"platforms":["ios","android"],"operation":"update_app_metadata","field":"localizations","minItems":1,"maxItems":50,"itemRequired":["locale","metadata"],"itemOptional":["syncScopes"],"uniqueLocaleIgnoringCase":true,"cannotMixTopLevel":["locale","metadata","syncScopes"],"minimumStoreConnectorVersion":"0.2.9","upgradeError":"store_batch_upgrade_required","async":true,"queryPath":format!("{APP}/sync-jobs/{{jobId}}"),"android":{"googleEditCount":1,"commitCount":1,"failureBeforeCommit":"discard edit; do not commit"},"ios":{"sameLatestEditableVersion":true,"atomic":false,"autoSubmitForReview":false,"partialFailureDetails":["versionId","localeResults","completedLocales","remainingLocales","failedLocale","partialUpdatesPossible"]},"unknownOutcome":"never replay automatically","singleLanguageCompatible":true});
+    let sync_contract = json!({"versionSelection":"iOS 节点自动定位最新版本；顶层 version 不接收或转发，最新版本不可编辑直接失败，不回退到旧版本","operations":["update_app_metadata","update_marketing_page"],
+        "multiLocaleSync":multi_locale_sync,
+        "releaseNotes":{"field":"metadata.releaseNotes","optional":true,"scope":"release_notes","includedInDefaultTextScopes":true,"platforms":["ios","android"],"multiLanguage":true,"minimumStoreConnectorVersion":"0.2.10","upgradeError":"store_release_notes_upgrade_required","standaloneOperationSupported":false,"android":"only when selected, merge notes into one existing release; preserve track, status, version codes and other locales; one edit/commit","ios":"whatsNew on the same latest editable version; no automatic review"},
+        "androidCommit":{"changesNotSentForReview":"omitted","changesInReviewBehavior":"ERROR_IF_IN_REVIEW","maySendForReview":true,"draftOnly":false},
+        "syncScopes":["metadata","description","keywords","promotional_text","short_description","title","subtitle","video","store_images","marketing_text","release_notes"],
+        "imageSlots":{"ios":["phone_screenshots","tablet_screenshots","foldable_screenshots"],"android":["phone_screenshots","tablet_screenshots","feature_graphic_url"]},
+        "selection":"读取用 query device，写入用 metadata.storeImages 或 marketingPage.storeImages 中的槽位；未传槽位保留、显式空数组清空所选槽位",
+        "textSelection":"未传字段保留；选中文字字段的显式空字符串按清空处理；版本说明是可选的 metadata.releaseNotes，可与文案图片同批更新",
+        "appleImages":"上传 Asset Library 并提交uploaded=true后替换placements和排序，不等待processing；多步写入非事务，不自动重放"
+    });
     json!({
         "schemaVersion":1,"contractVersion":"2026-11-27","title":"中心统一接口文档：商店、账号、节点与截图任务",
         "scope":"center-api-contract","requiresConnectorUpgrade":true,
@@ -206,15 +216,7 @@ fn catalog() -> Value {
             "examples":[format!("{APP}/store-images?locale=en-US&device=phone"),format!("{APP}/store-images?locale=zh-Hans&device=tablet"),format!("{APP}/store-images?locale=ja&device=foldable")]
         },
         "storeImageJobs":store_image_jobs,
-        "sync":{"versionSelection":"iOS 节点自动定位最新版本；顶层 version 不接收或转发，最新版本不可编辑直接失败，不回退到旧版本","operations":["update_app_metadata","update_release_notes","update_marketing_page"],
-            "multiLocaleSync":multi_locale_sync,
-            "androidCommit":{"changesNotSentForReview":"omitted","changesInReviewBehavior":"ERROR_IF_IN_REVIEW","maySendForReview":true,"draftOnly":false},
-            "syncScopes":["metadata","description","keywords","promotional_text","short_description","title","subtitle","video","store_images","marketing_text"],
-            "imageSlots":{"ios":["phone_screenshots","tablet_screenshots","foldable_screenshots"],"android":["phone_screenshots","tablet_screenshots","feature_graphic_url"]},
-            "selection":"读取用 query device，写入用 metadata.storeImages 或 marketingPage.storeImages 中的槽位；未传槽位保留、显式空数组清空所选槽位",
-            "textSelection":"未传字段保留；选中文字字段的显式空字符串按清空处理；版本说明通过 update_release_notes 更新",
-            "appleImages":"上传 Asset Library 并提交uploaded=true后替换placements和排序，不等待processing；多步写入非事务，不自动重放"
-        },
+        "sync":sync_contract,
         "limitations":["Android 不支持创建新版本、独立折叠屏图片、CPP 或创建 PPO","无独立通用送审、发布、评论回复、CPP 列表或删除、PPO 启停接口"],
         "documentation":{"formats":["json","markdown","openapi"],"markdownUrl":format!("{PATH}?format=markdown"),"openapiUrl":format!("{PATH}?format=openapi"),"markdown":MARKDOWN}
     })
