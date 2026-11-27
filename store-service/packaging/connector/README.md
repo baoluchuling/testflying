@@ -15,7 +15,11 @@
 
 ## 升级已有节点
 
-停止旧程序，替换 `store-connector` / `store-connector.exe`，保留现有 `connector.json` 与账号凭据，再启动。不要用占位模板覆盖真实配置。已有 v2 配置格式无需修改。
+Windows/macOS 已有节点须先手动运行一次中心下载的新节点安装包内的 `install.ps1` / `install.sh`，授权管理员权限。完整安装包与仅程序升级包均须保留 `update-trust.json`；该文件包含绑定节点、中心 HTTPS 地址、平台及升级验签公钥，不含节点凭据。安装器先核对绑定，保留已有配置和未选择的商店账号凭据，并注册升级监护服务。注册失败会使安装失败并回滚，不会宣告支持自动升级。
+
+macOS 工作进程仍由原普通用户运行，新增 root LaunchDaemon `com.testflying.connector.updater`。Windows 工作任务仍使用 LocalService，新增 SYSTEM 计划任务 `Testflying Connector Updater`。二者均使用固定安装目录内的 `updater/store-connector[.exe] --upgrade-manager`；`updater/trust.json` 只允许管理员修改，工作进程可只读。手工安装更新监护程序；后台升级仅替换 `program`，不会覆盖正在运行的监护程序。升级只由中心管理员点击发起，监护服务不会自行选择新版本。
+
+手工解压启动与 Linux 安装暂不支持后台一键升级。此时停止旧程序，替换 `store-connector` / `store-connector.exe`，保留现有 `connector.json` 与账号凭据，再启动。不要用占位模板覆盖真实配置。已有 v2 配置格式无需修改。
 
 ## 当前能力
 

@@ -5,6 +5,7 @@ import { bindForwarding } from "./forwarding.mjs";
 import { bindScreenshotSettings } from "./screenshot-settings.mjs";
 import { bindAccounts } from "./accounts.mjs";
 import { bindScreenshotSkill } from "./skills.mjs";
+import { bindStoreUpgrades } from "./store-upgrades.mjs";
 import { nodeLabel, versionLabel } from "./versions.mjs";
 
 const $ = (id) => document.getElementById(id);
@@ -19,6 +20,7 @@ const forwarding=bindForwarding(request,()=>$("setupForm").hidden?undefined:sess
 const screenshotSettings = bindScreenshotSettings(request, () => $("setupForm").hidden ? undefined : session);
 const accounts = bindAccounts(request, () => $("setupForm").hidden ? undefined : session);
 const screenshotSkill = bindScreenshotSkill(request, () => $("setupForm").hidden ? undefined : session);
+const storeUpgrades = bindStoreUpgrades(request, () => $("setupForm").hidden ? undefined : session);
 
 function status(message, kind = "info") {
   $("status").hidden = false;
@@ -57,6 +59,12 @@ async function request(active, path, { method = "GET", body, binary = false, tok
       throw new Unauthorized(message);
     }
     if (response.status === 409 && path === "integrations") throw new Error("这个系统名称已有 Token");
+    if (path === "store-node-upgrades" || path.startsWith("store-node-upgrades/")) {
+      let code;
+      try { code = (await response.json()).error?.code; } catch { /* Only fixed, safe management errors are displayed. */ }
+      if (code === "upgrade_history_full") throw new Error("升级批次记录已达上限，请等待历史记录到期后重试（保留七天）。");
+      throw new Error(`中心请求失败（${response.status}），请检查节点状态后重试`);
+    }
     if (path.endsWith("/logs/latest")) {
       let code;
       try { code = (await response.json()).error?.code; } catch { /* No raw response text is shown. */ }
@@ -229,6 +237,7 @@ function resetSession() {
   screenshotSettings.reset();
   accounts.reset();
   screenshotSkill.reset();
+  storeUpgrades.reset();
   $("screenshotWorkspace").open = false;
   $("screenshotWorkspace").hidden = true;
   $("screenshotStatus").textContent = "";
@@ -267,6 +276,7 @@ async function restoreSession(token = "") {
     screenshotSettings.show();
     accounts.show();
     screenshotSkill.show();
+    storeUpgrades.show();
     $("status").hidden = true;
   } catch (error) {
     if (!active.signal.aborted) {

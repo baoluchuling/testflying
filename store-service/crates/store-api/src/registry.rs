@@ -19,6 +19,7 @@ mod screenshot_settings;
 pub(crate) mod screenshot_skill;
 pub(crate) mod screenshots;
 pub(crate) mod store_jobs;
+pub(crate) mod store_upgrades;
 pub(crate) use integrations::{Integration, IntegrationInput, TOKEN_PREFIX};
 
 pub type Result<T> = std::result::Result<T, StoreError>;
@@ -112,6 +113,7 @@ impl Registry {
         .map_err(database_error)?;
         screenshots::create_schema(&db)?;
         store_jobs::create_schema(&db)?;
+        store_upgrades::create_schema(&db)?;
         screenshot_settings::create_schema(&db)?;
         screenshot_skill::create_schema(&db)?;
         screenshot_notifications::create_schema(&db)?;

@@ -36,6 +36,27 @@ function pem(value, label) {
   }
 }
 
+async function validateUpdateTrust(zip, source, target) {
+  const entry = zip.file("update-trust.json");
+  if (!entry) throw new Error("中心安装包缺少升级信任配置，请重新下载");
+  let trust;
+  try { trust = JSON.parse(await entry.async("string")); }
+  catch { throw new Error("升级信任配置格式无效"); }
+  if (trust?.protocol !== 1 || trust.nodeId !== source.connectorId || trust.target !== target ||
+      typeof trust.serverUrl !== "string" || typeof trust.publicKey !== "string" ||
+      !/^04[0-9a-fA-F]{128}$/.test(trust.publicKey)) throw new Error("升级信任配置与节点或系统不匹配");
+  try {
+    const server = new URL(trust.serverUrl), expected = new URL(source.serverUrl);
+    if (!["http:", "https:"].includes(expected.protocol)) throw new Error();
+    expected.protocol = "https:";
+    if (server.protocol !== "https:" || server.username || server.password || server.search || server.hash ||
+        expected.username || expected.password || expected.search || expected.hash ||
+        server.href.replace(/\/$/, "") !== expected.href.replace(/\/$/, "")) throw new Error();
+    const key = Uint8Array.from(trust.publicKey.match(/../g), (byte) => Number.parseInt(byte, 16));
+    await globalThis.crypto.subtle.importKey("raw", key, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+  } catch { throw new Error("升级信任配置的 HTTPS 中心地址或验证公钥无效"); }
+}
+
 export function validateAccount(input) {
   if (!input?.apple && !input?.google) throw new Error("请至少启用 iOS 或 Android");
   const provider = { mode: "live" };
@@ -76,7 +97,7 @@ export async function buildInstaller(installerBytes, { target, account, upgrade 
   const validated = upgrade ? null : validateAccount(account);
   const binary = target === "windows-amd64" ? "store-connector.exe" : "store-connector";
   const launcher = target === "windows-amd64" ? "start.cmd" : "start.sh";
-  const allowed = new Set([binary, launcher, "connector.json", "README.md", "testflying-prod-ca.crt"]);
+  const allowed = new Set([binary, launcher, "connector.json", "update-trust.json", "README.md", "testflying-prod-ca.crt"]);
   let zip;
   try { zip = await JSZip.loadAsync(installerBytes); }
   catch { throw new Error("中心返回的安装包无法读取"); }
@@ -84,7 +105,7 @@ export async function buildInstaller(installerBytes, { target, account, upgrade 
   for (const item of Object.values(zip.files)) {
     const size = item._data?.uncompressedSize;
     if (item.dir || !allowed.has(item.name) || (item.unsafeOriginalName && item.unsafeOriginalName !== item.name) ||
-        !Number.isSafeInteger(size) || size < 0 || size > (item.name === binary ? 128 * 1024 * 1024 : 1024 * 1024)) {
+        !Number.isSafeInteger(size) || size < 0 || size > (item.name === binary ? 128 * 1024 * 1024 : item.name === "update-trust.json" ? 8192 : 1024 * 1024)) {
       throw new Error("安装包包含不允许的文件或路径");
     }
     total += size;
@@ -103,6 +124,7 @@ export async function buildInstaller(installerBytes, { target, account, upgrade 
   }
   const { connectorId } = source;
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(connectorId)) throw new Error("中心节点身份无效");
+  await validateUpdateTrust(zip, source, target);
   if (upgrade) {
     zip.remove("connector.json");
     zip.file("node-id.txt", connectorId + "\n", { unixPermissions: 0o600 });
@@ -139,7 +161,11 @@ export async function buildInstaller(installerBytes, { target, account, upgrade 
       "凭据位于 credentials 目录，请只保存在可信设备。\n";
   const logGuide = "\n节点日志保存在 connector.json 同目录的 logs 文件夹，按小时分文件、最多保留七天。\n" +
     "Windows 安装后位于 C:\\Program Files\\Testflying Connector\\data\\logs；macOS 位于 /Library/Application Support/Testflying Connector/data/logs。\n" +
-    "日志包含任务关联、上游调用步骤、状态、耗时和请求长度，不记录凭据、文案原文或图片。\n";
+    "日志包含任务关联、上游调用步骤、状态、耗时和请求长度，不记录凭据、文案原文或图片。\n" +
+    "\nWindows/macOS 旧商店节点必须手动运行一次本包安装入口，之后才支持中心后台按钮升级；发布新版不会自动安装。\n" +
+    "update-trust.json 绑定本节点、系统、HTTPS 中心和升级验证公钥，不含签名私钥。请保留此文件并完整解压安装。\n" +
+    "后台升级仅保留当前程序、上一健康版本和一个候选；成功确认后清理更老程序和已用 ZIP，半包/临时目录最多 24 小时，升级日志七天。\n" +
+    "升级器不清理配置、credentials、业务 logs 或手工解压的旧目录；截图节点不参与商店后台升级。\n";
   zip.file("README.md", "# Connector\n\n" + instructions + logGuide, { unixPermissions: 0o600 });
   const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", platform: "UNIX" });
   return { bytes, connectorId, fileName: `connector-${target}-${archiveNodeName(nodeName)}-${connectorId.slice(0, 8)}${upgrade ? "-upgrade" : ""}.zip` };

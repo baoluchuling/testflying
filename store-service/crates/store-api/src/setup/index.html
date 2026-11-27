@@ -57,6 +57,18 @@
         </section>
         <div class="download-bar"><p>生成的 ZIP 含私钥与节点凭据，请勿公开分享。</p><button id="downloadButton" type="submit">生成并下载 Windows 安装包</button></div>
       </form>
+      <section id="storeUpgradeWorkspace" class="card" hidden>
+        <h3>商店节点 · 后台升级</h3>
+        <p id="storeUpgradeVersion" class="account-metadata"></p>
+        <p class="muted">发布新版后，由此按钮升级点击时在线且启用的商店节点。节点先等待已有任务与上传结束，再更换程序；未连接节点本次跳过，上线后不会自动加入。</p>
+        <p class="hint">旧商店节点需先手动安装一次带更新能力的新版安装包。Windows 与 macOS 的已安装节点支持后台升级；Linux 请手动安装。截图节点不参与。</p>
+        <button id="storeUpgradeStart" type="button" disabled>升级全部在线商店节点（0）</button>
+        <button id="storeUpgradeRefresh" type="button" class="quiet">刷新升级状态</button>
+        <p id="storeUpgradeBatch" class="account-metadata"></p>
+        <p id="storeUpgradeStatus" role="status" aria-live="polite"></p>
+        <p id="storeUpgradeEmpty" class="hint">暂无商店节点。</p>
+        <ul id="storeUpgradeNodes" aria-label="商店节点升级状态"></ul>
+      </section>
       <details id="screenshotSkillWorkspace" class="card" hidden>
         <summary>截图 Skill · 自动更新</summary>
         <p class="muted">发布完整 Skill ZIP，包含 SKILL.md、脚本和参考资料。截图节点每次开始任务前检查版本，校验更新后显式交给 Codex；更新或加载失败会报错，运行中的任务保持原版本。</p>

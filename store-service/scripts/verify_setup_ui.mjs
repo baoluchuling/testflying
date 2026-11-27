@@ -67,6 +67,10 @@ const accountDirectories = new Map(), appForwarding = new Map(), manualAppNames 
 const skillFixture = { active: null, versions: [] };
 let failNextSkillPublish = false;
 const skillWrites = [];
+const upgradePublicKey = "046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5";
+const upgradeFixture = {latestVersion:"0.2.11",nodes:[],latestBatch:null};
+let upgradePosts = 0, upgradeReads = 0, failNextUpgradeRead = false;
+let heldUpgrade, upgradeStarted, releaseUpgrade;
 let heldSettings;
 let settingsStarted;
 let releaseSettings;
@@ -83,6 +87,7 @@ if (!production) {
     "versions.mjs": [path.join(web, "versions.mjs"), "text/javascript"],
     "accounts.mjs": [path.join(web, "accounts.mjs"), "text/javascript"],
     "skills.mjs": [path.join(web, "skills.mjs"), "text/javascript"],
+    "store-upgrades.mjs": [path.join(web, "store-upgrades.mjs"), "text/javascript"],
     "integrations.mjs": [path.join(web, "integrations.mjs"), "text/javascript"],
     "logs.mjs": [path.join(web, "logs.mjs"), "text/javascript"],
     "forwarding.mjs": [path.join(web,"forwarding.mjs"),"text/javascript"],
@@ -102,6 +107,8 @@ if (!production) {
   const handler = async (req, res) => {
     try {
       const url = new URL(req.url, "http://localhost");
+      // Count even unauthorized attempts so a leaked post-lock poll cannot hide behind the session guard.
+      if (url.pathname === setupApi + "store-node-upgrades" || url.pathname.startsWith(setupApi + "store-node-upgrades/")) upgradeReads++;
       res.setHeader("Cache-Control", "no-store");
       const relative = url.pathname.replace(/^\/store-api\/connector-setup\//, "");
       if (url.pathname.startsWith("/store-api/connector-setup/") && Object.hasOwn(assetPaths, relative)) {
@@ -130,6 +137,24 @@ if (!production) {
         if (!fixtureSession || !req.headers.cookie?.split(/;\s*/).includes(`${sessionCookie}=${fixtureSession}`)) {
           res.writeHead(401).end("{}"); return;
         }
+      }
+      if (url.pathname === setupApi + "store-node-upgrades" || url.pathname.startsWith(setupApi + "store-node-upgrades/")) {
+        if (heldUpgrade) { upgradeStarted(); await heldUpgrade; }
+        if (failNextUpgradeRead) { failNextUpgradeRead = false; res.writeHead(500).end(JSON.stringify({error:{message:"fixture-upgrade-private <img src=x>"}})); return; }
+        if (req.method === "POST") {
+          upgradePosts++;
+          if (!upgradeFixture.latestBatch || upgradeFixture.latestBatch.state !== "active") {
+            upgradeFixture.latestBatch = {batchId:randomUUID(),version:upgradeFixture.latestVersion,createdAt:1800000000,expiresAt:1800086400,state:"active",
+              nodes:upgradeFixture.nodes.filter((node) => node.kind === "store" && node.online && node.enabled).map((node) => ({
+                connectorId:node.connectorId,name:node.name,version:node.version,target:node.target,requestId:node.supported && node.version !== upgradeFixture.latestVersion ? randomUUID() : null,
+                state:node.version === upgradeFixture.latestVersion || !node.supported ? "skipped" : "notified",
+                reason:node.version === upgradeFixture.latestVersion ? "current" : node.reason,errorCode:null,updatedAt:1800000000,
+              }))};
+          }
+          res.writeHead(200).end(JSON.stringify(upgradeFixture.latestBatch)); return;
+        }
+        assert.equal(req.method,"GET");
+        res.end(JSON.stringify(url.pathname === setupApi + "store-node-upgrades" ? upgradeFixture : upgradeFixture.latestBatch)); return;
       }
       if (url.pathname === setupApi + "screenshot-skill") {
         if (req.method === "POST") {
@@ -328,6 +353,7 @@ if (!production) {
         zip.file("connector.json", JSON.stringify({ connectorId: match[1], token: "browser-node-test-token",
           serverUrl: "https://store.example.invalid/store-api", messageKey: "browser-message-key", uploadKey: "browser-upload-key",
           baseUrl: null, listenAddr: "0.0.0.0:8100", requestTimeoutSeconds: 60, provider: { mode: "live" } }));
+        zip.file("update-trust.json", JSON.stringify({protocol:1,nodeId:match[1],target:"windows-amd64",serverUrl:"https://store.example.invalid/store-api",publicKey:upgradePublicKey}));
         res.setHeader("Content-Type", "application/zip");
         res.end(await zip.generateAsync({ type: "nodebuffer" })); return;
       }
@@ -413,6 +439,10 @@ try {
       violations.push("blocked production screenshot settings write");
       return route.abort();
     }
+    if (production && url.pathname.startsWith(setupApi + "store-node-upgrades") && request.method() !== "GET") {
+      violations.push("blocked production store upgrade write");
+      return route.abort();
+    }
     if (production && (url.pathname.startsWith(setupApi + "accounts") || url.pathname.startsWith(setupApi + "apps/")) && request.method() !== "GET") {
       violations.push("blocked production account or app-binding write");
       return route.abort();
@@ -444,6 +474,8 @@ try {
   assert.equal(await page.locator("#integrationWorkspace").isVisible(), false);
   assert.equal(await page.locator("#screenshotWorkspace").isVisible(), false);
   assert.equal(await page.locator("#screenshotSettingsWorkspace").isVisible(), false);
+  assert.equal(await page.locator("#storeUpgradeWorkspace").isVisible(), false);
+  assert.equal(upgradeReads, 0);
   assert.equal(listAttempts, 0);
   async function unlock(admin = production ? token : fixtureAdminToken) {
     await page.locator("#adminCredential").fill(admin);
@@ -600,6 +632,7 @@ try {
   assert.match(await zip.file("install.cmd").async("string"), /install\.ps1/);
   assert.match(await zip.file("install.ps1").async("string"), /New-ScheduledTaskTrigger -AtStartup/);
   assert(zip.file("testflying-prod-ca.crt"));
+  assert.equal(JSON.parse(await zip.file("update-trust.json").async("string")).nodeId, config.connectorId);
   checks.push("real Windows executable preserved in a downloadable dual-platform private ZIP");
   checks.push("both credential paths are automatic and no application list is included");
   if (!production) assert.equal(nodes.length, 1);
@@ -620,10 +653,107 @@ try {
   const upgradeZip = await JSZip.loadAsync(fs.readFileSync(upgradePath), { checkCRC32: true });
   assert.equal((await upgradeZip.file("node-id.txt").async("string")).trim(), firstId);
   assert.equal(upgradeZip.file("connector.json"), null);
+  assert.equal(JSON.parse(await upgradeZip.file("update-trust.json").async("string")).nodeId, firstId);
   assert(!Object.keys(upgradeZip.files).some((name) => name.startsWith("credentials/")));
   assert.equal(hash(await upgradeZip.file("store-connector.exe").async("nodebuffer")), hash(executable));
   if (!production) assert.equal(nodes.length, 1);
   checks.push("program-only upgrade preserves node identity without including local configuration");
+  if (!production) {
+    await page.locator("#storeUpgradeRefresh:enabled").waitFor();
+    assert.equal(await page.locator("#storeUpgradeStart").isDisabled(), true);
+    const makeUpgradeNode = (name, extra = {}) => ({connectorId:randomUUID(),name,kind:"store",online:true,enabled:true,version:"0.2.10",target:"windows-amd64",supported:true,reason:null,...extra});
+    const upgradeable = makeUpgradeNode("Upgradeable store");
+    const legacy = makeUpgradeNode("Legacy store", {supported:false,reason:"manual_install_required"});
+    const current = makeUpgradeNode("Current store", {version:"0.2.11"});
+    const offline = makeUpgradeNode("Offline store", {online:false});
+    const screenshot = makeUpgradeNode("Never upgrade screenshot", {kind:"screenshot"});
+    upgradeFixture.nodes = [upgradeable,legacy,current,offline,screenshot];
+    await page.locator("#storeUpgradeRefresh").click();
+    await page.locator("#storeUpgradeStart:enabled").waitFor();
+    assert.equal(await page.locator("#storeUpgradeStart").textContent(), "升级全部在线商店节点（3）");
+    assert.equal(await page.locator("#storeUpgradeNodes li").count(), 4);
+    assert.match(await page.locator("#storeUpgradeNodes").textContent(), /需手动安装一次/);
+    assert(!(await page.locator("#storeUpgradeNodes").textContent()).includes(screenshot.name));
+    await page.locator("#storeUpgradeStart").evaluate((button) => { button.click(); button.click(); });
+    await page.getByText(/批次进行中，页面会自动刷新/).waitFor();
+    assert.equal(upgradePosts, 1);
+    assert.equal(await page.locator("#storeUpgradeStart").isDisabled(), true);
+    assert.deepEqual(upgradeFixture.latestBatch.nodes.map((node) => node.connectorId), [upgradeable,legacy,current].map((node) => node.connectorId));
+    assert.equal(upgradeFixture.latestBatch.nodes[2].reason, "current");
+    const result = upgradeFixture.latestBatch.nodes[0];
+    result.state = "draining";
+    await page.locator(`#storeUpgradeNodes li[data-connector-id="${upgradeable.connectorId}"][data-state="draining"]`).waitFor();
+    assert.match(await page.locator("#storeUpgradeNodes").textContent(), /等待任务结束/);
+    for (const [state,label] of [["downloading","下载中"],["installing","升级中"],["awaiting_confirmation","待中心确认"],["rolled_back","已回滚"],["failed","升级失败"],["cleanup_pending","清理待完成"],["expired","批次已过期"],["succeeded","升级成功"]]) {
+      result.state = state;
+      await page.locator("#storeUpgradeRefresh:enabled").click();
+      await page.locator(`#storeUpgradeNodes li[data-connector-id="${upgradeable.connectorId}"][data-state="${state}"]`).waitFor();
+      assert.match(await page.locator("#storeUpgradeNodes").textContent(), new RegExp(label));
+      if (state === "expired") {
+        assert.equal(await page.locator("#setupForm").isVisible(), true);
+        assert.equal(await page.locator("#storeUpgradeWorkspace").isVisible(), true);
+        assert.equal(await page.locator("#adminUnlock").isVisible(), false);
+        assert(!(await page.locator("#status").textContent()).includes("管理员会话已失效"));
+      }
+    }
+    upgradeFixture.latestBatch.state = "completed";
+    for (const node of upgradeFixture.nodes) if (node.kind === "store") node.version = upgradeFixture.latestVersion;
+    await page.locator("#storeUpgradeRefresh:enabled").click();
+    await page.getByText("批次已结束，请查看每个节点的结果。", {exact:true}).waitFor();
+    assert.equal(await page.locator("#storeUpgradeStart").isDisabled(), true);
+    failNextUpgradeRead = true;
+    await page.locator("#storeUpgradeRefresh:enabled").click();
+    await page.locator("#storeUpgradeStatus").filter({hasText:"中心请求失败"}).waitFor();
+    assert(!(await page.locator("#storeUpgradeStatus").textContent()).includes("fixture-upgrade-private"));
+    heldUpgrade = new Promise((resolve) => { releaseUpgrade = resolve; });
+    const started = new Promise((resolve) => { upgradeStarted = resolve; });
+    const aborted = page.waitForEvent("requestfailed", (request) => new URL(request.url()).pathname === setupApi + "store-node-upgrades");
+    await page.locator("#storeUpgradeRefresh:enabled").click(); await started;
+    await Promise.all([page.waitForResponse((response) => response.request().method() === "DELETE" && new URL(response.url()).pathname === setupApi + "session"),page.locator("#adminLock").click()]);
+    await aborted; releaseUpgrade(); heldUpgrade = undefined;
+    assert.equal(await page.locator("#storeUpgradeWorkspace").isVisible(), false);
+    assert.equal(await page.locator("#storeUpgradeNodes li").count(), 0);
+    assert.equal(await page.locator("#storeUpgradeBatch").textContent(), "");
+    await unlock(); await page.locator("#setupForm").waitFor({state:"visible"});
+    upgradeFixture.latestBatch.state = "active";
+    result.state = "awaiting_confirmation";
+    const batchPath = setupApi + "store-node-upgrades/" + upgradeFixture.latestBatch.batchId;
+    await page.locator("#storeUpgradeRefresh:enabled").click();
+    await page.locator(`#storeUpgradeNodes li[data-connector-id="${upgradeable.connectorId}"][data-state="awaiting_confirmation"]`).waitFor();
+    const activePoll = await page.waitForResponse((response) => response.request().method() === "GET" && new URL(response.url()).pathname === batchPath);
+    assert.equal(activePoll.status(), 200);
+    await activePoll.finished();
+    await page.locator("#storeUpgradeRefresh:enabled").waitFor();
+    await Promise.all([page.waitForResponse((response) => response.request().method() === "DELETE" && new URL(response.url()).pathname === setupApi + "session"),page.locator("#adminLock").click()]);
+    const readsAfterActiveLock = upgradeReads;
+    await page.waitForTimeout(3000); // Cross the next 2.5-second automatic-poll deadline.
+    assert.equal(upgradeReads, readsAfterActiveLock, "an active batch must stop polling when management is locked");
+    assert.equal(await page.locator("#storeUpgradeWorkspace").isVisible(), false);
+    assert.equal(await page.locator("#storeUpgradeNodes li").count(), 0);
+    assert.equal(await page.locator("#storeUpgradeBatch").textContent(), "");
+    await unlock(); await page.locator("#setupForm").waitFor({state:"visible"});
+    await page.locator(`#storeUpgradeNodes li[data-connector-id="${upgradeable.connectorId}"][data-state="awaiting_confirmation"]`).waitFor();
+    await page.locator("#storeUpgradeRefresh:enabled").waitFor();
+    const expiredSessionPoll = page.waitForResponse((response) => response.request().method() === "GET" && new URL(response.url()).pathname === batchPath && response.status() === 401);
+    fixtureSession = undefined; // Expire authentication; this is distinct from a node's state="expired".
+    await expiredSessionPoll;
+    await page.getByText("管理员会话已失效，请重新登录", {exact:true}).waitFor();
+    await page.locator("#loginButton:enabled").waitFor();
+    const readsAfterSessionExpiry = upgradeReads;
+    await page.waitForTimeout(3000);
+    assert.equal(upgradeReads, readsAfterSessionExpiry, "401 must clear the active batch poll timer");
+    assert.equal(await page.locator("#setupForm").isVisible(), false);
+    assert.equal(await page.locator("#storeUpgradeWorkspace").isVisible(), false);
+    assert.equal(await page.locator("#storeUpgradeNodes li").count(), 0);
+    assert.equal(await page.locator("#storeUpgradeBatch").textContent(), "");
+    assert.equal(await page.locator("#storeUpgradeStatus").textContent(), "");
+    upgradeFixture.latestBatch.state = "completed";
+    result.state = "succeeded";
+    checks.push("mock store upgrades filter screenshots and offline nodes, skip current and legacy nodes, disable duplicate submits, poll progress, display rollback/failure/expiry/cleanup, and disable when no newer release exists");
+    checks.push("store upgrade requests begin only after unlock; lock aborts pending refresh and prevents stale responses restoring the card; production upgrade writes are blocked");
+    checks.push("after a verified active-batch automatic poll, locking stops requests across the next polling deadline; an automatic poll returning HTTP 401 clears the card and stops all further upgrade requests; a node expired state leaves management unlocked");
+    await unlock(); await page.locator("#setupForm").waitFor({state:"visible"});
+  }
   if (!production) {
     await page.locator("#logWorkspace summary").click();
     assert.equal(await page.locator("#nodeLogDownload").isDisabled(),true);
@@ -1020,6 +1150,7 @@ try {
 } finally {
   releaseReveal?.();
   releaseSettings?.();
+  releaseUpgrade?.();
   let cleanupFailed = false;
   try {
     if (production) for (const id of created) {

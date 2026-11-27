@@ -119,6 +119,9 @@ async fn authorize_setup(
 
 pub(super) fn routes(state: Arc<super::ApiState>) -> Router<Arc<super::ApiState>> {
     let setup_api = Router::new()
+        .merge(super::store_upgrades::management_routes(
+            "/connector-setup/api/store-node-upgrades",
+        ))
         .merge(super::accounts::management_routes(
             "/connector-setup/api/accounts",
         ))
@@ -249,6 +252,10 @@ async fn asset(State(state): State<Arc<ApiState>>, Path(name): Path<String>) -> 
         "versions.mjs" => (
             "text/javascript; charset=utf-8",
             include_bytes!("setup/versions.mjs"),
+        ),
+        "store-upgrades.mjs" => (
+            "text/javascript; charset=utf-8",
+            include_bytes!("setup/store-upgrades.mjs"),
         ),
         "accounts.mjs" => (
             "text/javascript; charset=utf-8",

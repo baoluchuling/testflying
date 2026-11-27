@@ -1,6 +1,6 @@
 [package]
 name = "store-connector"
-version = "0.2.10"
+version = "0.2.11"
 edition.workspace = true
 
 [dependencies]
@@ -13,6 +13,9 @@ tokio-tungstenite.workspace = true
 reqwest.workspace = true
 store-protocol.workspace = true
 store-provider.workspace = true
+store-update.workspace = true
+zip = { version = "2", default-features = false, features = ["deflate"] }
+libc = "0.2"
 subtle = "2"
 hex.workspace = true
 sha2.workspace = true

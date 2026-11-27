@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/store-protocol", "crates/store-provider", "crates/store-api", "crates/store-connector", "crates/screenshot-connector"]
+members = ["crates/store-protocol", "crates/store-provider", "crates/store-api", "crates/store-connector", "crates/screenshot-connector", "crates/store-update"]
 resolver = "2"
 
 [workspace.package]
@@ -20,6 +20,7 @@ hex = "0.4"
 thiserror = "2"
 store-protocol = { path = "crates/store-protocol" }
 store-provider = { path = "crates/store-provider" }
+store-update = { path = "crates/store-update" }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
 tempfile = "3"

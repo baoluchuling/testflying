@@ -1,6 +1,6 @@
 [package]
 name = "store-api"
-version = "0.1.4"
+version = "0.1.5"
 edition.workspace = true
 
 [dependencies]
@@ -15,6 +15,7 @@ sha2.workspace = true
 hex.workspace = true
 store-protocol.workspace = true
 store-provider.workspace = true
+store-update.workspace = true
 rusqlite = { version = "0.38", features = ["bundled"] }
 hmac = "0.12"
 aes-gcm = "0.10"

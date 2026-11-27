@@ -74,6 +74,53 @@ components:
       description: Required with setupSession authentication; administrator Bearer fallback remains supported without this header.
       schema: {type: string, const: '1'}
   schemas:
+    StoreUpgradeNode:
+      type: object
+      required: [connectorId, name, kind, online, enabled, version, target, supported, reason]
+      properties:
+        connectorId: {type: string, format: uuid}
+        name: {type: string}
+        kind: {type: string, const: store}
+        online: {type: boolean}
+        enabled: {type: boolean}
+        version: {type: [string, 'null']}
+        target: {type: [string, 'null'], enum: [windows-amd64, darwin-arm64, linux-amd64, null]}
+        supported: {type: boolean, description: Installed updater capability; legacy nodes need one manual installation. Linux manual installations are unsupported.}
+        reason: {type: [string, 'null']}
+    StoreUpgradeResult:
+      type: object
+      required: [connectorId, name, requestId, version, target, state, reason, errorCode, updatedAt]
+      properties:
+        connectorId: {type: string, format: uuid}
+        name: {type: string}
+        requestId: {type: [string, 'null'], format: uuid}
+        version: {type: [string, 'null'], description: Node version when the batch snapshot was created.}
+        target: {type: [string, 'null']}
+        state: {type: string, enum: [notified, downloading, draining, installing, awaiting_confirmation, succeeded, rolled_back, failed, skipped, expired, cleanup_pending]}
+        reason: {type: [string, 'null'], description: Safe code such as manual_install_required, unsupported_installation, current, newer, unknown_version or release_unavailable.}
+        errorCode: {type: [string, 'null']}
+        updatedAt: {type: integer, description: Unix seconds.}
+    StoreUpgradeBatch:
+      type: object
+      required: [batchId, version, createdAt, expiresAt, state, nodes]
+      properties:
+        batchId: {type: string, format: uuid}
+        version: {type: string, description: Fixed published store version.}
+        createdAt: {type: integer, description: Unix seconds.}
+        expiresAt: {type: integer, description: Unix seconds; commands expire after 24 hours.}
+        state: {type: string, enum: [active, completed]}
+        nodes: {type: array, items: {$ref: '#/components/schemas/StoreUpgradeResult'}}
+      description: Persisted snapshot of enabled online store nodes at creation; screenshots and disconnected nodes are excluded. Results retained seven days.
+    StoreUpgradeOverview:
+      type: object
+      required: [latestVersion, nodes, latestBatch]
+      properties:
+        latestVersion: {type: [string, 'null']}
+        nodes: {type: array, items: {$ref: '#/components/schemas/StoreUpgradeNode'}}
+        latestBatch:
+          oneOf:
+            - {$ref: '#/components/schemas/StoreUpgradeBatch'}
+            - {type: 'null'}
     PublicAccount:
       type: object
       required: [id, name, platform, enabled, catalogStatus, catalogError, lastCatalogAt]
@@ -546,6 +593,64 @@ components:
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
 security: [{integrationToken: []}, {clientToken: []}]
 paths:
+  /v1/store-node-upgrades:
+    get:
+      summary: Read store node upgrade availability (administrator only)
+      description: HTTPS only; integration and business credentials are forbidden. Does not create an upgrade.
+      security: [{adminToken: []}]
+      responses:
+        '200': {description: Latest published store version, capabilities and latest batch, content: {application/json: {schema: {$ref: '#/components/schemas/StoreUpgradeOverview'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      summary: Upgrade all currently online enabled store nodes (administrator only)
+      description: >-
+        HTTPS only. No body or arbitrary URL/version/command. Returns immediately with a fixed batch snapshot;
+        an active batch is reused on repeat submission. Current/newer/unknown versions and unsupported
+        installations are explicitly skipped. Publishing or reconnecting does not create a batch.
+        Old nodes require one manual updater installation; Linux manual installations are unsupported.
+        Existing tasks/uploads drain and center acknowledges terminal job results before restart.
+        Success requires target-version health confirmation; network loss remains awaiting_confirmation.
+        Rollback restores only the program and never replays store writes. Screenshot workers/Skill are unchanged.
+        Keep current/one previous healthy/one candidate, remove older programs and ZIPs after health;
+        temporary files expire in 24 hours and upgrade logs in seven days. Config/credentials/business logs/manual directories are excluded.
+      security: [{adminToken: []}]
+      responses:
+        '200': {description: Created or existing active batch; installation continues asynchronously, content: {application/json: {schema: {$ref: '#/components/schemas/StoreUpgradeBatch'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /v1/store-node-upgrades/{batchId}:
+    get:
+      summary: Read a persisted store upgrade batch (administrator only)
+      description: HTTPS only; integration and business credentials are forbidden.
+      security: [{adminToken: []}]
+      parameters: [{name: batchId, in: path, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Current per-node states and safe failure reasons, content: {application/json: {schema: {$ref: '#/components/schemas/StoreUpgradeBatch'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/store-node-upgrades:
+    parameters: [{$ref: '#/components/parameters/setupHeader'}]
+    get:
+      summary: HTTPS management-session store upgrade availability
+      security: [{setupSession: []}, {adminToken: []}]
+      responses:
+        '200': {description: Same overview as administrator GET /v1/store-node-upgrades, content: {application/json: {schema: {$ref: '#/components/schemas/StoreUpgradeOverview'}}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      summary: HTTPS management-session store upgrade trigger
+      description: Same fixed online-store snapshot and idempotency as administrator POST; integration and business credentials are forbidden. No request body.
+      security: [{setupSession: []}, {adminToken: []}]
+      responses:
+        '200': {description: Immediate batch response, content: {application/json: {schema: {$ref: '#/components/schemas/StoreUpgradeBatch'}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /connector-setup/api/store-node-upgrades/{batchId}:
+    parameters:
+      - {$ref: '#/components/parameters/setupHeader'}
+      - {name: batchId, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      summary: HTTPS management-session store upgrade progress
+      security: [{setupSession: []}, {adminToken: []}]
+      responses:
+        '200': {description: Same persisted batch as administrator GET, content: {application/json: {schema: {$ref: '#/components/schemas/StoreUpgradeBatch'}}}}
+        default: {$ref: '#/components/responses/Error'}
   /v1/store-management/accounts:
     get:
       summary: List account metadata from cached directories

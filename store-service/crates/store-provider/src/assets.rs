@@ -48,6 +48,11 @@ impl Drop for AssetLease {
 }
 
 impl AssetStore {
+    /// Includes claimed files and incomplete uploads; callers must not restart while any remain.
+    pub fn pending_count(&self) -> usize {
+        self.purge();
+        self.entries.lock().unwrap().len()
+    }
     pub fn new(connector_id: String, key: String) -> Arc<Self> {
         Arc::new(Self {
             connector_id,

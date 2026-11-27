@@ -22,6 +22,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         install::prepare(&paths[0], &paths[1], &paths[2])?;
         return Ok(());
     }
+    if first.as_deref() == Some(std::ffi::OsStr::new("--validate-update-trust")) {
+        let paths: Vec<_> = arguments.map(std::path::PathBuf::from).collect();
+        if paths.len() != 2 {
+            return Err("Expected config and update trust files".into());
+        }
+        store_connector::upgrade::validate_trust_files(&paths[0], &paths[1])?;
+        return Ok(());
+    }
+    if first.as_deref() == Some(std::ffi::OsStr::new("--upgrade-manager")) {
+        if arguments.next().is_some() {
+            return Err("Update manager uses its fixed installed directory".into());
+        }
+        store_connector::upgrade::run_manager().await?;
+        return Ok(());
+    }
     let path = first.unwrap_or_else(|| "connector.json".into());
     let config: ConnectorConfig = serde_json::from_slice(&std::fs::read(&path)?)?;
     let log = match Log::for_config(std::path::Path::new(&path), &config.connector_id) {
@@ -47,6 +62,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(error.into());
         }
     };
+    executor.upgrade.configure(std::path::Path::new(&path));
     let maintenance = log.clone().map(|log| {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(diagnostics::maintenance_interval());

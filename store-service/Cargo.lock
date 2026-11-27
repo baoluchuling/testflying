@@ -2124,7 +2124,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "store-api"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "aes-gcm",
  "axum",
@@ -2145,6 +2145,7 @@ dependencies = [
  "store-connector",
  "store-protocol",
  "store-provider",
+ "store-update",
  "subtle",
  "tempfile",
  "tokio",
@@ -2156,7 +2157,7 @@ dependencies = [
 
 [[package]]
 name = "store-connector"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "axum",
  "futures-util",
@@ -2171,11 +2172,13 @@ dependencies = [
  "sha2",
  "store-protocol",
  "store-provider",
+ "store-update",
  "subtle",
  "tempfile",
  "tokio",
  "tokio-tungstenite 0.28.0",
  "uuid",
+ "zip",
 ]
 
 [[package]]
@@ -2218,6 +2221,17 @@ dependencies = [
  "store-protocol",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "store-update"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "p256",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

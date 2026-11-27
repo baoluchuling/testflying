@@ -409,7 +409,7 @@ if """ + repr(restart_center) + """ :
                   "center startup and subsequent HTTP requests recorded")
             check(request("/v1/logs", snapshot["token"])[0] == 401,
                   "business credentials cannot read administrator logs")
-            for asset in ("logs.mjs", "app.mjs", "accounts.mjs", "versions.mjs", "skills.mjs", "packager.mjs", "index.html", "style.css", "forwarding.mjs", "screenshot-settings.mjs"):
+            for asset in ("logs.mjs", "app.mjs", "accounts.mjs", "versions.mjs", "skills.mjs", "store-upgrades.mjs", "packager.mjs", "index.html", "style.css", "forwarding.mjs", "screenshot-settings.mjs"):
                 path = "/connector-setup/" + ("" if asset == "index.html" else asset)
                 status, content = request(path)
                 check(status == 200 and content == center_source("crates/store-api/src/setup/"+asset),
@@ -433,6 +433,29 @@ if """ + repr(restart_center) + """ :
                   and ((node.get("connectorVersion") is None) == (node.get("versionStatus") == "unknown"))
                   for node in node_versions),
                   "authenticated node version fields distinguish unknown old programs from published version")
+            # Inspect management metadata only. Never create a production upgrade batch.
+            status, body = request("/v1/store-node-upgrades", snapshot["admin"])
+            upgrade_overview = json.loads(body)
+            upgrade_node_fields = {"connectorId", "name", "kind", "online", "enabled", "version", "target", "supported", "reason"}
+            check(status == 200 and isinstance(upgrade_overview, dict)
+                  and set(upgrade_overview) == {"latestVersion", "nodes", "latestBatch"}
+                  and upgrade_overview["latestVersion"] == release_versions["store"]
+                  and isinstance(upgrade_overview["nodes"], list)
+                  and all(isinstance(node, dict) and set(node) == upgrade_node_fields
+                          and isinstance(node["connectorId"], str) and isinstance(node["name"], str)
+                          and node["kind"] == "store"
+                          and all(type(node[field]) is bool for field in ("online", "enabled", "supported"))
+                          and all(node[field] is None or isinstance(node[field], str) for field in ("version", "target", "reason"))
+                          for node in upgrade_overview["nodes"]),
+                  "administrator read-only store upgrade overview exposes published version and store-only capability metadata")
+            upgrade_batch = upgrade_overview["latestBatch"]
+            check(upgrade_batch is None or (isinstance(upgrade_batch, dict)
+                  and set(upgrade_batch) == {"batchId", "version", "createdAt", "expiresAt", "state", "nodes"}
+                  and isinstance(upgrade_batch["batchId"], str) and isinstance(upgrade_batch["version"], str)
+                  and all(type(upgrade_batch[field]) is int for field in ("createdAt", "expiresAt"))
+                  and upgrade_batch["state"] in ("active", "completed")
+                  and isinstance(upgrade_batch["nodes"], list)),
+                  "administrator read-only store upgrade overview contains null or a persisted batch snapshot without triggering upgrades")
             # Never query a real Firebase account during rollout. A missing node proves
             # route/auth wiring while failing before any provider command is dispatched.
             for suffix in ("projects", "projects/firebase-probe/android-apps"):
@@ -646,6 +669,8 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                                               "productionScreenshotTasksCreated": 0},
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
                       "actualStoreAccountsUsed": False,
+                      "storeNodeUpgrades": {"verificationMode": "read-only administrator GET",
+                                            "overviewShapeVerified": True, "upgradeRequestsCreatedByChecks": 0},
                       "apiDocumentation": {"contractVersion": "2026-11-27", "coreEndpoints": 23, "uploadHelpers": 2, "formats": ["json", "markdown", "openapi"],
                                            "existingIntegrationTokenVerified": bool(existing_token)},
                       "cleanup": "See the supervisor cleanup report for this runId"}

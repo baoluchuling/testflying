@@ -223,7 +223,7 @@ Firebase 错误只返回固定安全码：`firebase_not_configured`（503，Goog
 
 ### 节点升级与目录发现
 
-商店与截图节点使用明确的程序版本号，当前发布包为 `0.2.6`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
+商店与截图节点使用各自独立的程序版本号，当前中心为 `0.1.5`、商店节点为 `0.2.11`、截图节点为 `0.2.11`。管理员节点查询 `GET /v1/connectors`、`GET /v1/connectors/{id}` 及后台 session 镜像返回 `connectorVersion`（可空）、`latestConnectorVersion` 和 `versionStatus`：`current` 已匹配、`outdated` 有可用更新、`newer` 高于中心发布版、`unknown` 尚未上报。后台节点选择及账号目录会显示这些信息。版本只在加密连接认证及确认完成后记录；离线显示最后上报版本，不代表节点正在运行。旧程序未上报时保持 unknown，不能凭通用 `0.1.0` 日志或具备某项能力判断为最新。旧节点继续执行已支持的业务，不因版本缺失或较旧被拦截；若要显示准确版本，可安装一次新版，重连后自动识别，原节点身份和凭据保留。
 
 中心后台、截图节点、商店节点在同一个 Git 仓库分别维护自己的 Cargo 版本：`crates/store-api/Cargo.toml`、`crates/screenshot-connector/Cargo.toml`、`crates/store-connector/Cargo.toml`，并与各自 Cargo.lock 条目一致。只修改哪个组件，就提升并构建该组件；共享生产代码影响到哪些组件，就检查哪些组件。后台同时展示三个版本，节点的 `latestConnectorVersion` 按 kind 比较，不再要求商店与截图版本一致。
 
@@ -234,6 +234,26 @@ Firebase 错误只返回固定安全码：`firebase_not_configured`（503，Goog
 请在已有商店节点下载「仅升级程序」包并安装，保留本机配置、Apple 私钥和 Google 服务账号 JSON。升级后连接认证成功、每小时或管理员刷新会独立读取完整目录，不占用商店业务锁；同平台最小刷新间隔 60 秒并合并。旧节点无法上报目录；需要升级后成功上报目录才可自动归属应用，旧映射不再参与路由。截图节点协议不因账号目录改变，仍使用现有 arm64 包。
 
 Apple 目录来自 [App Store Connect GET /v1/apps](https://developer.apple.com/documentation/appstoreconnectapi/get-v1-apps)。Google 目录来自 [Play Developer Reporting apps.search](https://developers.google.com/play/developer/reporting/reference/rest/v1beta1/apps/search)，需要启用 Google Play Developer Reporting API 并授予服务账号对应 Play 应用的访问权限，OAuth scope 为 `https://www.googleapis.com/auth/playdeveloperreporting`。Reporting 与 Publisher 使用独立 token 缓存，原 Publisher scope 和商店操作不变。Reporting 失败保留上次成功目录；从未成功上报的 Android 应用无法路由。中心只接收指纹和目录，不持有商店凭据。
+
+### 商店节点后台升级（管理员专用）
+
+以下是管理接口，不增加或改变 23 个公开核心接口、两个上传辅助接口及其请求／返回格式。仅通过 HTTPS 允许管理员 Bearer Token 或既有 HTTPS 管理会话；业务 Token、接入 Token 无权创建或读取批次。后台镜像要求 `X-Testflying-Setup: 1`。
+
+| 方法 | 管理路径 | HTTPS 会话镜像 | 返回 |
+|---|---|---|---|
+| GET | `/v1/store-node-upgrades` | `/connector-setup/api/store-node-upgrades` | 最新发布版本、节点能力与最近批次 |
+| POST | `/v1/store-node-upgrades` | `/connector-setup/api/store-node-upgrades` | 立即返回升级批次，不等待安装 |
+| GET | `/v1/store-node-upgrades/{batchId}` | `/connector-setup/api/store-node-upgrades/{batchId}` | 指定批次的逐节点状态 |
+
+POST 无需正文，成功返回 `200` 批次；服务端不采用自选版本、下载 URL 或命令。中心固定点击时在线、启用的商店节点集合与最新发布版本；截图节点永不进入批次。已最新／高于发布版本、版本未知、旧节点未安装更新器或平台无可用包都明确跳过，不向旧节点发送未知控制消息。未连接节点不纳入本次，后续上线不补加；已入批次短暂断线可按同一请求恢复。存在活动批次时重复提交返回同一批次，节点请求幂等。批次有效期 24 小时，结果保留七天；发布程序、Git push、节点启动和重连不会创建新批次。
+
+GET 概览返回 `latestVersion`、`nodes` 和可空 `latestBatch`。节点字段为 `connectorId,name,kind,online,enabled,version,target,supported,reason`；版本和系统未知时为 null。批次返回 `batchId,version,createdAt,expiresAt,state,nodes`，时间为 Unix 秒，批次 state 为 `active` 或 `completed`。批次节点字段为 `connectorId,name,requestId,version,target,state,reason,errorCode,updatedAt`，其中 `version` 为批次创建时原版本，跳过节点 `requestId` 为 null。reason 为安全原因码，包括 `manual_install_required`、`unsupported_installation`、`current`、`newer`、`unknown_version` 和 `release_unavailable`；不返回凭据或供应商原始错误。
+
+节点 state 包括 `notified`、`downloading`、`draining`（等待已有任务与上传收尾）、`installing`、`awaiting_confirmation`、`succeeded`、`rolled_back`、`failed`、`skipped`、`expired`、`cleanup_pending`。仅中心确认目标版本与节点在线健康后才能 succeeded；中心网络暂断仅待确认，新程序启动失败／连续崩溃才回滚。升级不重放商店写入，回滚只恢复程序，不撤销已有商店变更。
+
+**旧商店节点需先手动安装一次新包，才能启用按钮升级。** 初装／手工升级 ZIP 中的 `update-trust.json` 包含协议 1、节点、系统、固定 HTTPS 中心与 P-256 验证公钥，不含签名私钥；浏览器验证并保留此文件。Windows x64／macOS arm64 已安装后台节点支持更新，Linux 手动运行节点报告 `unsupported_installation`。后续升级纯程序包不能替换信任配置、节点配置或商店凭据。节点验证签名、HTTPS、大小、SHA-256 和固定平台，等待本地任务及素材结束且中心确认任务终态后替换程序。
+
+更新器保留当前程序、一个上一健康版本及一个候选；新版健康确认后删除更老程序和已用 ZIP，失败回滚后清理候选。临时／半包最多 24 小时，升级日志七天，文件锁导致清理延迟时报告 `cleanup_pending`。只删除更新器能证明归属的路径，不清理配置、`credentials`、业务 `logs` 或手工解压旧目录。安装操作见 [Connector 配置页说明](connector-setup.md#商店节点后台升级)。截图节点程序、Skill 和权限保持原流程。
 
 ## 列出节点和绑定应用
 

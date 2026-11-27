@@ -50,6 +50,17 @@ fn prune(jobs: &mut HashMap<String, Job>) {
     }
 }
 impl ImageJobs {
+    pub(super) fn upgrade_snapshot(&self) -> (bool, Vec<String>) {
+        let mut jobs = self.jobs.lock().unwrap();
+        prune(&mut jobs);
+        (
+            self.slots.available_permits() == 20 && jobs.values().all(|j| j.completed.is_some()),
+            jobs.iter()
+                .filter(|(_, j)| j.completed.is_some())
+                .map(|(id, _)| id.clone())
+                .collect(),
+        )
+    }
     pub(super) async fn drain(&self) {
         if let Ok(permits) = self.slots.acquire_many(20).await {
             drop(permits);

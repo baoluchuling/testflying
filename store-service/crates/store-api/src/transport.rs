@@ -29,6 +29,8 @@ struct Connection {
     firebase_supported: bool,
     close: watch::Sender<bool>,
     screenshot_wake: watch::Sender<()>,
+    store_upgrade: watch::Sender<Option<store_update::SignedCommand>>,
+    upgrade_capability: Option<crate::store_upgrades::UpgradeCapability>,
     pending: Pending,
 }
 
@@ -44,6 +46,7 @@ pub(crate) struct RegistrationContext<'a> {
     pub firebase_supported: bool,
     pub screenshot_registry: Option<&'a Registry>,
     pub catalog_registry: Option<(&'a Registry, &'a str)>,
+    pub upgrade_state: Option<&'a crate::ApiState>,
 }
 
 fn disconnected() -> StoreError {
@@ -135,6 +138,68 @@ impl Transport {
 
     pub fn connected(&self, id: &str) -> bool {
         self.connections.lock().unwrap().contains_key(id)
+    }
+    pub(crate) fn store_upgrade_capability(
+        &self,
+        id: &str,
+    ) -> Option<crate::store_upgrades::UpgradeCapability> {
+        self.connections
+            .lock()
+            .unwrap()
+            .get(id)
+            .and_then(|c| c.upgrade_capability.clone())
+    }
+    pub fn pending_count(&self, id: &str) -> usize {
+        self.connections
+            .lock()
+            .unwrap()
+            .get(id)
+            .map(|c| c.pending.lock().unwrap().len())
+            .unwrap_or(usize::MAX)
+    }
+    pub(crate) fn send_store_upgrade(&self, id: &str, command: store_update::SignedCommand) {
+        if let Some(connection) = self.connections.lock().unwrap().get(id) {
+            if connection
+                .upgrade_capability
+                .as_ref()
+                .is_some_and(|c| c.valid() && c.installed && c.target == command.request.target)
+            {
+                connection.store_upgrade.send_if_modified(|previous| {
+                    if previous.as_ref() == Some(&command) {
+                        false
+                    } else {
+                        *previous = Some(command);
+                        true
+                    }
+                });
+            }
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn fixture_upgrade_connection(
+        &self,
+        id: &str,
+        capability: Option<crate::store_upgrades::UpgradeCapability>,
+    ) -> watch::Receiver<Option<store_update::SignedCommand>> {
+        let (store_upgrade, receiver) = watch::channel(None);
+        self.connections.lock().unwrap().insert(
+            id.into(),
+            Connection {
+                generation: Uuid::new_v4(),
+                sender: mpsc::channel(1).0,
+                logs_supported: false,
+                store_versions_supported: false,
+                async_store_images_supported: false,
+                catalog_supported: false,
+                firebase_supported: false,
+                close: watch::channel(false).0,
+                screenshot_wake: watch::channel(()).0,
+                store_upgrade,
+                upgrade_capability: capability,
+                pending: Arc::default(),
+            },
+        );
+        receiver
     }
     pub fn logs_supported(&self, id: &str) -> bool {
         self.connections
@@ -635,6 +700,7 @@ impl Transport {
             firebase_supported,
             screenshot_registry,
             catalog_registry,
+            upgrade_state,
         } = context;
         let authenticated = tokio::time::timeout(Duration::from_secs(10), async {
             let mut handshake = crypto::handshake(&key, &id, false)?;
@@ -648,8 +714,19 @@ impl Transport {
             let size = handshake
                 .read_message(&first, &mut plain)
                 .map_err(|_| crypto::error())?;
-            let registration: crypto::Registration =
+            // Keep the shared (including screenshot) wire contract unchanged. Store-only
+            // extension is authenticated by this Noise handshake and parsed separately.
+            let mut value: serde_json::Value =
                 serde_json::from_slice(&plain[..size]).map_err(|_| crypto::error())?;
+            let upgrade_capability = value
+                .as_object_mut()
+                .and_then(|v| v.remove("storeUpgrade"))
+                .and_then(|v| {
+                    serde_json::from_value::<crate::store_upgrades::UpgradeCapability>(v).ok()
+                })
+                .filter(|c| upgrade_state.is_some() && c.valid());
+            let registration: crypto::Registration =
+                serde_json::from_value(value).map_err(|_| crypto::error())?;
             if registration.connector_id != id {
                 return Err(crypto::error());
             }
@@ -679,6 +756,7 @@ impl Transport {
                 registration.store_versions_version == Some(1),
                 registration.async_store_images_supported,
                 registration.app_catalog_version == Some(1),
+                upgrade_capability,
             ))
         })
         .await;
@@ -690,6 +768,7 @@ impl Transport {
             store_versions_supported,
             async_store_images_supported,
             catalog_supported,
+            upgrade_capability,
         ))) = authenticated
         else {
             self.connection_event(
@@ -702,6 +781,7 @@ impl Transport {
         let (sender, mut requests) = mpsc::channel(1);
         let (close, mut closed) = watch::channel(false);
         let (screenshot_wake, mut screenshot_ready) = watch::channel(());
+        let (store_upgrade, mut upgrade_ready) = watch::channel(None);
         let pending: Pending = Arc::default();
         let generation = Uuid::new_v4();
         {
@@ -721,6 +801,8 @@ impl Transport {
                     sender,
                     close,
                     screenshot_wake,
+                    store_upgrade,
+                    upgrade_capability,
                     pending: pending.clone(),
                     logs_supported,
                     store_versions_supported,
@@ -731,6 +813,11 @@ impl Transport {
             );
         }
         self.connection_event(&id, "connector.connected", "encrypted_handshake_complete");
+        if let Some(state) = upgrade_state {
+            if let Ok(Some(command)) = state.registry.pending_upgrade(&id) {
+                self.send_store_upgrade(&id, command);
+            }
+        }
         let Ok(ready) = channel.encrypt(b"ready") else {
             self.disconnect(&id);
             return;
@@ -747,6 +834,18 @@ impl Transport {
         loop {
             tokio::select! {
                 _ = closed.changed() => break,
+                changed=upgrade_ready.changed(), if upgrade_state.is_some()=> {
+                    if changed.is_err() {break;}
+                    let command=upgrade_ready.borrow_and_update().clone();
+                    let Some(command)=command else {continue;};
+                    // Recheck persistent authorization; completed/expired commands are never resent.
+                    if !upgrade_state.is_some_and(|s|s.registry.pending_upgrade(&id).ok().flatten().as_ref()==Some(&command)) {continue;}
+                    let Ok(bytes)=serde_json::to_vec(&serde_json::json!({"storeUpgrade":command})) else {break;};
+                    let Ok(records)=channel.encrypt(&bytes) else {break;};
+                    let mut sent=true;
+                    for record in records {if !bounded_send(&mut write,Message::Binary(record.into())).await {sent=false;break;}}
+                    if !sent {break;}
+                }
                 _ = heartbeat.tick() => {
                     if last_seen.elapsed() > Duration::from_secs(35) {
                         self.connection_event(&id,"connector.heartbeat_failed","heartbeat_timeout");break;
@@ -793,6 +892,14 @@ impl Transport {
                             };
                             if !(200..=599).contains(&reply.status) {
                                 self.connection_event(&id,"connector.protocol_failed","invalid_reply_status");break;
+                            }
+                            // Unsolicited upgrade reports never consume normal pending responses.
+                            if let Some(body)=reply.body.get("storeUpgradeStatus") {
+                                let report=serde_json::from_value::<crate::store_upgrades::UpgradeStatus>(body.clone()).ok()
+                                    .filter(|r|reply.status==200&&r.request_id==reply.request_id&&reply.body.as_object().is_some_and(|v|v.len()==1));
+                                let accepted=report.as_ref().is_some_and(|report|upgrade_state.is_some_and(|state|crate::store_upgrades::accept_status(state,&id,report).is_ok()));
+                                if !accepted {self.connection_event(&id,"connector.upgrade_rejected","invalid_or_unauthorized_upgrade_status");}
+                                continue;
                             }
                             // Firebase replies must reach their shape validator before catalog
                             // ingestion. Preserve legacy catalog/business request-ID isolation.
@@ -986,6 +1093,8 @@ mod firebase_tests {
                     firebase_supported: supported,
                     close,
                     screenshot_wake,
+                    store_upgrade: watch::channel(None).0,
+                    upgrade_capability: None,
                     pending: pending.clone(),
                 },
             );

@@ -1,6 +1,8 @@
 mod catalog;
 mod firebase;
 mod image_jobs;
+pub mod upgrade;
+pub mod upgrade_os;
 /// This program's release version, independent of the legacy protocol fallback.
 pub const CONNECTOR_VERSION: &str = env!("CARGO_PKG_VERSION");
 use axum::{
@@ -75,6 +77,7 @@ fn request_timeout() -> u64 {
 }
 
 pub struct Executor {
+    pub upgrade: upgrade::State,
     log: Option<Arc<Log>>,
     config: ConnectorConfig,
     gateway: Gateway,
@@ -159,6 +162,7 @@ impl Executor {
         let assets = AssetStore::new(config.connector_id.clone(), config.upload_key.clone());
         let gateway = Gateway::with_log(provider, Some(assets.clone()), log.clone())?;
         Ok(Arc::new(Self {
+            upgrade: upgrade::State::default(),
             catalog: tokio::sync::Mutex::new(catalog::CatalogCache::default()),
             log,
             config,
@@ -171,6 +175,7 @@ impl Executor {
     }
 
     pub async fn execute(self: Arc<Self>, request: StoreRequest) -> StoreReply {
+        let _active = self.upgrade.active();
         let start = std::time::Instant::now();
         let log = self.log.clone();
         let meta = StoreRequest {
@@ -202,6 +207,16 @@ impl Executor {
     async fn execute_inner(self: Arc<Self>, request: StoreRequest) -> StoreReply {
         if let Err(error) = request.validate() {
             return StoreReply::from_result(request.request_id, Err(error));
+        }
+        if !self.upgrade.admit(&request) {
+            return StoreReply::from_result(
+                request.request_id,
+                Err(StoreError::new(
+                    503,
+                    "connector_upgrading",
+                    "Store Connector is waiting to upgrade; this request was not accepted",
+                )),
+            );
         }
         if request.operation == Operation::StoreImageSyncStatus {
             return self.image_job(request).await;
@@ -302,11 +317,15 @@ pub fn http_router(executor: Arc<Executor>) -> Router {
     Router::new()
         .route(
             "/health",
-            get(|| async { Json(json!({"status":"ok","asyncStoreImagesSupported":true,"firebaseProtocol":1,"connectorVersion":CONNECTOR_VERSION})) }),
+            get(|| async { Json(json!({"status":"ok","asyncStoreImagesSupported":true,"firebaseProtocol":1,"connectorVersion":CONNECTOR_VERSION,"pid":std::process::id(),"instanceId":upgrade::instance_id()})) }),
         )
         .route("/v1/execute", post(http_execute))
         .route("/v1/diagnostics/logs", post(http_logs))
         .route("/v1/diagnostics/firebase", post(firebase::http_firebase))
+        .route("/v1/upgrades/drain", post(upgrade::http_drain))
+        .route("/v1/upgrades/ready", post(upgrade::http_ready))
+        .route("/v1/upgrades/freeze", post(upgrade::http_freeze))
+        .route("/v1/upgrades/cancel", post(upgrade::http_cancel))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
         .with_state(executor)
 }
@@ -561,7 +580,7 @@ async fn connection(
             true,
         )?;
         let registration = serde_json::to_vec(
-            &json!({"connectorId":executor.config.connector_id,"connectorVersion":CONNECTOR_VERSION,"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1,"appCatalogVersion":1,"asyncStoreImagesSupported":true}),
+            &json!({"connectorId":executor.config.connector_id,"connectorVersion":CONNECTOR_VERSION,"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1,"appCatalogVersion":1,"asyncStoreImagesSupported":true,"storeUpgrade":executor.upgrade.capability()}),
         )
         .map_err(|_| crypto::error())?;
         let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];
@@ -626,6 +645,19 @@ async fn connection(
                 match message {
                     Message::Binary(bytes) => {
                         let Some(plain)=channel.decrypt(&bytes)? else {continue;};
+                        if let Some(value)=serde_json::from_slice::<serde_json::Value>(&plain).ok().and_then(|v|v.get("storeUpgrade").cloned()) {
+                            let command:store_update::SignedCommand=serde_json::from_value(value).map_err(|_|crypto::error())?;
+                            let request_id=command.request.request_id.clone();
+                            let status=match executor.upgrade.begin(command) {
+                                Ok(status)=>status,
+                                Err(code)=>json!({"requestId":request_id,"nodeId":executor.config.connector_id,"state":"failed","errorCode":code}),
+                            };
+                            if let Some(log)=&executor.log {log.event("upgrade.notified",json!({"requestId":request_id,"state":status["state"],"errorCode":status["errorCode"]}));}
+                            let result=StoreReply {request_id,status:200,body:json!({"storeUpgradeStatus":status})};
+                            let data=serde_json::to_vec(&result).map_err(|_|crypto::error())?;
+                            for record in channel.encrypt(&data)? {if !bounded_send(&mut write,Message::Binary(record.into())).await{return Err(crypto::error());}}
+                            continue;
+                        }
                         let envelope:NodeRequest=serde_json::from_slice(&plain).map_err(|_|StoreError::new(422,"invalid_request","Invalid Store API command"))?;
                         let request=match envelope {
                             NodeRequest::Catalog(request)=>{

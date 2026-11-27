@@ -1451,7 +1451,7 @@ async fn installer_contains_published_binary_private_identity_and_launcher() {
     assert_eq!(response.headers()["cache-control"], "no-store");
     let bytes = response.into_body().collect().await.unwrap().to_bytes();
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-    assert_eq!(archive.len(), 3);
+    assert_eq!(archive.len(), 4);
     let mut binary = Vec::new();
     archive
         .by_name("store-connector")
@@ -1473,6 +1473,15 @@ async fn installer_contains_published_binary_private_identity_and_launcher() {
         .authenticate(&node.connector_id, &config.token)
         .is_ok());
     assert!(archive.by_name("start.sh").is_ok());
+    let trust: store_update::Trust =
+        serde_json::from_reader(archive.by_name("update-trust.json").unwrap()).unwrap();
+    assert_eq!(trust.node_id, node.connector_id);
+    assert_eq!(trust.target, "linux-amd64");
+    assert_eq!(trust.server_url, "https://store.example.com");
+    assert_eq!(
+        trust.public_key,
+        store_update::public_key(SIGNING.as_bytes()).unwrap()
+    );
     let missing = format!(
         "/v1/connectors/{}/installer/windows-amd64",
         node.connector_id

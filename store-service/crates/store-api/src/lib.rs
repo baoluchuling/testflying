@@ -13,6 +13,7 @@ mod screenshot_skill;
 mod screenshots;
 mod setup;
 mod store_jobs;
+mod store_upgrades;
 pub mod transport;
 mod uploads;
 pub use store_jobs::run as run_store_image_jobs;
@@ -288,6 +289,7 @@ pub fn router_with_screenshots(
         .merge(management)
         .merge(public)
         .merge(integrations::admin_routes(state.clone()))
+        .merge(store_upgrades::routes(state.clone()))
         .merge(setup::routes(state.clone()))
         .merge(screenshots::routes(state.clone(), uploader))
         .layer(DefaultBodyLimit::max(2 * 1024 * 1024))
@@ -497,6 +499,7 @@ async fn connect_ws(
                             firebase_supported,
                             screenshot_registry: screenshot.then_some(&state.registry),
                             catalog_registry: Some((&state.registry, catalog_token.as_str())),
+                            upgrade_state: (!screenshot).then_some(state.as_ref()),
                         },
                         move |endpoint, connector_version| {
                             if screenshot && endpoint.is_some() {
@@ -733,6 +736,11 @@ async fn installer(
         StoreError::new(503, "release_unavailable", "Cannot read Connector release")
     })?;
     let config = serde_json::to_vec_pretty(&config(&state, &node)).expect("Config serialization");
+    let update_trust = if store_update::TARGETS.contains(&target.as_str()) {
+        Some(store_upgrades::trust(&state, &node, &target)?)
+    } else {
+        None
+    };
     let data = tokio::task::spawn_blocking(move || -> std::result::Result<Vec<u8>, StoreError> {
         use std::io::{Cursor,Write};
         use zip::{write::SimpleFileOptions,ZipWriter};
@@ -742,6 +750,10 @@ async fn installer(
         archive.write_all(&binary).map_err(|_| StoreError::new(500,"installer_error","Cannot package Connector"))?;
         archive.start_file("connector.json",options.unix_permissions(0o600)).map_err(|_| StoreError::new(500,"installer_error","Cannot package configuration"))?;
         archive.write_all(&config).map_err(|_| StoreError::new(500,"installer_error","Cannot package configuration"))?;
+        if let Some(trust)=update_trust {
+            archive.start_file("update-trust.json",options.unix_permissions(0o600)).map_err(|_| StoreError::new(500,"installer_error","Cannot package update trust"))?;
+            archive.write_all(&trust).map_err(|_| StoreError::new(500,"installer_error","Cannot package update trust"))?;
+        }
         let (script_name,script) = if binary_name.ends_with(".exe") {("start.cmd", "@echo off\r\ncd /d \"%~dp0\"\r\nstore-connector.exe connector.json\r\n")} else {("start.sh", "#!/bin/sh\nset -eu\ncd -- \"$(dirname -- \"$0\")\"\nexec ./store-connector connector.json\n")};
         archive.start_file(script_name,options.unix_permissions(0o700)).map_err(|_| StoreError::new(500,"installer_error","Cannot package launcher"))?;
         archive.write_all(script.as_bytes()).map_err(|_| StoreError::new(500,"installer_error","Cannot package launcher"))?;

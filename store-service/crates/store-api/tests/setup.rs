@@ -275,6 +275,7 @@ async fn setup_api_requires_https_and_administrator_before_accessing_nodes() {
 async fn setup_assets_have_explicit_types_and_cannot_read_arbitrary_files() {
     for (file, kind) in [
         ("app.mjs", "text/javascript"),
+        ("store-upgrades.mjs", "text/javascript"),
         ("integrations.mjs", "text/javascript"),
         ("packager.mjs", "text/javascript"),
         ("jszip.min.js", "text/javascript"),

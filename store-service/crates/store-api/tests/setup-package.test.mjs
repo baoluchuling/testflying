@@ -24,11 +24,14 @@ const assets = {
     [name, await readFile(new URL(`../../../packaging/connector/${name}`, import.meta.url), "utf8")]))),
 };
 const executable = new Uint8Array([77, 90, 1, 2, 3, 4, 5]);
+const updatePublicKey = "046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5";
+const trust = (target) => ({protocol:1,nodeId:config.connectorId,target,serverUrl:config.serverUrl,publicKey:updatePublicKey});
 async function base(target = "windows-amd64", extra = {}, override = {}) {
   const zip = new JSZip();
   zip.file(target === "windows-amd64" ? "store-connector.exe" : "store-connector", executable);
   zip.file(target === "windows-amd64" ? "start.cmd" : "start.sh", "original launcher");
   zip.file("connector.json", JSON.stringify({ ...config, ...override }));
+  zip.file("update-trust.json", JSON.stringify(trust(target)));
   for (const [path, value] of Object.entries(extra)) zip.file(path, value);
   return zip.generateAsync({ type: "uint8array" });
 }
@@ -53,6 +56,7 @@ test("one Windows node contains both accounts, safe relative paths and unchanged
   assert.match(await zip.file("install.ps1").async("string"), /New-ScheduledTaskTrigger -AtStartup/);
   assert.ok(!(await zip.file("start.cmd").async("string")).replace(/\r\n/g, "").includes("\n"));
   assert.ok(zip.file("testflying-prod-ca.crt"));
+  assert.deepEqual(JSON.parse(await zip.file("update-trust.json").async("string")), trust("windows-amd64"));
   assert.equal(zip.file("connector.json").unixPermissions & 0o777, 0o600);
   assert.equal(zip.file(actual.provider.applePrivateKeyPath).unixPermissions & 0o777, 0o600);
   assert.equal(result.fileName, "connector-windows-amd64-江西聚文-商店-节点-12345678.zip");
@@ -90,10 +94,25 @@ test("program-only upgrades leave configuration and shop credentials out of the 
     assert.ok(zip.file(entry));
     assert.equal((await zip.file("node-id.txt").async("string")).trim(), config.connectorId);
     assert.equal(zip.file("connector.json"), null);
+    assert.deepEqual(JSON.parse(await zip.file("update-trust.json").async("string")), trust(target));
     assert(!Object.keys(zip.files).some((name) => name.startsWith("credentials/")));
     assert.match(result.fileName, /-upgrade\.zip$/);
   }
   await assert.rejects(buildInstaller(await base("linux-amd64"), { target: "linux-amd64", upgrade: true }, assets, JSZip), /不支持/);
+});
+
+test("upgrade trust rejects node, target, protocol, HTTPS and public-key mismatches", async () => {
+  for (const change of [{nodeId:"other-node"}, {target:"darwin-arm64"}, {protocol:2},
+    {serverUrl:"http://store.example.invalid/store-api"}, {serverUrl:"https://other.invalid/store-api"},
+    {serverUrl:"https://store.example.invalid/other"}, {serverUrl:"https://user@store.example.invalid/store-api"},
+    {serverUrl:"https://store.example.invalid/store-api?token=private"}, {publicKey:"04" + "00".repeat(64)}]) {
+    const bytes = await base("windows-amd64", {"update-trust.json":JSON.stringify({...trust("windows-amd64"),...change})});
+    await assert.rejects(buildInstaller(bytes, {target:"windows-amd64",account}, assets, JSZip), /升级信任配置/);
+  }
+  const input = await JSZip.loadAsync(await base()); input.remove("update-trust.json");
+  await assert.rejects(buildInstaller(await input.generateAsync({type:"uint8array"}), {target:"windows-amd64",account}, assets, JSZip), /缺少升级信任配置/);
+  const bytes = await base("windows-amd64", {}, {serverUrl:config.serverUrl.replace("https:", "http:")});
+  await buildInstaller(bytes, {target:"windows-amd64",account}, assets, JSZip);
 });
 
 test("invalid or oversized credentials fail before any installation work", () => {
