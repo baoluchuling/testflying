@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Unified Center API - Stores, Accounts, Nodes and Screenshots
-  version: '2026-11-18'
+  version: '2026-11-27'
   description: >-
     Store calls are real-time without drafts or automatic mutation retries.
     Screenshot jobs are asynchronous, routed by exact platform/package bindings and retained for seven days.
