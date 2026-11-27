@@ -459,7 +459,7 @@ if """ + repr(restart_center) + """ :
             for scheme in ("http", "https"):
                 status, body = request(docs, snapshot["token"], scheme=scheme)
                 catalog = json.loads(body)
-                check(status == 200 and catalog["contractVersion"] == "2026-11-18",
+                check(status == 200 and catalog["contractVersion"] == "2026-11-27",
                       scheme + " business-token documentation available")
                 endpoints = catalog["endpoints"]
                 check(len(endpoints) == 23
