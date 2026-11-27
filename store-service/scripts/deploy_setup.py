@@ -461,6 +461,10 @@ if """ + repr(restart_center) + """ :
                 catalog = json.loads(body)
                 check(status == 200 and catalog["contractVersion"] == "2026-11-27",
                       scheme + " business-token documentation available")
+                check(catalog["sync"]["googleBatch"]["commitCount"] == 1
+                      and catalog["sync"]["googleBatch"]["minimumStoreConnectorVersion"] == "0.2.9"
+                      and catalog["sync"]["googleBatch"]["async"] is True,
+                      scheme + " multi-language Google sync contract available")
                 endpoints = catalog["endpoints"]
                 check(len(endpoints) == 23
                       and sum(row["group"] == "store" for row in endpoints) == 11
@@ -632,7 +636,7 @@ print(json.dumps({'current':p,'apiSha256':sha(p+'/bin/store-api'),
                                               "productionScreenshotTasksCreated": 0},
                       "checks": checks, "testNodesCreated": 0, "appBindingsWritten": 0,
                       "actualStoreAccountsUsed": False,
-                      "apiDocumentation": {"contractVersion": "2026-11-18", "coreEndpoints": 23, "uploadHelpers": 2, "formats": ["json", "markdown", "openapi"],
+                      "apiDocumentation": {"contractVersion": "2026-11-27", "coreEndpoints": 23, "uploadHelpers": 2, "formats": ["json", "markdown", "openapi"],
                                            "existingIntegrationTokenVerified": bool(existing_token)},
                       "cleanup": "See the supervisor cleanup report for this runId"}
             if account_migration is not None:
