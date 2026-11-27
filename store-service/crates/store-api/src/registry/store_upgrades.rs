@@ -85,7 +85,10 @@ fn validate_status(node: &str, status: &UpgradeStatus) -> Result<()> {
     Ok(())
 }
 fn terminal_receipt(db: &Connection, node: &str, status: &UpgradeStatus) -> Result<bool> {
-    if !matches!(status.state.as_str(), "succeeded" | "rolled_back" | "failed") {
+    if !matches!(
+        status.state.as_str(),
+        "succeeded" | "rolled_back" | "failed"
+    ) {
         return Ok(false);
     }
     let previous: Option<(String, String)> = db
@@ -284,6 +287,36 @@ impl Registry {
         prune(&db)?;
         command(&db, node, request)
     }
+    /// Retained requests remain authoritative; missing history permits only a
+    /// read-only connection observation, never package or installation access.
+    pub(crate) fn upgrade_confirmation_command(
+        &self,
+        node: &str,
+        request: &str,
+    ) -> Result<Option<SignedCommand>> {
+        if !store_update::valid_id(node) || !store_update::valid_id(request) {
+            return Err(StoreError::new(
+                422,
+                "invalid_upgrade_request",
+                "Invalid upgrade request identity",
+            ));
+        }
+        let db = self.db.lock().unwrap();
+        prune(&db)?;
+        let row: Option<(String, String)> = db
+            .query_row(
+                "SELECT node,command FROM store_upgrade_commands WHERE request=?1",
+                [request],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .map_err(database_error)?;
+        match row {
+            Some((owner, _)) if owner != node => Err(missing()),
+            Some((_, text)) => serde_json::from_str(&text).map(Some).map_err(|_| missing()),
+            None => Ok(None),
+        }
+    }
     pub(crate) fn upgrade_package(&self, node: &str, request: &str) -> Result<Vec<u8>> {
         let db = self.db.lock().unwrap();
         prune(&db)?;
@@ -314,7 +347,11 @@ impl Registry {
     }
     /// Release a terminal outbox entry already received or past expiration/retention.
     /// Receipt acknowledgement never restores obsolete history or confirms active work.
-    pub(crate) fn upgrade_status_acknowledged(&self, node: &str, status: &UpgradeStatus) -> Result<bool> {
+    pub(crate) fn upgrade_status_acknowledged(
+        &self,
+        node: &str,
+        status: &UpgradeStatus,
+    ) -> Result<bool> {
         validate_status(node, status)?;
         let db = self.db.lock().unwrap();
         prune(&db)?;
@@ -718,46 +755,81 @@ mod tests {
     fn expired_and_pruned_terminal_receipts_release_outboxes_without_restoring_history() {
         let registry = Registry::open(":memory:", KEY).unwrap();
         let id = Uuid::new_v4().to_string();
-        let batch = registry.create_upgrade_batch(
-            "1.0.1", vec![node(&id)], vec![("darwin-arm64".into(), b"package".to_vec())],
-        ).unwrap();
+        let batch = registry
+            .create_upgrade_batch(
+                "1.0.1",
+                vec![node(&id)],
+                vec![("darwin-arm64".into(), b"package".to_vec())],
+            )
+            .unwrap();
         let command = registry.pending_upgrade(&id).unwrap().unwrap();
         let mut report = UpgradeStatus {
-            node_id: id.clone(), request_id: command.request.request_id.clone(),
-            state: "failed".into(), error_code: None,
+            node_id: id.clone(),
+            request_id: command.request.request_id.clone(),
+            state: "failed".into(),
+            error_code: None,
         };
-        registry.db.lock().unwrap().execute(
-            "UPDATE store_upgrade_batches SET expires=0 WHERE id=?1", [&batch.batch_id],
-        ).unwrap();
+        registry
+            .db
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE store_upgrade_batches SET expires=0 WHERE id=?1",
+                [&batch.batch_id],
+            )
+            .unwrap();
         for phase in ["failed", "rolled_back", "succeeded"] {
             report.state = phase.into();
             registry.upgrade_status(&id, &report).unwrap();
             assert!(registry.upgrade_status_acknowledged(&id, &report).unwrap());
-            assert_eq!(registry.upgrade_batch(&batch.batch_id).unwrap().nodes[0].state, "expired");
+            assert_eq!(
+                registry.upgrade_batch(&batch.batch_id).unwrap().nodes[0].state,
+                "expired"
+            );
             assert!(registry.pending_upgrade(&id).unwrap().is_none());
         }
         let foreign = Uuid::new_v4().to_string();
         report.node_id = foreign.clone();
-        assert_eq!(registry.upgrade_status(&foreign, &report).unwrap_err().status, 404);
+        assert_eq!(
+            registry
+                .upgrade_status(&foreign, &report)
+                .unwrap_err()
+                .status,
+            404
+        );
         report.node_id = id.clone();
         // Retention removes the old command, and its late receipt remains harmless.
-        registry.db.lock().unwrap().execute(
-            "UPDATE store_upgrade_batches SET created=0 WHERE id=?1", [&batch.batch_id],
-        ).unwrap();
+        registry
+            .db
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE store_upgrade_batches SET created=0 WHERE id=?1",
+                [&batch.batch_id],
+            )
+            .unwrap();
         registry.upgrade_status(&id, &report).unwrap();
         assert!(registry.upgrade_batch(&batch.batch_id).is_err());
         report.request_id = Uuid::new_v4().to_string();
         for phase in ["failed", "rolled_back", "succeeded"] {
-            report.state = phase.into(); registry.upgrade_status(&id, &report).unwrap();
+            report.state = phase.into();
+            registry.upgrade_status(&id, &report).unwrap();
         }
         report.state = "draining".into();
-        assert_eq!(registry.upgrade_status(&id, &report).unwrap_err().status, 404);
-        report.state = "failed".into(); report.request_id = "invalid".into();
-        assert_eq!(registry.upgrade_status(&id, &report).unwrap_err().status, 422);
+        assert_eq!(
+            registry.upgrade_status(&id, &report).unwrap_err().status,
+            404
+        );
+        report.state = "failed".into();
+        report.request_id = "invalid".into();
+        assert_eq!(
+            registry.upgrade_status(&id, &report).unwrap_err().status,
+            422
+        );
         let counts: (i64,i64,i64) = registry.db.lock().unwrap().query_row(
             "SELECT (SELECT COUNT(*) FROM store_upgrade_batches),(SELECT COUNT(*) FROM store_upgrade_commands),(SELECT COUNT(*) FROM store_upgrade_packages)",
             [], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
         ).unwrap();
-        assert_eq!(counts, (0,0,0));
+        assert_eq!(counts, (0, 0, 0));
     }
 }

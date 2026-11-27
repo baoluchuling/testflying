@@ -192,7 +192,7 @@ impl Executor {
                 diagnostics::summary(&request.payload),
             );
         }
-        let reply = self.execute_inner(request).await;
+        let reply = self.clone().execute_inner(request).await;
         if let Some(log) = &log {
             log.task(
                 &meta,

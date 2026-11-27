@@ -528,7 +528,7 @@ impl Manager {
         }
         Ok(())
     }
-    fn cleanup_logs(&self)->Result<()> {
+    fn cleanup_logs(&self) -> Result<()> {
         for e in fs::read_dir(&self.private).map_err(|_| "update_cleanup_failed")? {
             let e = e.map_err(|_| "update_cleanup_failed")?;
             let n = e.file_name();
@@ -703,7 +703,10 @@ impl Manager {
                 return Err("update_crash_loop".into());
             }
             let remote = self
-                .get(self.url(&format!("/{}/confirm", t.command.request.request_id)))
+                .get(self.url(&format!(
+                    "/{}/confirm?version={}",
+                    t.command.request.request_id, t.command.request.version
+                )))
                 .await?;
             if remote["confirmed"] != true
                 && store_update::now().saturating_sub(t.health_since.unwrap_or(store_update::now()))
@@ -811,7 +814,9 @@ impl Manager {
         }
         // Log retention is independent of transaction progress or center availability.
         // A locked log must never suppress delivery of the terminal outbox.
-        if let Err(code)=self.cleanup_logs(){self.log("","cleanup_pending",Some(&code));}
+        if let Err(code) = self.cleanup_logs() {
+            self.log("", "cleanup_pending", Some(&code));
+        }
         if let Some(mut t) = self.transaction()? {
             if matches!(t.phase.as_str(), "succeeded" | "failed" | "rolled_back") && !t.reported {
                 if self.report_terminal(&mut t).await.is_err() {
@@ -1191,7 +1196,12 @@ mod tests {
                 node_id: node.into(),
                 request_id: "00000000-0000-4000-8000-000000000002".into(),
                 version: "9.0.0".into(),
-                target: if cfg!(windows){"windows-amd64"}else{"darwin-arm64"}.into(),
+                target: if cfg!(windows) {
+                    "windows-amd64"
+                } else {
+                    "darwin-arm64"
+                }
+                .into(),
                 sha256: hex::encode(Sha256::digest(&state.package)),
                 size_bytes: state.package.len() as u64,
                 expires_at: store_update::now() + 3600,
@@ -1210,7 +1220,12 @@ mod tests {
                 node_id: node.into(),
                 server_url: url.clone(),
                 public_key: store_update::public_key(b"fixture-signing").unwrap(),
-                target: if cfg!(windows){"windows-amd64"}else{"darwin-arm64"}.into(),
+                target: if cfg!(windows) {
+                    "windows-amd64"
+                } else {
+                    "darwin-arm64"
+                }
+                .into(),
             },
             config,
             client: reqwest::Client::builder()
@@ -1231,6 +1246,9 @@ mod tests {
     #[tokio::test]
     async fn upgrade_waits_for_work_confirms_health_then_keeps_one_rollback_and_no_package() {
         let (_dir, manager, state, server) = fixture("9.0.0").await;
+        let older=manager.private.join("previous");private_dir(&older).unwrap();mark(&older,&manager.trust.node_id).unwrap();
+        fs::write(older.join(binary()),fake_binary("0.5.0")).unwrap();
+        fs::write(older.join("testflying-prod-ca.crt"),include_bytes!("../../../../deploy/testflying-prod-ca.crt")).unwrap();
         let old = program_hashes(&manager.root.join("program")).unwrap();
         let command = state.command.lock().unwrap().clone().unwrap();
         let mut t = manager.download(command).await.unwrap();
@@ -1239,6 +1257,7 @@ mod tests {
         state.ready.store(true, Ordering::SeqCst);
         assert!(manager.wait_ready(&t).await.unwrap());
         manager.apply(&mut t).await.unwrap();
+        assert!(manager.private.join("retired").exists());
         assert!(!manager.confirm(&mut t).await.unwrap());
         t.health_since = Some(store_update::now() - 31);
         manager.save(&t).unwrap();
@@ -1376,15 +1395,31 @@ mod tests {
     }
     #[tokio::test]
     async fn log_retention_runs_while_confirmation_waits_for_center() {
-        let (_dir,manager,state,server)=fixture("9.0.0").await;
-        let command=state.command.lock().unwrap().clone().unwrap();let mut t=manager.download(command).await.unwrap();
-        state.ready.store(true,Ordering::SeqCst);assert!(manager.wait_ready(&t).await.unwrap());manager.apply(&mut t).await.unwrap();
-        let old=manager.private.join(format!("upgrade-{:010}.jsonl",store_update::now()/3600-169));
-        let recent=manager.private.join(format!("upgrade-{:010}.jsonl",store_update::now()/3600));
-        fs::write(&old,b"expired").unwrap();fs::write(&recent,b"recent").unwrap();
-        state.network.store(false,Ordering::SeqCst);manager.step().await.unwrap();
-        assert_eq!(manager.transaction().unwrap().unwrap().phase,"awaiting_confirmation");
-        assert!(!old.exists());assert!(recent.exists());server.abort();let _=server.await;
+        let (_dir, manager, state, server) = fixture("9.0.0").await;
+        let command = state.command.lock().unwrap().clone().unwrap();
+        let mut t = manager.download(command).await.unwrap();
+        state.ready.store(true, Ordering::SeqCst);
+        assert!(manager.wait_ready(&t).await.unwrap());
+        manager.apply(&mut t).await.unwrap();
+        let old = manager.private.join(format!(
+            "upgrade-{:010}.jsonl",
+            store_update::now() / 3600 - 169
+        ));
+        let recent = manager
+            .private
+            .join(format!("upgrade-{:010}.jsonl", store_update::now() / 3600));
+        fs::write(&old, b"expired").unwrap();
+        fs::write(&recent, b"recent").unwrap();
+        state.network.store(false, Ordering::SeqCst);
+        manager.step().await.unwrap();
+        assert_eq!(
+            manager.transaction().unwrap().unwrap().phase,
+            "awaiting_confirmation"
+        );
+        assert!(!old.exists());
+        assert!(recent.exists());
+        server.abort();
+        let _ = server.await;
     }
     #[tokio::test]
     async fn interrupted_upgrade_never_stops_or_moves_a_manually_replaced_program() {
@@ -1419,6 +1454,20 @@ mod tests {
         assert!(manager.private.join("previous").exists());
         server.abort();
         let _ = server.await;
+    }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn recovery_does_not_stop_worker_when_program_is_a_dangling_link() {
+        let (_dir,manager,state,server)=fixture("9.0.0").await;
+        let command=state.command.lock().unwrap().clone().unwrap();let mut t=manager.download(command).await.unwrap();
+        state.ready.store(true,Ordering::SeqCst);assert!(manager.wait_ready(&t).await.unwrap());manager.apply(&mut t).await.unwrap();
+        fs::rename(manager.root.join("program"),manager.root.join("manual-backup")).unwrap();
+        std::os::unix::fs::symlink(manager.root.join("missing"),manager.root.join("program")).unwrap();
+        t.phase="switching".into();manager.save(&t).unwrap();manager.step().await.unwrap();
+        assert_eq!(manager.transaction().unwrap().unwrap().error_code.as_deref(),Some("update_program_changed"));
+        assert_eq!(read(&manager.root.join("running"),128).unwrap(),b"yes");
+        assert!(fs::symlink_metadata(manager.root.join("program")).unwrap().file_type().is_symlink());
+        server.abort();let _=server.await;
     }
     #[test]
     fn cleanup_only_owned_trees_and_never_follows_symlinks() {

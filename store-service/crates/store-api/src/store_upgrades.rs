@@ -341,23 +341,65 @@ async fn ready(
         && state.registry.authorize_upgrade_ready(&id, &request)?;
     Ok(Json(json!({"ready":ready})))
 }
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConfirmationQuery {
+    version: Option<String>,
+}
 async fn confirm(
     State(state): State<Arc<ApiState>>,
     Path((id, request)): Path<(String, String)>,
     headers: HeaderMap,
+    Query(query): Query<ConfirmationQuery>,
 ) -> Result<Json<Value>> {
     let node = authenticate(&state, &id, &headers)?;
-    let command = state.registry.upgrade_command(&id, &request)?;
+    if query
+        .version
+        .as_ref()
+        .is_some_and(|version| store_update::compare_versions(version, version).is_err())
+    {
+        return Err(
+            StoreError::new(422, "invalid_upgrade_version", "Invalid target version").into(),
+        );
+    }
+    let command = state.registry.upgrade_confirmation_command(&id, &request)?;
+    let version = match (&command, query.version) {
+        (Some(command), Some(version)) if version != command.request.version => {
+            return Err(StoreError::new(
+                409,
+                "upgrade_version_mismatch",
+                "Target version differs from the retained request",
+            )
+            .into());
+        }
+        (Some(command), _) => command.request.version.clone(),
+        (None, Some(version)) => version,
+        (None, None) => {
+            return Err(StoreError::new(
+                404,
+                "store_upgrade_not_found",
+                "Target version is required after upgrade history expires",
+            )
+            .into())
+        }
+    };
     let online = state.transport.connected(&id);
     let cap = state.transport.store_upgrade_capability(&id);
     let confirmed = online
-        && node.connector_version.as_deref() == Some(command.request.version.as_str())
-        && cap
-            .as_ref()
-            .is_some_and(|c| c.valid() && c.installed && c.target == command.request.target);
-    state.registry.confirm_upgrade(&id, &request, confirmed)?;
+        && node.connector_version.as_deref() == Some(version.as_str())
+        && cap.as_ref().is_some_and(|c| {
+            c.valid()
+                && c.installed
+                && matches!(c.target.as_str(), "darwin-arm64" | "windows-amd64")
+                && command
+                    .as_ref()
+                    .is_none_or(|command| c.target == command.request.target)
+        });
+    if command.is_some() {
+        state.registry.confirm_upgrade(&id, &request, confirmed)?;
+    }
     Ok(Json(
-        json!({"confirmed":confirmed,"online":online,"version":node.connector_version,"targetVersion":command.request.version}),
+        json!({"confirmed":confirmed,"online":online,"version":node.connector_version,"targetVersion":version}),
     ))
 }
 pub(crate) fn trust(
@@ -934,39 +976,206 @@ mod tests {
         );
         // A lost terminal ACK must be retryable after the confirmed worker goes offline.
         state.transport.disconnect(&node.connector_id);
-        assert_eq!(call(state.clone(),"POST",&format!("{base}/status"),&token,true,json!({"requestId":request,"nodeId":node.connector_id,"state":"succeeded"})).await.0,StatusCode::OK);
+        assert_eq!(
+            call(
+                state.clone(),
+                "POST",
+                &format!("{base}/status"),
+                &token,
+                true,
+                json!({"requestId":request,"nodeId":node.connector_id,"state":"succeeded"})
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
     }
     #[tokio::test]
-    async fn authenticated_obsolete_terminal_http_receipts_are_acknowledged_without_recreating_commands() {
-        let root = tempfile::tempdir().unwrap(); release(root.path()); let state = state(root.path());
-        let node = node(&state,"installed",ConnectorKind::Store,"1.0.0");
-        let mut control = state.transport.fixture_upgrade_connection(&node.connector_id,Some(capability("darwin-arm64")));
-        let batch = call(state.clone(),"POST","/v1/store-node-upgrades",ADMIN,true,json!({})).await.1;
+    async fn authenticated_obsolete_terminal_http_receipts_are_acknowledged_without_recreating_commands(
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        release(root.path());
+        let state = state(root.path());
+        let node = node(&state, "installed", ConnectorKind::Store, "1.0.0");
+        let mut control = state
+            .transport
+            .fixture_upgrade_connection(&node.connector_id, Some(capability("darwin-arm64")));
+        let batch = call(
+            state.clone(),
+            "POST",
+            "/v1/store-node-upgrades",
+            ADMIN,
+            true,
+            json!({}),
+        )
+        .await
+        .1;
         let command = control.borrow_and_update().clone().unwrap();
-        let request = &command.request.request_id; let token = state.registry.token(&node);
-        let path = format!("/v1/connectors/{}/store-upgrades/{request}/status",node.connector_id);
+        let request = &command.request.request_id;
+        let token = state.registry.token(&node);
+        let path = format!(
+            "/v1/connectors/{}/store-upgrades/{request}/status",
+            node.connector_id
+        );
         let batch_id = batch["batchId"].as_str().unwrap();
-        state.registry.db.lock().unwrap().execute("UPDATE store_upgrade_batches SET expires=0 WHERE id=?1",[batch_id]).unwrap();
+        state
+            .registry
+            .db
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE store_upgrade_batches SET expires=0 WHERE id=?1",
+                [batch_id],
+            )
+            .unwrap();
         // No target version, ready or confirmation exists: these are receipt ACKs only.
-        for phase in ["failed","rolled_back","succeeded"] {
+        for phase in ["failed", "rolled_back", "succeeded"] {
             let report = json!({"requestId":request,"nodeId":node.connector_id,"state":phase});
-            assert_eq!(call(state.clone(),"POST",&path,CLIENT,true,report.clone()).await.0,StatusCode::UNAUTHORIZED);
-            let (status,receipt) = call(state.clone(),"POST",&path,&token,true,report).await;
-            assert_eq!(status,StatusCode::OK); assert_eq!(receipt,json!({"accepted":true}));
-            assert_eq!(state.registry.upgrade_batch(batch_id).unwrap().nodes[0].state,"expired");
+            assert_eq!(
+                call(state.clone(), "POST", &path, CLIENT, true, report.clone())
+                    .await
+                    .0,
+                StatusCode::UNAUTHORIZED
+            );
+            let (status, receipt) = call(state.clone(), "POST", &path, &token, true, report).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(receipt, json!({"accepted":true}));
+            assert_eq!(
+                state.registry.upgrade_batch(batch_id).unwrap().nodes[0].state,
+                "expired"
+            );
         }
-        state.registry.db.lock().unwrap().execute("UPDATE store_upgrade_batches SET created=0 WHERE id=?1",[batch_id]).unwrap();
-        assert_eq!(call(state.clone(),"POST",&path,&token,true,json!({"requestId":request,"nodeId":node.connector_id,"state":"succeeded"})).await.0,StatusCode::OK);
+        state
+            .registry
+            .db
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE store_upgrade_batches SET created=0 WHERE id=?1",
+                [batch_id],
+            )
+            .unwrap();
+        assert_eq!(
+            call(
+                state.clone(),
+                "POST",
+                &path,
+                &token,
+                true,
+                json!({"requestId":request,"nodeId":node.connector_id,"state":"succeeded"})
+            )
+            .await
+            .0,
+            StatusCode::OK
+        );
         let unknown = Uuid::new_v4().to_string();
-        let path = format!("/v1/connectors/{}/store-upgrades/{unknown}/status",node.connector_id);
-        for phase in ["failed","rolled_back","succeeded"] {
-            assert_eq!(call(state.clone(),"POST",&path,&token,true,json!({"requestId":unknown,"nodeId":node.connector_id,"state":phase})).await.0,StatusCode::OK);
+        let path = format!(
+            "/v1/connectors/{}/store-upgrades/{unknown}/status",
+            node.connector_id
+        );
+        for phase in ["failed", "rolled_back", "succeeded"] {
+            assert_eq!(
+                call(
+                    state.clone(),
+                    "POST",
+                    &path,
+                    &token,
+                    true,
+                    json!({"requestId":unknown,"nodeId":node.connector_id,"state":phase})
+                )
+                .await
+                .0,
+                StatusCode::OK
+            );
         }
-        assert_eq!(call(state.clone(),"POST",&path,&token,true,json!({"requestId":unknown,"nodeId":node.connector_id,"state":"draining"})).await.0,StatusCode::NOT_FOUND);
-        assert_eq!(call(state.clone(),"POST",&path,&token,true,json!({"requestId":unknown,"nodeId":Uuid::new_v4().to_string(),"state":"failed"})).await.0,StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(
+            call(
+                state.clone(),
+                "POST",
+                &path,
+                &token,
+                true,
+                json!({"requestId":unknown,"nodeId":node.connector_id,"state":"draining"})
+            )
+            .await
+            .0,
+            StatusCode::NOT_FOUND
+        );
+        assert_eq!(
+            call(
+                state.clone(),
+                "POST",
+                &path,
+                &token,
+                true,
+                json!({"requestId":unknown,"nodeId":Uuid::new_v4().to_string(),"state":"failed"})
+            )
+            .await
+            .0,
+            StatusCode::UNPROCESSABLE_ENTITY
+        );
         let counts: (i64,i64) = state.registry.db.lock().unwrap().query_row(
             "SELECT (SELECT COUNT(*) FROM store_upgrade_batches),(SELECT COUNT(*) FROM store_upgrade_commands)",
             [],|r| Ok((r.get(0)?,r.get(1)?)),
+        ).unwrap();
+        assert_eq!(counts, (0, 0));
+    }
+    #[tokio::test]
+    async fn missing_confirmation_history_only_observes_validated_version_and_installed_connection() {
+        let root = tempfile::tempdir().unwrap(); release(root.path()); let state = state(root.path());
+        let node = node(&state,"installed",ConnectorKind::Store,"1.0.1");
+        state.transport.fixture_upgrade_connection(&node.connector_id,Some(capability("darwin-arm64")));
+        let token = state.registry.token(&node); let request = Uuid::new_v4().to_string();
+        let base = format!("/v1/connectors/{}/store-upgrades/{request}/confirm",node.connector_id);
+        let path = format!("{base}?version=1.0.1");
+        let (status,confirmation) = call(state.clone(),"GET",&path,&token,true,json!({})).await;
+        assert_eq!(status,StatusCode::OK);
+        assert_eq!(confirmation,json!({"confirmed":true,"online":true,"version":"1.0.1","targetVersion":"1.0.1"}));
+        let package = format!("/v1/connectors/{}/store-upgrades/{request}/package",node.connector_id);
+        assert_eq!(call(state.clone(),"GET",&package,&token,true,json!({})).await.0,StatusCode::NOT_FOUND);
+        let pending = format!("/v1/connectors/{}/store-upgrades/pending",node.connector_id);
+        assert_eq!(call(state.clone(),"GET",&pending,&token,true,json!({})).await.1,json!({"command":null}));
+        assert_eq!(call(state.clone(),"GET",&base,&token,true,json!({})).await.0,StatusCode::NOT_FOUND);
+        for version in ["1.0","1.0.01","1.0.1-pre","invalid"] {
+            assert_eq!(call(state.clone(),"GET",&format!("{base}?version={version}"),&token,true,json!({})).await.0,StatusCode::UNPROCESSABLE_ENTITY);
+        }
+        let invalid_id = format!("/v1/connectors/{}/store-upgrades/not-a-uuid/confirm?version=1.0.1",node.connector_id);
+        assert_eq!(call(state.clone(),"GET",&invalid_id,&token,true,json!({})).await.0,StatusCode::UNPROCESSABLE_ENTITY);
+        state.transport.fixture_upgrade_connection(&node.connector_id,None);
+        assert_eq!(call(state.clone(),"GET",&path,&token,true,json!({})).await.1["confirmed"],false);
+        let mut unsupported = capability("darwin-arm64"); unsupported.installed = false;
+        state.transport.fixture_upgrade_connection(&node.connector_id,Some(unsupported));
+        assert_eq!(call(state.clone(),"GET",&path,&token,true,json!({})).await.1["confirmed"],false);
+        state.transport.disconnect(&node.connector_id);
+        let offline = call(state.clone(),"GET",&path,&token,true,json!({})).await.1;
+        assert_eq!(offline["confirmed"],false); assert_eq!(offline["online"],false);
+        let count: i64 = state.registry.db.lock().unwrap().query_row("SELECT COUNT(*) FROM store_upgrade_commands",[],|r|r.get(0)).unwrap();
+        assert_eq!(count,0);
+    }
+    #[tokio::test]
+    async fn retained_confirmation_is_authoritative_and_pruned_confirmation_remains_read_only() {
+        let root = tempfile::tempdir().unwrap(); release(root.path()); let state = state(root.path());
+        let owner = node(&state,"installed",ConnectorKind::Store,"1.0.0");
+        let mut control = state.transport.fixture_upgrade_connection(&owner.connector_id,Some(capability("darwin-arm64")));
+        let batch = call(state.clone(),"POST","/v1/store-node-upgrades",ADMIN,true,json!({})).await.1;
+        let command = control.borrow_and_update().clone().unwrap(); let request = &command.request.request_id;
+        let token = state.registry.token(&owner);
+        let base = format!("/v1/connectors/{}/store-upgrades/{request}/confirm",owner.connector_id);
+        assert_eq!(call(state.clone(),"GET",&format!("{base}?version=1.0.2"),&token,true,json!({})).await.0,StatusCode::CONFLICT);
+        assert_eq!(call(state.clone(),"GET",&format!("{base}?version=1.0.1"),&token,true,json!({})).await.1["confirmed"],false);
+        state.registry.register_connection(&owner.connector_id,&token,None,Some("1.0.1")).unwrap();
+        // Optional version preserves the existing retained-command API.
+        assert_eq!(call(state.clone(),"GET",&base,&token,true,json!({})).await.1["confirmed"],true);
+        let foreign = node(&state,"other installed",ConnectorKind::Store,"1.0.1");
+        state.transport.fixture_upgrade_connection(&foreign.connector_id,Some(capability("darwin-arm64")));
+        let foreign_path = format!("/v1/connectors/{}/store-upgrades/{request}/confirm?version=1.0.1",foreign.connector_id);
+        assert_eq!(call(state.clone(),"GET",&foreign_path,&state.registry.token(&foreign),true,json!({})).await.0,StatusCode::NOT_FOUND);
+        state.registry.db.lock().unwrap().execute("UPDATE store_upgrade_batches SET created=0 WHERE id=?1",[batch["batchId"].as_str().unwrap()]).unwrap();
+        let confirmation = call(state.clone(),"GET",&format!("{base}?version=1.0.1"),&token,true,json!({})).await;
+        assert_eq!(confirmation.0,StatusCode::OK); assert_eq!(confirmation.1["confirmed"],true);
+        let counts: (i64,i64) = state.registry.db.lock().unwrap().query_row(
+            "SELECT (SELECT COUNT(*) FROM store_upgrade_batches),(SELECT COUNT(*) FROM store_upgrade_commands)",
+            [],|r|Ok((r.get(0)?,r.get(1)?)),
         ).unwrap();
         assert_eq!(counts,(0,0));
     }
