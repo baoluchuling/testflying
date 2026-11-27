@@ -247,8 +247,8 @@ impl Gateway {
     }
     async fn execute_inner(&self, request: &StoreRequest) -> Result<Value> {
         validate_request(request)?;
-        let uses_assets =
-            request.operation == Operation::Sync && scopes(&request.payload, "store_images", false);
+        let uses_assets = request.operation == Operation::Sync
+            && (scopes(&request.payload, "store_images", false) || is_google_batch_sync(request));
         let _assets = if uses_assets {
             if let Some(store) = &self.inner.assets {
                 Some(store.claim(request)?)
