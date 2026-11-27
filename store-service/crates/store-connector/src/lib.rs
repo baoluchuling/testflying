@@ -579,9 +579,10 @@ async fn connection(
             &executor.config.connector_id,
             true,
         )?;
-        let registration = serde_json::to_vec(
-            &json!({"connectorId":executor.config.connector_id,"connectorVersion":CONNECTOR_VERSION,"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1,"appCatalogVersion":1,"asyncStoreImagesSupported":true,"storeUpgrade":executor.upgrade.capability()}),
-        )
+        let mut registration=json!({"connectorId":executor.config.connector_id,"connectorVersion":CONNECTOR_VERSION,"baseUrl":executor.config.base_url,"logsVersion":1,"storeVersionsVersion":1,"appCatalogVersion":1,"asyncStoreImagesSupported":true});
+        let upgrade=executor.upgrade.capability();
+        if upgrade["installed"]==true {registration["storeUpgrade"]=upgrade;}
+        let registration = serde_json::to_vec(&registration)
         .map_err(|_| crypto::error())?;
         let mut buffer = vec![0; crypto::HANDSHAKE_BYTES];
         let size = handshake
