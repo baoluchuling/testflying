@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
-  "runId": "7f281bf31e564e4f9d3e423f8ee6731c",
-  "finishedAt": "2026-11-27T09:20:03.149904+00:00",
-  "sourceCommit": "fc422ae16c1857fb03b814a80baefca21b88f71c",
+  "runId": "975cc51409a74e2fb87e75c835efdd2f",
+  "finishedAt": "2026-11-27T09:36:53.993252+00:00",
+  "sourceCommit": "85b7059c36853a935aaa481f0c93431b1cddc640",
   "sourceHashes": {
     "AGENTS.md": "14fef86e522a3621beaee3c9b1d33bf31a9b8329d681c6a891ea5cfe9e0adfae",
-    "Cargo.lock": "9abd4f90785e772a39c71f06330ffa242f4f50049ad37cdbad3f37ca0f8d2175",
+    "Cargo.lock": "ad6d678d1df59fb514d242c5adea3e6b2812a5aa7aa4302e1ead8e5da2cfb557",
     "Cargo.toml": "949dedcdac4f97570336bfe7ca72500d676ff1d15f39d6f0b4ee1823d555d233",
     "crates/screenshot-connector/Cargo.toml": "7f2ac7e39147c86211706e0888bcdf9b9fc7883f6dd172118f2cb83751f9bc66",
     "crates/screenshot-connector/src/codex_runtime.rs": "ae7a5abb8826e1c6fb9cd5ec41afa4b947b69a68fc6837735ae31eeb72e0d3e1",
@@ -15,14 +15,14 @@
     "crates/screenshot-connector/src/main.rs": "6b64ddf137a2aa4bc06da323b039fd3687b98fe7d93693d5f36792403f39e77d",
     "crates/screenshot-connector/src/skill.rs": "43d80099a23fd2dc7f5169df319df60153c1bab98f8fe4ed5a63071ccd81afff",
     "crates/screenshot-connector/src/worker.rs": "08e6e2192e4f12791232d25e6f971f678a77e56d476757015e7c88f9e2a20de8",
-    "crates/store-api/Cargo.toml": "42c14f402d3b5c1707cfdbbc241dd71a86fab967c45b19c5c3b636416ce9e91f",
+    "crates/store-api/Cargo.toml": "67be957dc1aa5cdb1acaa959fe6597674a97c3df50da75d13d77d7fbe2e39bca",
     "crates/store-api/src/accounts.rs": "d0abb1577979330e3e3e7605bbdb216bf81a48d3e1b21dcffcc74063a171376a",
     "crates/store-api/src/api_docs.rs": "f09834600d9aa87721a8479b1d2f316ee6db4e928f3cea356c2a2a066eb38f51",
     "crates/store-api/src/firebase.rs": "96881080779df3cdb3cd4459ddfe26499aa8bbb51e9ad0d0c4bcef6eb12ed05a",
     "crates/store-api/src/forwarding.rs": "ab7e6affc0bdcb45279c23cad3b063d7ad1911606d8fc85d797bff0b0657e96b",
     "crates/store-api/src/installer_assets.rs": "d72bb77eae5348dea41c88b6fedb3980b512856218a7834f44dc83b481035bf4",
     "crates/store-api/src/integrations.rs": "d0e11961e2ebb95ee69b543390211640519239fe0345180269b22e1b705df834",
-    "crates/store-api/src/lib.rs": "fe01d39249541a279d1dd08c59874e93c9bbb6f8861a649d2819f56228f029e3",
+    "crates/store-api/src/lib.rs": "673e0f991ea6dd0c53aab6be022fb29f676237b4b7682236b294bbc002ffa0f4",
     "crates/store-api/src/logs.rs": "efeb68a99cbe852ab60adf09ef8eba6590c73ee6ec405a1b80bbd6053130f914",
     "crates/store-api/src/main.rs": "4e43e0aa15d09f1de3a46816ca97e667b16a1925bb0652988e0df98873232e12",
     "crates/store-api/src/node_logs.rs": "0d1de46d19ddfd3c40b8d3b0f9fa7ddb08c15da4ca2c44ae0c95b54d93fb2f8f",
@@ -73,7 +73,7 @@
     "crates/store-api/tests/service.rs": "6b8f70b06c492f27b261da8e307a13d62f85459e0372a4e9d19bab19e9f67207",
     "crates/store-api/tests/setup-package.test.mjs": "c2d0b49fa385a18820e04c7ce20f3df18bb3596bc449ca4032f6ffd3706415bf",
     "crates/store-api/tests/setup.rs": "44d47b52c5fa64a742d91484b086ca6517ee2a43980dcb2c96579d078db7bc59",
-    "crates/store-api/tests/store_jobs.rs": "e7258c8d1463e970b49d47a4b682700173d8995e39ac2c5d147d9d731835c921",
+    "crates/store-api/tests/store_jobs.rs": "e4100bba7a9474ba48a237f8e3e3248a1d6b7e9500be073fd9b3d3ff9aff279b",
     "crates/store-api/tests/support/mod.rs": "4ffee413b253548e079e10e327515bfb8b52ad5adff36fac19a0b81fb553da55",
     "crates/store-api/tests/uploads.rs": "f295d3cef48bbfdb94e84ed56e14b51174bc2157f2780370c45e9860bf55af8d",
     "crates/store-connector/Cargo.toml": "127e39f0564466be3146a74f41a7a810f11dea1ae41edca464f39fc20913133c",
@@ -152,34 +152,33 @@
     "scripts/verify_store_refactor.py": "ebaa25ef57d06b216907521f2e6d501145ac2fce12cbfac5a9aaa344bf4cc588"
   },
   "builtComponents": [
-    "center",
-    "store"
+    "center"
   ],
   "builtOutputs": [
-    "releases/darwin-arm64/store-connector",
-    "releases/linux-amd64/store-api",
-    "releases/linux-amd64/store-connector",
-    "releases/windows-amd64/store-connector.exe"
+    "releases/linux-amd64/store-api"
   ],
   "retainedOutputs": [
-    "releases/darwin-arm64/screenshot-connector"
+    "releases/darwin-arm64/screenshot-connector",
+    "releases/darwin-arm64/store-connector",
+    "releases/linux-amd64/store-connector",
+    "releases/windows-amd64/store-connector.exe"
   ],
   "outputs": {
     "releases/linux-amd64/store-api": {
       "component": "center",
-      "version": "0.1.3",
-      "sourceFingerprint": "b35feb9dacad8f06511379c14331db28e57fcfc89ed537ffa8c202406310e002",
+      "version": "0.1.4",
+      "sourceFingerprint": "14f5f58a06b5bf2ed5dcf25086874d53ca5e0c2492a19c10668223bdd5d129dd",
       "sourceHashes": {
-        "Cargo.lock": "02a8380e343e9efec921a3900168c6d405f7cf4eb4a22f4883c9deef7db8d609",
+        "Cargo.lock": "39a4563b94e1641a977ca3eafd61cd0b552b835f206e167cd135f1d965ec11d6",
         "Cargo.toml": "69c870def484fa1146ce65f447461f61a1a1ace065678199920ea9c92985d298",
-        "crates/store-api/Cargo.toml": "5fc7055639f79513dccdafdd42c1c0ace23114d88d28533619516f581bc43a7c",
+        "crates/store-api/Cargo.toml": "3f06cf1bdf12a19bcec5e983d3fef5586587fcfce7384e5dfa0baf4e516d4033",
         "crates/store-api/src/accounts.rs": "bcc80de01c3116607416e31926b18bac30a4fe170d13257a033890928ea3f253",
         "crates/store-api/src/api_docs.rs": "0552aa2941d220926d0561839a78d7b3b9204b86ae5df397c9e9d5701d0a8443",
         "crates/store-api/src/firebase.rs": "8d42bb72c499e48c76718f3497fdf87d3ac11d685f47e65a05aa493bc984af0d",
         "crates/store-api/src/forwarding.rs": "abd1ca8f0a836606561196ad94ad1536727ff321287c4fc001731333996c7f13",
         "crates/store-api/src/installer_assets.rs": "02c573e75d2436de8da898034223af495f8dbd414b9096f13003440ff0ed5adc",
         "crates/store-api/src/integrations.rs": "32f5db9d2362b9814252c2ff5fcf69f1280498225bea65ccef5971380312993b",
-        "crates/store-api/src/lib.rs": "34cd658edc0b16ec00d61a4584c8d3faa2e9504a87fe41f2dffc78f7f5f81536",
+        "crates/store-api/src/lib.rs": "dd3884a5583a7941b36fc8d8406f62e4382967ad400c6e6c683131b1b2ef5be6",
         "crates/store-api/src/logs.rs": "9a562c09d108418b56c01fca63178df58a667840c83c56faa2a71630a96fb610",
         "crates/store-api/src/main.rs": "2426238724c652e36a34e8d9b1829a14a2a32a868121fcb01b55dbf75b9d5f3d",
         "crates/store-api/src/node_logs.rs": "af48416d892714533c8caf3b762702a6118bf22fbd97246dd41c9bff4fc6a0e0",
@@ -248,10 +247,10 @@
         "docs/openapi.yaml": "508ff1ee9b9a85919667abc2069f984a80a1d813760feaf20231f616743e40eb",
         "docs/store-api.md": "58d6661c1ad9f451ea4ab6b59ffd3f0827e1ae0d56d803b2d8ed5e24c215b726"
       },
-      "sourceCommit": "fc422ae16c1857fb03b814a80baefca21b88f71c",
-      "builtAt": "2026-11-27T09:20:03.149904+00:00",
-      "sha256": "e55fb42973c58a8715eb147583723676a2f71c2ab36caade2176942d7c697684",
-      "bytes": 10283896,
+      "sourceCommit": "85b7059c36853a935aaa481f0c93431b1cddc640",
+      "builtAt": "2026-11-27T09:36:53.993252+00:00",
+      "sha256": "b22073ebff3956d96b321a2aecf3c35ac396674b6419a6f1108cece5adf76d68",
+      "bytes": 10281608,
       "format": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped"
     },
     "releases/linux-amd64/store-connector": {
@@ -553,19 +552,19 @@
   "components": {
     "center": {
       "component": "center",
-      "version": "0.1.3",
-      "sourceFingerprint": "b35feb9dacad8f06511379c14331db28e57fcfc89ed537ffa8c202406310e002",
+      "version": "0.1.4",
+      "sourceFingerprint": "14f5f58a06b5bf2ed5dcf25086874d53ca5e0c2492a19c10668223bdd5d129dd",
       "sourceHashes": {
-        "Cargo.lock": "02a8380e343e9efec921a3900168c6d405f7cf4eb4a22f4883c9deef7db8d609",
+        "Cargo.lock": "39a4563b94e1641a977ca3eafd61cd0b552b835f206e167cd135f1d965ec11d6",
         "Cargo.toml": "69c870def484fa1146ce65f447461f61a1a1ace065678199920ea9c92985d298",
-        "crates/store-api/Cargo.toml": "5fc7055639f79513dccdafdd42c1c0ace23114d88d28533619516f581bc43a7c",
+        "crates/store-api/Cargo.toml": "3f06cf1bdf12a19bcec5e983d3fef5586587fcfce7384e5dfa0baf4e516d4033",
         "crates/store-api/src/accounts.rs": "bcc80de01c3116607416e31926b18bac30a4fe170d13257a033890928ea3f253",
         "crates/store-api/src/api_docs.rs": "0552aa2941d220926d0561839a78d7b3b9204b86ae5df397c9e9d5701d0a8443",
         "crates/store-api/src/firebase.rs": "8d42bb72c499e48c76718f3497fdf87d3ac11d685f47e65a05aa493bc984af0d",
         "crates/store-api/src/forwarding.rs": "abd1ca8f0a836606561196ad94ad1536727ff321287c4fc001731333996c7f13",
         "crates/store-api/src/installer_assets.rs": "02c573e75d2436de8da898034223af495f8dbd414b9096f13003440ff0ed5adc",
         "crates/store-api/src/integrations.rs": "32f5db9d2362b9814252c2ff5fcf69f1280498225bea65ccef5971380312993b",
-        "crates/store-api/src/lib.rs": "34cd658edc0b16ec00d61a4584c8d3faa2e9504a87fe41f2dffc78f7f5f81536",
+        "crates/store-api/src/lib.rs": "dd3884a5583a7941b36fc8d8406f62e4382967ad400c6e6c683131b1b2ef5be6",
         "crates/store-api/src/logs.rs": "9a562c09d108418b56c01fca63178df58a667840c83c56faa2a71630a96fb610",
         "crates/store-api/src/main.rs": "2426238724c652e36a34e8d9b1829a14a2a32a868121fcb01b55dbf75b9d5f3d",
         "crates/store-api/src/node_logs.rs": "af48416d892714533c8caf3b762702a6118bf22fbd97246dd41c9bff4fc6a0e0",
@@ -634,10 +633,10 @@
         "docs/openapi.yaml": "508ff1ee9b9a85919667abc2069f984a80a1d813760feaf20231f616743e40eb",
         "docs/store-api.md": "58d6661c1ad9f451ea4ab6b59ffd3f0827e1ae0d56d803b2d8ed5e24c215b726"
       },
-      "sourceCommit": "fc422ae16c1857fb03b814a80baefca21b88f71c",
-      "builtAt": "2026-11-27T09:20:03.149904+00:00",
-      "sha256": "e55fb42973c58a8715eb147583723676a2f71c2ab36caade2176942d7c697684",
-      "bytes": 10283896,
+      "sourceCommit": "85b7059c36853a935aaa481f0c93431b1cddc640",
+      "builtAt": "2026-11-27T09:36:53.993252+00:00",
+      "sha256": "b22073ebff3956d96b321a2aecf3c35ac396674b6419a6f1108cece5adf76d68",
+      "bytes": 10281608,
       "format": "ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped"
     },
     "store": {
