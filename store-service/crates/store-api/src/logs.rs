@@ -457,6 +457,12 @@ pub(super) async fn observe(
 /// Select explicit non-secret selectors and text fingerprints; never traverse arbitrary JSON.
 pub(crate) fn payload_summary(payload: &Value) -> Value {
     let mut out = json!({"fieldCount":payload.as_object().map_or(0,|v|v.len())});
+    if let Some(items) = payload.get("localizations").and_then(Value::as_array) {
+        out["localizationCount"] = json!(items.len());
+        out["localizations"] = json!(items.iter().take(10).map(|item| payload_summary(&json!({
+            "locale":item.get("locale"),"syncScopes":item.get("syncScopes"),"metadata":item.get("metadata")
+        }))).collect::<Vec<_>>());
+    }
     for name in [
         "locale",
         "language",

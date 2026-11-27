@@ -17,6 +17,9 @@ const SYNC_SCOPES: &[&str] = &[
 
 pub(super) fn validate(request: &StoreRequest) -> Result<()> {
     let payload = &request.payload;
+    if payload.get("localizations").is_some() {
+        return google_batch::validate_batch(request);
+    }
     if request.operation == Operation::CreateStoreRelease {
         if request.platform != Platform::Ios {
             return Err(StoreError::new(

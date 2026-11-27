@@ -290,6 +290,14 @@ impl AssetStore {
 
 pub fn asset_ids(payload: &Value) -> HashSet<String> {
     let mut ids = HashSet::new();
+    if let Some(items) = payload.get("localizations").and_then(Value::as_array) {
+        for item in items {
+            let mut single = item.clone();
+            single["operation"] = serde_json::json!("update_app_metadata");
+            ids.extend(asset_ids(&single));
+        }
+        return ids;
+    }
     let owners: &[&str] = match payload["operation"].as_str() {
         Some("update_app_metadata") => &["metadata"],
         Some("update_marketing_page") => &["marketingPage"],
@@ -350,6 +358,45 @@ mod tests {
     use image::ImageEncoder;
     use store_protocol::upload::UploadInput;
     const SESSION: &str = "00000000-0000-4000-8000-000000000099";
+    #[test]
+    fn batch_assets_are_claimed_across_languages_and_released_after_whole_batch() {
+        let store = AssetStore::new("test-node".into(), "22".repeat(32));
+        let mut ids = Vec::new();
+        for i in 1..=2 {
+            let mut claims = store.claims(&ticket(i, 3)).unwrap();
+            claims.platform = Platform::Android;
+            store
+                .start(&upload::sign(&claims, &"22".repeat(32)).unwrap(), SESSION)
+                .unwrap();
+            let mut entries = store.entries.lock().unwrap();
+            let entry = entries.get_mut(&claims.asset_id).unwrap();
+            entry.file.write_all(b"abc").unwrap();
+            entry.complete = true;
+            entry.received = 3;
+            ids.push(claims.asset_id);
+        }
+        let request = StoreRequest {
+            request_id: "batch".into(),
+            platform: Platform::Android,
+            bundle_identifier: "com.example.app".into(),
+            operation: store_protocol::Operation::Sync,
+            payload: serde_json::json!({"operation":"update_app_metadata","localizations":[
+                {"locale":"en-US","metadata":{"storeImages":{"phone_screenshots":{"assets":[{"assetId":ids[0]}]}}}},
+                {"locale":"ja","metadata":{"storeImages":{"phone_screenshots":{"assets":[{"assetId":ids[1]},{"assetId":ids[0]}]}}}}
+            ]}),
+        };
+        let lease = store.claim(&request).unwrap();
+        for entry in store.entries.lock().unwrap().values_mut() {
+            entry.expires = Instant::now() - Duration::from_secs(1);
+        }
+        store.purge();
+        assert_eq!(store.usage(), (2, 6));
+        for id in &ids {
+            assert_eq!(store.read(id).unwrap().0, b"abc");
+        }
+        drop(lease);
+        assert_eq!(store.usage(), (0, 0));
+    }
     #[test]
     fn claimed_files_survive_expiration_until_actual_lease_drop() {
         let store = AssetStore::new("test-node".into(), "22".repeat(32));

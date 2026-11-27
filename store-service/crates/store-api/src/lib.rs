@@ -623,17 +623,42 @@ async fn write_store(
         operation,
         payload: payload.clone(),
     };
-    if request.is_image_only_sync() {
+    let google_batch = store_provider::is_google_batch_sync(&request);
+    if request.is_image_only_sync() || google_batch {
         state.registry.require_forwarding(platform)?;
         request.validate()?;
         store_provider::validate_request(&request)?;
         let node = state.registry.resolve(platform, &identifier)?;
+        if google_batch
+            && !node
+                .connector_version
+                .as_deref()
+                .and_then(store_protocol::release::ConnectorVersion::parse)
+                .is_some_and(|v| {
+                    v >= store_protocol::release::ConnectorVersion::parse("0.2.9").unwrap()
+                })
+        {
+            return Err(StoreError::new(
+                409,
+                "google_batch_upgrade_required",
+                "Upgrade this Store Connector to 0.2.9 or later for multi-language sync",
+            )
+            .into());
+        }
         if state
             .transport
             .supports_async_store_images(&node, &state.registry.token(&node))
             .await?
         {
             return store_jobs::start(&state, &node, owner.map(|v| v.0.id), request).await;
+        }
+        if google_batch {
+            return Err(StoreError::new(
+                409,
+                "google_batch_upgrade_required",
+                "This Store Connector does not support background multi-language sync",
+            )
+            .into());
         }
     }
     execute(state, context, platform, identifier, operation, payload).await

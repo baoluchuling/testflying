@@ -1,4 +1,5 @@
 //! Private, time-retained node logs. Callers pass fixed labels and safe summaries.
+use crate::arr;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -512,6 +513,12 @@ fn path_template(path: &str) -> String {
 
 pub fn summary(payload: &Value) -> Value {
     let mut value = json!({});
+    if let Some(items) = payload.get("localizations").and_then(Value::as_array) {
+        value["localizationCount"] = json!(items.len());
+        value["localizations"] = json!(items.iter().take(10).map(|item| summary(&json!({
+            "locale":item.get("locale"),"syncScopes":item.get("syncScopes"),"metadata":item.get("metadata")
+        }))).collect::<Vec<_>>());
+    }
     for key in ["locale", "device", "operation"] {
         if let Some(s) = payload.get(key).and_then(Value::as_str) {
             value[key] = if s.len() <= 80
@@ -560,6 +567,21 @@ pub fn summary(payload: &Value) -> Value {
         ] {
             if let Some(s) = container.get(key).and_then(Value::as_str) {
                 value["fields"][key] = json!({"characters":s.chars().count(),"bytes":s.len(),"sha256":hex::encode(Sha256::digest(s.as_bytes()))});
+            }
+        }
+    }
+    if let Some(images) = payload
+        .pointer("/metadata/storeImages")
+        .and_then(Value::as_object)
+    {
+        for slot in [
+            "phone_screenshots",
+            "tablet_screenshots",
+            "feature_graphic_url",
+        ] {
+            if let Some(image) = images.get(slot) {
+                value["imageCounts"][slot] =
+                    json!(arr(image, "urls").len() + arr(image, "assets").len());
             }
         }
     }

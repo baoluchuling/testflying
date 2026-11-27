@@ -1278,6 +1278,222 @@ fn google_base(r: &Record) -> Option<Reply> {
     None
 }
 
+fn google_batch_payload(url: &str) -> Value {
+    json!({"operation":"update_app_metadata","localizations":[
+        {"locale":"en-US","syncScopes":["title","store_images"],"metadata":{"title":"English","description":"not selected","storeImages":{"phone_screenshots":{"urls":[format!("{url}/batch-image")]}}}},
+        {"locale":"ja","syncScopes":["description","store_images"],"metadata":{"description":"Japanese copy","storeImages":{"tablet_screenshots":{"urls":[format!("{url}/batch-image")]}}}}
+    ]})
+}
+
+#[tokio::test]
+async fn google_multilocale_text_and_images_share_one_edit_and_one_commit() {
+    let fake = Fake::new(|r| {
+        if r.uri == "/batch-image" {
+            return (
+                StatusCode::OK,
+                vec![("content-type", "image/png".into())],
+                png(),
+            );
+        }
+        google_base(r).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let result = gateway
+        .execute(&request(
+            Platform::Android,
+            Operation::Sync,
+            google_batch_payload(&fake.url),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(result["status"], "succeeded");
+    assert_eq!(result["storeState"]["locales"], json!(["en-US", "ja"]));
+    let records = fake.records();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.method == "POST" && r.uri.ends_with("/edits"))
+            .count(),
+        1
+    );
+    let commits: Vec<_> = records
+        .iter()
+        .filter(|r| r.uri.contains(":commit?"))
+        .collect();
+    assert_eq!(commits.len(), 1);
+    assert!(commits[0].uri.contains("ERROR_IF_IN_REVIEW"));
+    assert!(!commits[0].uri.contains("changesNotSentForReview"));
+    let patches: Vec<_> = records.iter().filter(|r| r.method == "PATCH").collect();
+    assert_eq!(patches.len(), 2);
+    assert_eq!(patches[0].body(), json!({"title":"English"}));
+    assert_eq!(
+        patches[1].body(),
+        json!({"fullDescription":"Japanese copy"})
+    );
+    assert!(patches[0].uri.contains("/edits/edit/listings/en%2DUS"));
+    assert!(patches[1].uri.contains("/edits/edit/listings/ja"));
+    let uploads: Vec<_> = records
+        .iter()
+        .filter(|r| r.uri.starts_with("/upload/"))
+        .collect();
+    assert_eq!(uploads.len(), 3);
+    assert!(uploads
+        .iter()
+        .all(|r| r.uri.contains("/edits/edit/listings/")));
+    assert!(records.iter().all(|r| !r.uri.contains("/tracks")));
+    let commit_index = records
+        .iter()
+        .position(|r| r.uri.contains(":commit?"))
+        .unwrap();
+    assert!(records
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.uri.starts_with("/upload/") || r.method == "PATCH")
+        .all(|(i, _)| i < commit_index));
+}
+
+#[tokio::test]
+async fn google_multilocale_late_failure_discards_without_commit_or_replay() {
+    let fake = Fake::new(|r| {
+        if r.uri == "/batch-image" {
+            return (StatusCode::OK, vec![], png());
+        }
+        if r.method == "PATCH" && r.uri.ends_with("/ja") {
+            return (
+                StatusCode::BAD_REQUEST,
+                vec![],
+                br#"{"error":{"message":"rejected"}}"#.to_vec(),
+            );
+        }
+        google_base(r).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    assert!(gateway
+        .execute(&request(
+            Platform::Android,
+            Operation::Sync,
+            google_batch_payload(&fake.url)
+        ))
+        .await
+        .is_err());
+    let records = fake.records();
+    assert!(!records.iter().any(|r| r.uri.contains(":commit")));
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.method == "DELETE" && r.uri.ends_with("/edits/edit"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.method == "PATCH" && r.uri.ends_with("/ja"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn google_multilocale_validates_entire_batch_before_any_network() {
+    let fake = Fake::new(|_| panic!("Invalid batch reached upstream")).await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let valid = json!({"operation":"update_app_metadata","localizations":[{"locale":"en-US","metadata":{"title":"private-copy"}},{"locale":"ja","metadata":{"title":"Japanese"}}]});
+    let mut cases = vec![
+        json!({"operation":"update_app_metadata","localizations":[]}),
+        json!({"operation":"update_app_metadata","localizations":null}),
+    ];
+    for (pointer, value) in [
+        ("/localizations/1/locale", json!("EN-us")),
+        ("/localizations/1/locale", json!(" ja")),
+        ("/localizations/1/metadata/title", json!(1)),
+        ("/localizations/1/metadata", json!({})),
+        ("/localizations/1/syncScopes", json!([])),
+        ("/localizations/1/syncScopes", json!(["keywords"])),
+        ("/locale", json!("en-US")),
+        ("/operation", json!("update_release_notes")),
+    ] {
+        let mut bad = valid.clone();
+        if pointer == "/locale" {
+            bad["locale"] = value;
+        } else if pointer.ends_with("syncScopes") {
+            bad["localizations"][1]["syncScopes"] = value;
+        } else {
+            *bad.pointer_mut(pointer).unwrap() = value;
+        }
+        cases.push(bad);
+    }
+    let mut bad_image = valid.clone();
+    bad_image["localizations"][1]["metadata"]["storeImages"] =
+        json!({"phone_screenshots":{"urls":["file:///private/image.png"]}});
+    cases.push(bad_image);
+    cases.push(json!({"operation":"update_app_metadata","localizations":vec![valid["localizations"][0].clone();51]}));
+    for payload in cases {
+        assert_eq!(
+            gateway
+                .execute(&request(Platform::Android, Operation::Sync, payload))
+                .await
+                .unwrap_err()
+                .status,
+            422
+        );
+    }
+    assert_eq!(
+        gateway
+            .execute(&request(Platform::Ios, Operation::Sync, valid.clone()))
+            .await
+            .unwrap_err()
+            .status,
+        422
+    );
+    let summary = store_provider::diagnostics::summary(&valid).to_string();
+    assert!(!summary.contains("private-copy"));
+    assert!(fake.records().is_empty());
+}
+
+#[tokio::test]
+async fn google_multilocale_unknown_commit_is_not_replayed_or_hidden_by_cleanup() {
+    let fake = Fake::new(|r| {
+        if r.uri.contains(":commit?") {
+            return (StatusCode::OK, vec![], b"lost-success-body".to_vec());
+        }
+        if r.method == "DELETE" && r.uri.ends_with("/edits/edit") {
+            return (StatusCode::BAD_GATEWAY, vec![], b"cleanup failed".to_vec());
+        }
+        google_base(r).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let assets = store_provider::assets::AssetStore::new("batch-node".into(), "11".repeat(32));
+    let gateway = Gateway::with_assets(keys.config(&fake.url), Some(assets.clone())).unwrap();
+    let request = request(
+        Platform::Android,
+        Operation::Sync,
+        json!({"operation":"update_app_metadata","localizations":[
+            {"locale":"en-US","metadata":{"title":"English"}},{"locale":"ja","metadata":{"title":"Japanese"}}
+        ]}),
+    );
+    let lease = assets.claim(&request).unwrap();
+    let error = gateway
+        .execute_with_assets(&request, lease)
+        .await
+        .unwrap_err();
+    assert!(error.outcome_unknown);
+    assert_ne!(error.code, "store_edit_cleanup_failed");
+    assert_eq!(
+        fake.records()
+            .iter()
+            .filter(|r| r.uri.contains(":commit?"))
+            .count(),
+        1
+    );
+}
+
 #[tokio::test]
 async fn async_image_mutation_response_loss_preserves_original_error_and_explicit_rejections() {
     for platform in [Platform::Ios, Platform::Android] {

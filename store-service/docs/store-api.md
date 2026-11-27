@@ -559,7 +559,7 @@ HTTP 200 不代表允许同步，必须判断 canSync。iOS 检查最新版本�
 POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
 ```
 
-**每次一个应用、一个语言、一种 operation，支持只同步一个字段。** 不从草稿读取，不保存草稿。新版节点的纯图片同步会创建可查询的持久任务；文案、混合请求和旧节点仍沿用同步返回。
+**每次一个应用、一种 operation，支持只同步一个字段。** 原单语言请求保持；Android 新增 `localizations` 多语言批次，见9.1.1。不从草稿读取，不保存草稿。新版节点的纯图片同步及 Android 多语言批次创建可查询任务；原单语言文案／混合请求保持同步返回。
 
 ### 9.1 更新文案
 
@@ -594,6 +594,47 @@ POST /v1/store-management/apps/{platform}/{bundleIdentifier}/sync
 
 `metadata` scope 表示全部受支持文字字段。字段不传则保留，选中的文字字段传 `""` 表示清空。syncScopes 提供时必须是非空的已知字符串数组；空数组、字符串、null、未知 scope 都会拒绝。iOS 新语言还需要合法应用名称，未提供 title 时尝试已有主语言名称。
 
+### 9.1.1 Android 多语言文案与图片统一提交
+
+仍调用同一个 `POST /v1/store-management/apps/android/{bundleIdentifier}/sync`，商店节点需 **0.2.9 或更新版本**。一个请求包含同一应用的全部本次语言和设备素材；节点创建一个 Google Edit，逐项写入文案及图片，全部成功后只 commit 一次，不逐语言送审，也不修改 track 或构建。
+
+```json
+{
+  "operation":"update_app_metadata",
+  "localizations":[
+    {
+      "locale":"en-US",
+      "syncScopes":["title","description","store_images"],
+      "metadata":{
+        "title":"Reader",
+        "description":"English description",
+        "storeImages":{"phone_screenshots":{"urls":["https://assets.example.com/en-phone.png"]}}
+      }
+    },
+    {
+      "locale":"ja",
+      "syncScopes":["title","description","store_images"],
+      "metadata":{
+        "title":"Reader 日本語",
+        "description":"日本語の説明",
+        "storeImages":{
+          "phone_screenshots":{"urls":["https://assets.example.com/ja-phone.png"]},
+          "tablet_screenshots":{"urls":["https://assets.example.com/ja-tablet.png"]}
+        }
+      }
+    }
+  ]
+}
+```
+
+- `localizations` 为1至50项；每项只接受 `locale`、`syncScopes`、`metadata`。locale 为不带空白的 ASCII BCP-47 样式语言标签，忽略大小写去重。每项必须提供有效的选中文字或图片；全部项在开始执行前统一校验，后面的项非法也不会先写前面的项。
+- 顶层只传 `operation` 和 `localizations`，不能混用单语言的 `locale`／`metadata`／`syncScopes`。本格式仅支持 Android 的 `update_app_metadata`，不支持 iOS、版本说明或 CPP。中心仍按原规则移除顶层旧 `version`。
+- 每项可单独选择 `metadata`、`title`、`description`、`short_description`、`promotional_text`、`video`、`store_images`；省略 scope 时处理提供的文字，图片仍需显式选择 `store_images`。未传字段／设备槽保留，选中文字传空字符串或图片槽传空数组仍表示清空该项。支持原 `urls`、`assets.downloadUrl` 和预上传 `assetId`。
+- 整批纯文案、纯图片或图文混合都异步执行，返回既有 `status:"succeeded"`、`executionStatus:"queued"`、`jobId`，仅表示校验接受。调用方保存 jobId，通过同一应用的 `GET /v1/store-management/apps/android/{bundleIdentifier}/sync-jobs/{jobId}` 查看 `queued/running/succeeded/failed/unknown`；最终成功结果 `result.storeState.locales` 为本批语言，`commitCount:1` 表示一次统一提交，不表示已审核通过或上线。
+- 任一语言下载、写入或上传失败，不做最终 commit，尝试丢弃该 Edit；结果未知不自动重放，仍需对账。既有 `ERROR_IF_IN_REVIEW` 保护保留。执行期间避免同时从 Play Console 或其他客户端修改同一应用，以免 Edit 失效；Google 配额与上传限制仍适用。
+- 节点版本不足、版本未知或不支持后台任务时返回 HTTP409 `google_batch_upgrade_required`，不会降级为逐语言提交。原单语言请求兼容旧节点；其提交行为不变，更新多个语言时请改用本批次格式。
+- 中心不保存图片／图文草稿；节点只持有后台执行所需数据，预上传文件认领到整批结束再清理，URL下载临时文件沿用现有清理机制。中心保存任务结果七天，查询权限沿用原任务归属。
+
 ### 9.2 更新版本说明
 
 iOS：
@@ -616,7 +657,7 @@ Android 的文案、图片及版本说明同步使用普通 Google edit commit�
 
 ### 9.3 更新图片
 
-新版商店 Connector 对**纯图片**请求异步执行：operation 为 update_app_metadata 或 update_marketing_page，syncScopes 只包含 store_images。纯文案、版本说明、文案与图片混合请求仍同步；需要图片快速返回时单独提交。旧节点升级前保留原同步行为，不返回图片任务 jobId。
+新版商店 Connector 对**纯图片**请求异步执行：operation 为 update_app_metadata 或 update_marketing_page，syncScopes 只包含 store_images。原单语言纯文案、版本说明、图文混合请求仍同步；Android 需要多语言统一提交时使用9.1.1批次格式，不拆成逐语言或图文两次提交。旧节点的原请求保留原同步行为，不返回图片任务 jobId。
 
 ```json
 {

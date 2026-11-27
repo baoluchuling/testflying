@@ -33,7 +33,9 @@ impl Gateway {
             if !matches!(operation, "update_release_notes" | "update_app_metadata") {
                 return Err(invalid("Unsupported sync operation"));
             }
-            required(&r.payload, "locale")?;
+            if !is_google_batch_sync(r) {
+                required(&r.payload, "locale")?;
+            }
         }
         let root = format!(
             "/androidpublisher/v3/applications/{}",
@@ -173,7 +175,13 @@ impl Gateway {
             }
             Operation::Sync => {
                 let p = &r.payload;
-                let state = if s(p, "operation") == "update_release_notes" {
+                let state = if is_google_batch_sync(r) {
+                    let items = p["localizations"].as_array().expect("validated batch");
+                    for item in items {
+                        self.google_write_listing(path, item).await?;
+                    }
+                    json!({"locales":items.iter().map(|item|s(item,"locale")).collect::<Vec<_>>(),"commitCount":1})
+                } else if s(p, "operation") == "update_release_notes" {
                     required(p, "releaseNotes")?;
                     let response = self
                         .api(
@@ -214,51 +222,7 @@ impl Gateway {
                     .await?;
                     json!({"track":track,"versionCode":code,"versionName":name})
                 } else {
-                    let metadata = p
-                        .get("metadata")
-                        .filter(|m| m.is_object())
-                        .ok_or_else(|| invalid("metadata is required"))?;
-                    let mut body = serde_json::Map::new();
-                    for (scope, target, keys) in [
-                        ("title", "title", &["title"][..]),
-                        (
-                            "description",
-                            "fullDescription",
-                            &["fullDescription", "description"][..],
-                        ),
-                        (
-                            "short_description",
-                            "shortDescription",
-                            &["shortDescription", "promotionalText"][..],
-                        ),
-                        ("video", "video", &["videoUrl"][..]),
-                    ] {
-                        if scopes(p, scope, true)
-                            || (scope == "short_description"
-                                && scopes(p, "promotional_text", false))
-                        {
-                            copy_field(&mut body, target, metadata, keys)?;
-                        }
-                    }
-                    let mut changed = !body.is_empty();
-                    if changed {
-                        self.api(
-                            Platform::Android,
-                            Method::PATCH,
-                            &format!("{path}/listings/{}", escape(s(p, "locale"))),
-                            Some(json!(body)),
-                        )
-                        .await?;
-                    }
-                    if scopes(p, "store_images", false) {
-                        if let Some(images) = metadata.get("storeImages").filter(|v| v.is_object())
-                        {
-                            changed |= self
-                                .google_sync_images(path, s(p, "locale"), images)
-                                .await?;
-                        }
-                    }
-                    if !changed {
+                    if !self.google_write_listing(path, p).await? {
                         return Ok(failed(
                             "empty_sync_payload",
                             "No selected store content was supplied",
@@ -277,6 +241,27 @@ impl Gateway {
             }
             _ => Err(invalid("Unsupported Google edit operation")),
         }
+    }
+    async fn google_write_listing(&self, path: &str, p: &Value) -> Result<bool> {
+        let body = metadata_body(p)?;
+        let mut changed = !body.is_empty();
+        if changed {
+            self.api(
+                Platform::Android,
+                Method::PATCH,
+                &format!("{path}/listings/{}", escape(s(p, "locale"))),
+                Some(json!(body)),
+            )
+            .await?;
+        }
+        if scopes(p, "store_images", false) {
+            if let Some(images) = p["metadata"].get("storeImages").filter(|v| v.is_object()) {
+                changed |= self
+                    .google_sync_images(path, s(p, "locale"), images)
+                    .await?;
+            }
+        }
+        Ok(changed)
     }
     async fn google_sync_images(&self, path: &str, locale: &str, images: &Value) -> Result<bool> {
         let mut changed = false;
@@ -397,6 +382,35 @@ impl Gateway {
             json!({"reviews":reviews,"nextPageToken":s(&response["tokenPagination"],"nextPageToken")}),
         )
     }
+}
+
+pub(super) fn metadata_body(p: &Value) -> Result<serde_json::Map<String, Value>> {
+    let metadata = p
+        .get("metadata")
+        .filter(|m| m.is_object())
+        .ok_or_else(|| invalid("metadata is required"))?;
+    let mut body = serde_json::Map::new();
+    for (scope, target, keys) in [
+        ("title", "title", &["title"][..]),
+        (
+            "description",
+            "fullDescription",
+            &["fullDescription", "description"][..],
+        ),
+        (
+            "short_description",
+            "shortDescription",
+            &["shortDescription", "promotionalText"][..],
+        ),
+        ("video", "video", &["videoUrl"][..]),
+    ] {
+        if scopes(p, scope, true)
+            || (scope == "short_description" && scopes(p, "promotional_text", false))
+        {
+            copy_field(&mut body, target, metadata, keys)?;
+        }
+    }
+    Ok(body)
 }
 fn max_code(release: &Value) -> i64 {
     arr(release, "versionCodes")

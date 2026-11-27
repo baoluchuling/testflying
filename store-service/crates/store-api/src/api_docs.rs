@@ -165,8 +165,10 @@ fn catalog() -> Value {
             "notification":capture_notification,
             "centerSavesImage":false,"missingUploadDestinationDoesNotBlockExecution":true,"storeForwardingSwitchesApply":false});
     let store_image_jobs = json!({"submitPath":format!("{APP}/sync"),"queryPath":format!("{APP}/sync-jobs/{{jobId}}"),"httpStatus":200,"acceptanceStatus":"succeeded","acceptanceExecutionStatus":"queued","jobId":"center requestId; caller does not supply","selector":{"operations":["update_app_metadata","update_marketing_page"],"syncScopes":["store_images"],"imageOnly":true},"textAndMixedRequests":"remain synchronous","requiresStoreConnectorUpgrade":true,"oldNodes":"remain synchronous without jobId","sources":["urls","assets.assetId","assets.downloadUrl"],"states":["queued","running","succeeded","failed","unknown"],"visibility":"same creating integration or business credential and exact app/platform","retentionDays":7,"nodePollingSeconds":5,"initialSuccessMeaning":"validated and accepted; not actual upload completion","nodeOwnsFiles":"preuploaded assets pinned before acceptance; URL download uses temporary files; cleanup follows actual background completion","replay":"never automatically retry store writes; unknown requires manual reconciliation"});
+    let mut store_image_jobs = store_image_jobs;
+    store_image_jobs["textAndMixedRequests"] = json!("single-language requests remain synchronous; Android localizations batches are asynchronous");
     json!({
-        "schemaVersion":1,"contractVersion":"2026-11-18","title":"中心统一接口文档：商店、账号、节点与截图任务",
+        "schemaVersion":1,"contractVersion":"2026-11-27","title":"中心统一接口文档：商店、账号、节点与截图任务",
         "scope":"center-api-contract","requiresConnectorUpgrade":true,
         "description":"中心公开接口契约；不是对节点在线状态、本地平台配置或商店账号权限的实时探测",
         "authentication":{"integrationToken":{"transport":["https"],"header":"Authorization: Bearer INTEGRATION_TOKEN"},
@@ -204,6 +206,7 @@ fn catalog() -> Value {
         },
         "storeImageJobs":store_image_jobs,
         "sync":{"versionSelection":"iOS 节点自动定位最新版本；顶层 version 不接收或转发，最新版本不可编辑直接失败，不回退到旧版本","operations":["update_app_metadata","update_release_notes","update_marketing_page"],
+            "googleBatch":{"platform":"android","operation":"update_app_metadata","field":"localizations","minItems":1,"maxItems":50,"itemRequired":["locale","metadata"],"itemOptional":["syncScopes"],"uniqueLocaleIgnoringCase":true,"cannotMixTopLevel":["locale","metadata","syncScopes"],"minimumStoreConnectorVersion":"0.2.9","upgradeError":"google_batch_upgrade_required","async":true,"queryPath":format!("{APP}/sync-jobs/{{jobId}}"),"googleEditCount":1,"commitCount":1,"onFailureBeforeCommit":"discard edit; do not commit","unknownOutcome":"never replay automatically","singleLanguageCompatible":true},
             "androidCommit":{"changesNotSentForReview":"omitted","changesInReviewBehavior":"ERROR_IF_IN_REVIEW","maySendForReview":true,"draftOnly":false},
             "syncScopes":["metadata","description","keywords","promotional_text","short_description","title","subtitle","video","store_images","marketing_text"],
             "imageSlots":{"ios":["phone_screenshots","tablet_screenshots","foldable_screenshots"],"android":["phone_screenshots","tablet_screenshots","feature_graphic_url"]},

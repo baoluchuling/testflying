@@ -358,7 +358,10 @@ components:
       description: >-
         Upgraded store nodes accept image-only requests (update_app_metadata or update_marketing_page with syncScopes=[store_images]) asynchronously.
         HTTP 200/status=succeeded means validation and admission; save jobId and query sync-jobs for actual completion.
-        Text-only and mixed requests remain synchronous; legacy nodes remain synchronous without jobId.
+        Single-language text-only and mixed requests remain synchronous; legacy nodes remain synchronous without jobId.
+        Android update_app_metadata with localizations accepts 1..50 languages as one asynchronous job on Store Connector >=0.2.9.
+        All locales share one Google edit and one final commit. Invalid batches are rejected before work; failure before commit discards the edit.
+        Unknown commit outcomes are never replayed. Old/unknown node versions return 409 google_batch_upgrade_required, never split the batch.
         Both URL sources and preuploaded assetId remain supported. Nodes pin uploaded assets before admission, retain them while queued/running,
         download URL images into anonymous temporary files, and release files after actual background work ends, never at early HTTP return.
         Android sync commits the Google edit normally and may send changes for review. Omits changesNotSentForReview;
@@ -369,7 +372,22 @@ components:
             properties:
               operation: {enum: [update_app_metadata, update_release_notes]}
           then:
-            required: [locale]
+            anyOf:
+              - required: [locale]
+              - required: [localizations]
+        - if:
+            required: [localizations]
+          then:
+            properties:
+              operation: {const: update_app_metadata}
+            not:
+              anyOf:
+                - required: [locale]
+                - required: [metadata]
+                - required: [syncScopes]
+                - required: [releaseNotes]
+                - required: [storeRelease]
+                - required: [marketingPage]
         - if:
             properties:
               operation: {const: update_marketing_page}
@@ -382,6 +400,12 @@ components:
       properties:
         operation: {type: string, enum: [update_app_metadata, update_release_notes, update_marketing_page]}
         locale: {type: string, minLength: 1}
+        localizations:
+          type: array
+          minItems: 1
+          maxItems: 50
+          description: Android only. One application's explicit localization batch; case-insensitive unique locale tags. Do not mix top-level single-language fields. Always asynchronous; query existing sync-jobs using returned jobId. One edit and one commit for all languages and devices.
+          items: {$ref: '#/components/schemas/GoogleSyncLocalization'}
         syncScopes:
           type: array
           minItems: 1
@@ -417,6 +441,17 @@ components:
             locale: {type: string, minLength: 1, description: Optional override of the top-level locale for CPP.}
             promotionalText: {type: string}
             storeImages: {$ref: '#/components/schemas/StoreImages'}
+    GoogleSyncLocalization:
+      type: object
+      additionalProperties: false
+      required: [locale, metadata]
+      properties:
+        locale: {type: string, minLength: 1, maxLength: 80, pattern: '^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$'}
+        syncScopes:
+          type: array
+          minItems: 1
+          items: {enum: [metadata, title, description, short_description, promotional_text, video, store_images]}
+        metadata: {$ref: '#/components/schemas/Sync/properties/metadata'}
     StoreImages:
       type: object
       description: Only present slots are replaced; explicit empty source arrays clear that slot. iOS uploads into Apple Asset Library, commits the image and then replaces and orders placements without polling processing state. Runtime image specs are validated before upload. No library asset deletion or automatic mutation replay. Multi-step placement writes are not transactional. Query device is not a sync selector.

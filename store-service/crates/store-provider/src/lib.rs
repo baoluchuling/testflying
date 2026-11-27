@@ -7,6 +7,8 @@ pub mod catalog;
 pub mod diagnostics;
 mod firebase;
 mod google;
+mod google_batch;
+pub use google_batch::is_google_batch_sync;
 mod image_query;
 mod images;
 mod reviews;
@@ -626,7 +628,7 @@ fn copy_field(
 pub fn validate_request(request: &StoreRequest) -> Result<()> {
     request.validate()?;
     if request.operation == Operation::StartStoreImageSync {
-        if !request.is_image_only_sync() {
+        if !request.is_image_only_sync() && !is_google_batch_sync(request) {
             return Err(invalid(
                 "Async sync requires only store_images scopes and image content",
             ));

@@ -74,7 +74,12 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     assert!(!raw.contains(ADMIN));
     let catalog: Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(catalog["schemaVersion"], 1);
-    assert_eq!(catalog["contractVersion"], "2026-11-18");
+    assert_eq!(catalog["contractVersion"], "2026-11-27");
+    assert_eq!(catalog["sync"]["googleBatch"]["commitCount"], 1);
+    assert_eq!(
+        catalog["sync"]["googleBatch"]["minimumStoreConnectorVersion"],
+        "0.2.9"
+    );
     let endpoints = catalog["endpoints"].as_array().unwrap();
     assert_eq!(endpoints.len(), 23);
     assert_eq!(
@@ -179,7 +184,7 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     );
     assert_eq!(
         catalog["storeImageJobs"]["textAndMixedRequests"],
-        "remain synchronous"
+        "single-language requests remain synchronous; Android localizations batches are asynchronous"
     );
     assert_eq!(catalog["screenshots"]["uploadProtocol"], "direct-oss-v2");
     assert_eq!(catalog["screenshots"]["notificationProtocol"], "capture-v1");

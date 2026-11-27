@@ -221,6 +221,39 @@ mod tests {
             "messageKey":"01".repeat(32),"uploadKey":"02".repeat(32),"serverUrl":"http://127.0.0.1:1",
             "provider":{"mode":"mock"}})).unwrap()).unwrap()
     }
+    #[tokio::test]
+    async fn google_batch_is_accepted_while_busy_and_finishes_as_one_background_job() {
+        let executor = executor();
+        let permit = executor.capacity.acquire().await.unwrap();
+        let mut request = start("batch-job");
+        request.platform = Platform::Android;
+        request.payload = json!({"operation":"update_app_metadata","localizations":[
+            {"locale":"en-US","metadata":{"title":"English"}},
+            {"locale":"ja","metadata":{"description":"Japanese"}}
+        ]});
+        let reply = executor.clone().execute(request.clone()).await;
+        assert_eq!(reply.status, 200);
+        assert_eq!(reply.body["executionStatus"], "queued");
+        let mut query = request.clone();
+        query.operation = Operation::StoreImageSyncStatus;
+        query.payload = json!({"jobId":"batch-job"});
+        assert_eq!(
+            executor.image_jobs.status(&query).unwrap()["status"],
+            "queued"
+        );
+        let duplicate = executor.clone().execute(request).await;
+        assert_eq!(duplicate.status, 200);
+        drop(permit);
+        for _ in 0..100 {
+            let result = executor.image_jobs.status(&query).unwrap();
+            if result["status"] == "succeeded" {
+                assert_eq!(result["result"]["status"], "succeeded");
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("Batch did not complete");
+    }
     fn start(id: &str) -> StoreRequest {
         StoreRequest {
             request_id: id.into(),
