@@ -134,13 +134,29 @@ pub fn validate_trust_files(config: &Path, trust: &Path) -> Result<Trust> {
     }
     Ok(trust)
 }
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Owner {
     schema: u32,
     node_id: String,
     component: String,
     created_at: u64,
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CleanupIntent {
+    schema: u32,
+    node_id: String,
+    name: String,
+    owner: Owner,
+}
+fn cleanup_intent(path: &Path) -> Result<PathBuf> {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| ["candidate", "retired", "program"].contains(n))
+        .ok_or("update_unsafe_path")?;
+    Ok(path.with_file_name(format!(".{name}-cleanup.json")))
 }
 fn mark(path: &Path, node: &str) -> Result<()> {
     atomic(
@@ -189,7 +205,84 @@ fn walk(path: &Path, device: u64, files: &mut usize, bytes: &mut u64) -> Result<
     Ok(())
 }
 fn remove_owned(path: &Path, node: &str) -> Result<()> {
-    if !path.exists() {
+    remove_owned_with(path, node, &mut |path, directory| {
+        if directory {
+            fs::remove_dir(path)
+        } else {
+            fs::remove_file(path)
+        }
+    })
+}
+fn clear_children(
+    path: &Path,
+    top: bool,
+    remove: &mut dyn FnMut(&Path, bool) -> std::io::Result<()>,
+) -> Result<()> {
+    for entry in fs::read_dir(path).map_err(|_| "update_cleanup_pending")? {
+        let entry = entry.map_err(|_| "update_cleanup_pending")?;
+        // Keep the top ownership proof until every other entry has been removed.
+        if top && entry.file_name() == MARKER {
+            continue;
+        }
+        let child = entry.path();
+        let metadata = plain(&child)?;
+        if metadata.is_dir() {
+            clear_children(&child, false, remove)?;
+        }
+        remove(&child, metadata.is_dir()).map_err(|_| "update_cleanup_pending")?;
+    }
+    Ok(())
+}
+fn remove_owned_with(
+    path: &Path,
+    node: &str,
+    remove: &mut dyn FnMut(&Path, bool) -> std::io::Result<()>,
+) -> Result<()> {
+    let intent_path = cleanup_intent(path)?;
+    let intent = match fs::symlink_metadata(&intent_path) {
+        Ok(_) => {
+            let intent: CleanupIntent = serde_json::from_slice(&read(&intent_path, 8192)?)
+                .map_err(|_| "update_unknown_owner")?;
+            if intent.schema != 1
+                || intent.node_id != node
+                || path.file_name().and_then(|n| n.to_str()) != Some(intent.name.as_str())
+                || intent.owner.schema != 1
+                || intent.owner.node_id != node
+                || intent.owner.component != "store"
+            {
+                return Err("update_unknown_owner".into());
+            }
+            Some(intent)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(_) => return Err("update_file_unavailable".into()),
+    };
+    match fs::symlink_metadata(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if intent.is_some() {
+                fs::remove_file(&intent_path).map_err(|_| "update_cleanup_pending")?;
+            }
+            return Ok(());
+        }
+        Err(_) => return Err("update_file_unavailable".into()),
+        Ok(_) => {}
+    }
+    // The only marker-less recovery allowed by the durable intent is an empty
+    // ordinary directory at this exact fixed name. Never adopt files into ownership.
+    if intent.is_some()
+        && fs::symlink_metadata(path.join(MARKER))
+            .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+    {
+        if !plain(path)?.is_dir()
+            || fs::read_dir(path)
+                .map_err(|_| "update_cleanup_pending")?
+                .next()
+                .is_some()
+        {
+            return Err("update_unknown_owner".into());
+        }
+        remove(path, true).map_err(|_| "update_cleanup_pending")?;
+        fs::remove_file(intent_path).map_err(|_| "update_cleanup_pending")?;
         return Ok(());
     }
     check_mark(path, node)?;
@@ -201,7 +294,31 @@ fn remove_owned(path: &Path, node: &str) -> Result<()> {
     #[cfg(not(unix))]
     let device = 0;
     walk(path, device, &mut 0, &mut 0)?;
-    fs::remove_dir_all(path).map_err(|_| "update_cleanup_pending".into())
+    let owner: Owner = serde_json::from_slice(&read(&path.join(MARKER), 8192)?)
+        .map_err(|_| "update_unknown_owner")?;
+    if intent.as_ref().is_some_and(|intent| intent.owner != owner) {
+        return Err("update_unknown_owner".into());
+    }
+    if intent.is_none() {
+        atomic(
+            &intent_path,
+            &serde_json::to_value(CleanupIntent {
+                schema: 1,
+                node_id: node.into(),
+                name: path.file_name().unwrap().to_str().unwrap().into(),
+                owner: owner.clone(),
+            })
+            .map_err(|_| "update_write_failed")?,
+            false,
+        )?;
+    }
+    clear_children(path, true, remove)?;
+    remove(&path.join(MARKER), false).map_err(|_| "update_cleanup_pending")?;
+    if remove(path, true).is_err() {
+        // The durable sibling intent also survives a crash in the marker/rmdir gap.
+        return Err("update_cleanup_pending".into());
+    }
+    fs::remove_file(intent_path).map_err(|_| "update_cleanup_pending".into())
 }
 fn program_hashes(path: &Path) -> Result<BTreeMap<String, String>> {
     if !plain(path)?.is_dir() {
@@ -511,17 +628,19 @@ impl Manager {
             )
         }) {
             let candidate = self.private.join("candidate");
-            if candidate.exists() {
+            let interrupted = fs::symlink_metadata(cleanup_intent(&candidate)?).is_ok();
+            let immediate = transaction.as_ref().is_some_and(|t| {
+                matches!(
+                    t.phase.as_str(),
+                    "succeeded" | "rolled_back" | "cleanup_pending"
+                )
+            });
+            if interrupted || immediate {
+                remove_owned(&candidate, &self.trust.node_id)?;
+            } else if candidate.exists() {
                 let m: Owner = serde_json::from_slice(&read(&candidate.join(MARKER), 8192)?)
                     .map_err(|_| "update_unknown_owner")?;
-                if store_update::now().saturating_sub(m.created_at) > 86400
-                    || transaction.as_ref().is_some_and(|t| {
-                        matches!(
-                            t.phase.as_str(),
-                            "succeeded" | "rolled_back" | "cleanup_pending"
-                        )
-                    })
-                {
+                if store_update::now().saturating_sub(m.created_at) > 86400 {
                     remove_owned(&candidate, &self.trust.node_id)?;
                 }
             }
@@ -1432,6 +1551,45 @@ mod tests {
         let _ = server.await;
     }
     #[tokio::test]
+    async fn manager_resumes_interrupted_candidate_cleanup_without_a_marker() {
+        for phase in ["failed", "rolled_back"] {
+            let (_dir, manager, state, server) = fixture("9.0.0").await;
+            let command = state.command.lock().unwrap().clone().unwrap();
+            let mut t = manager.download(command).await.unwrap();
+            t.phase = phase.into();
+            manager.save(&t).unwrap();
+            let candidate = manager.private.join("candidate");
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                remove_owned_with(
+                    &candidate,
+                    &manager.trust.node_id,
+                    &mut |entry, directory| {
+                        if entry == candidate && directory {
+                            panic!("simulated_power_loss");
+                        }
+                        if directory {
+                            fs::remove_dir(entry)
+                        } else {
+                            fs::remove_file(entry)
+                        }
+                    },
+                )
+            }));
+            assert!(result.is_err());
+            assert!(!candidate.join(MARKER).exists());
+            manager.step().await.unwrap();
+            assert!(!candidate.exists());
+            assert!(!cleanup_intent(&candidate).unwrap().exists());
+            assert!(manager.transaction().unwrap().unwrap().reported);
+            assert_eq!(
+                read(&manager.root.join("data/credentials/key"), 128).unwrap(),
+                b"private-key"
+            );
+            server.abort();
+            let _ = server.await;
+        }
+    }
+    #[tokio::test]
     async fn interrupted_upgrade_never_stops_or_moves_a_manually_replaced_program() {
         let (_dir, manager, state, server) = fixture("9.0.0").await;
         let command = state.command.lock().unwrap().clone().unwrap();
@@ -1522,6 +1680,80 @@ mod tests {
         }
         remove_owned(&p, "node").unwrap();
         assert!(!p.exists());
+    }
+    #[test]
+    fn locked_file_or_directory_keeps_ownership_for_cleanup_retry() {
+        for lock_directory in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("retired");
+            private_dir(&path).unwrap();
+            mark(&path, "node").unwrap();
+            let original = read(&path.join(MARKER), 8192).unwrap();
+            private_dir(&path.join("program")).unwrap();
+            fs::write(path.join("program/locked-binary"), b"old").unwrap();
+            let outside = dir.path().join("credentials");
+            fs::write(&outside, b"keep").unwrap();
+            let mut remove = |entry: &Path, directory: bool| {
+                if (lock_directory && entry == path)
+                    || (!lock_directory && entry.file_name().is_some_and(|n| n == "locked-binary"))
+                {
+                    return Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied));
+                }
+                if directory {
+                    fs::remove_dir(entry)
+                } else {
+                    fs::remove_file(entry)
+                }
+            };
+            assert!(remove_owned_with(&path, "node", &mut remove).is_err());
+            if lock_directory {
+                assert!(!path.join(MARKER).exists());
+                let intent: CleanupIntent =
+                    serde_json::from_slice(&read(&cleanup_intent(&path).unwrap(), 8192).unwrap())
+                        .unwrap();
+                assert_eq!(
+                    serde_json::to_value(intent.owner).unwrap(),
+                    serde_json::from_slice::<Value>(&original).unwrap()
+                );
+            } else {
+                check_mark(&path, "node").unwrap();
+                assert_eq!(read(&path.join(MARKER), 8192).unwrap(), original);
+            }
+            remove_owned(&path, "node").unwrap();
+            assert!(!path.exists());
+            assert_eq!(fs::read(outside).unwrap(), b"keep");
+        }
+    }
+    #[test]
+    fn interrupted_cleanup_recovers_only_the_exact_empty_owned_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("retired");
+        private_dir(&path).unwrap();
+        mark(&path, "node").unwrap();
+        fs::write(path.join("binary"), b"old").unwrap();
+        let interrupted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            remove_owned_with(&path, "node", &mut |entry, directory| {
+                if entry == path && directory {
+                    panic!("simulated_power_loss");
+                }
+                if directory {
+                    fs::remove_dir(entry)
+                } else {
+                    fs::remove_file(entry)
+                }
+            })
+        }));
+        assert!(interrupted.is_err());
+        assert!(!path.join(MARKER).exists());
+        assert!(cleanup_intent(&path).unwrap().exists());
+        assert!(remove_owned(&path, "other-node").is_err());
+        fs::write(path.join("unknown"), b"keep").unwrap();
+        assert!(remove_owned(&path, "node").is_err());
+        assert_eq!(fs::read(path.join("unknown")).unwrap(), b"keep");
+        fs::remove_file(path.join("unknown")).unwrap();
+        remove_owned(&path, "node").unwrap();
+        assert!(!path.exists());
+        assert!(!cleanup_intent(&path).unwrap().exists());
     }
     #[test]
     fn packages_reject_unknown_paths_links_and_duplicate_entries() {
