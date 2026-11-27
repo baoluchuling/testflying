@@ -818,10 +818,9 @@ impl Manager {
             self.log("", "cleanup_pending", Some(&code));
         }
         if let Some(mut t) = self.transaction()? {
-            if matches!(t.phase.as_str(), "succeeded" | "failed" | "rolled_back") && !t.reported {
-                if self.report_terminal(&mut t).await.is_err() {
-                    return Ok(());
-                }
+            if matches!(t.phase.as_str(), "succeeded" | "failed" | "rolled_back") && !t.reported
+                && self.report_terminal(&mut t).await.is_err() {
+                return Ok(());
             }
             if matches!(t.phase.as_str(), "succeeded" | "failed" | "rolled_back") {
                 self.clear_maintenance(&t)?;
@@ -1036,7 +1035,10 @@ fn available_space(path: &Path) -> Result<u64> {
             return Err("update_space_unavailable".into());
         }
         let info = unsafe { info.assume_init() };
-        Ok((info.f_bavail as u64).saturating_mul(info.f_frsize as u64))
+        // Counter widths differ between macOS and Linux statvfs definitions.
+        #[allow(clippy::unnecessary_cast)]
+        let available=(info.f_bavail as u64).saturating_mul(info.f_frsize as u64);
+        Ok(available)
     }
     #[cfg(windows)]
     {
