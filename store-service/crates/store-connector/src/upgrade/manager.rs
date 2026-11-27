@@ -1246,9 +1246,15 @@ mod tests {
     #[tokio::test]
     async fn upgrade_waits_for_work_confirms_health_then_keeps_one_rollback_and_no_package() {
         let (_dir, manager, state, server) = fixture("9.0.0").await;
-        let older=manager.private.join("previous");private_dir(&older).unwrap();mark(&older,&manager.trust.node_id).unwrap();
-        fs::write(older.join(binary()),fake_binary("0.5.0")).unwrap();
-        fs::write(older.join("testflying-prod-ca.crt"),include_bytes!("../../../../deploy/testflying-prod-ca.crt")).unwrap();
+        let older = manager.private.join("previous");
+        private_dir(&older).unwrap();
+        mark(&older, &manager.trust.node_id).unwrap();
+        fs::write(older.join(binary()), fake_binary("0.5.0")).unwrap();
+        fs::write(
+            older.join("testflying-prod-ca.crt"),
+            include_bytes!("../../../../deploy/testflying-prod-ca.crt"),
+        )
+        .unwrap();
         let old = program_hashes(&manager.root.join("program")).unwrap();
         let command = state.command.lock().unwrap().clone().unwrap();
         let mut t = manager.download(command).await.unwrap();
@@ -1458,16 +1464,38 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn recovery_does_not_stop_worker_when_program_is_a_dangling_link() {
-        let (_dir,manager,state,server)=fixture("9.0.0").await;
-        let command=state.command.lock().unwrap().clone().unwrap();let mut t=manager.download(command).await.unwrap();
-        state.ready.store(true,Ordering::SeqCst);assert!(manager.wait_ready(&t).await.unwrap());manager.apply(&mut t).await.unwrap();
-        fs::rename(manager.root.join("program"),manager.root.join("manual-backup")).unwrap();
-        std::os::unix::fs::symlink(manager.root.join("missing"),manager.root.join("program")).unwrap();
-        t.phase="switching".into();manager.save(&t).unwrap();manager.step().await.unwrap();
-        assert_eq!(manager.transaction().unwrap().unwrap().error_code.as_deref(),Some("update_program_changed"));
-        assert_eq!(read(&manager.root.join("running"),128).unwrap(),b"yes");
-        assert!(fs::symlink_metadata(manager.root.join("program")).unwrap().file_type().is_symlink());
-        server.abort();let _=server.await;
+        let (_dir, manager, state, server) = fixture("9.0.0").await;
+        let command = state.command.lock().unwrap().clone().unwrap();
+        let mut t = manager.download(command).await.unwrap();
+        state.ready.store(true, Ordering::SeqCst);
+        assert!(manager.wait_ready(&t).await.unwrap());
+        manager.apply(&mut t).await.unwrap();
+        fs::rename(
+            manager.root.join("program"),
+            manager.root.join("manual-backup"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(manager.root.join("missing"), manager.root.join("program"))
+            .unwrap();
+        t.phase = "switching".into();
+        manager.save(&t).unwrap();
+        manager.step().await.unwrap();
+        assert_eq!(
+            manager
+                .transaction()
+                .unwrap()
+                .unwrap()
+                .error_code
+                .as_deref(),
+            Some("update_program_changed")
+        );
+        assert_eq!(read(&manager.root.join("running"), 128).unwrap(), b"yes");
+        assert!(fs::symlink_metadata(manager.root.join("program"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        server.abort();
+        let _ = server.await;
     }
     #[test]
     fn cleanup_only_owned_trees_and_never_follows_symlinks() {

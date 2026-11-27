@@ -25,10 +25,10 @@ fn prune(db: &Connection) -> Result<()> {
     let now = store_update::now();
     db.execute(
         "DELETE FROM store_upgrade_batches WHERE created<?1",
-        [now.saturating_sub(RETENTION)],
+        [now.saturating_sub(RETENTION) as i64],
     )
     .map_err(database_error)?;
-    db.execute("UPDATE store_upgrade_commands SET state='expired' WHERE state NOT IN ('succeeded','rolled_back','failed','skipped','expired') AND batch IN (SELECT id FROM store_upgrade_batches WHERE expires<=?1)",[now]).map_err(database_error)?;
+    db.execute("UPDATE store_upgrade_commands SET state='expired' WHERE state NOT IN ('succeeded','rolled_back','failed','skipped','expired') AND batch IN (SELECT id FROM store_upgrade_batches WHERE expires<=?1)",[now as i64]).map_err(database_error)?;
     Ok(())
 }
 fn read(db: &Connection, id: &str) -> Result<Batch> {
@@ -240,8 +240,8 @@ impl Registry {
             "INSERT INTO store_upgrade_batches VALUES(?1,?2,?3,?4,?5)",
             params![
                 id,
-                now,
-                now + 86400,
+                now as i64,
+                (now + 86400) as i64,
                 version,
                 serde_json::to_string(&batch).expect("upgrade batch")
             ],
