@@ -1,11 +1,11 @@
 {
-  "runId": "ac71d4bc52f24f05b4b00f148309e6a2",
-  "finishedAt": "2026-11-26T10:06:09.506803+00:00",
-  "sourceCommit": "0699e63bde4bdec0f0eb4c1b3cc070384c37b84b",
-  "scope": "screenshot-skill-content-review-and-production-environment",
+  "runId": "0dda63115e5047d6a9b52073cb51bf88",
+  "finishedAt": "2026-11-27T03:59:46.214809+00:00",
+  "sourceCommit": "cd060e1a68d76ba7f057fe1cb1e0afbf58632c1e",
+  "scope": "iOS/Android multi-language metadata and image batches, account platform labels",
   "sourceHashes": {
     "AGENTS.md": "14fef86e522a3621beaee3c9b1d33bf31a9b8329d681c6a891ea5cfe9e0adfae",
-    "Cargo.lock": "12cf00bb096ce8c0f7303e8fa9dd164bbf4d39c5939dcd81d780f4b15a72fc47",
+    "Cargo.lock": "c13ef17be1716f6075b898b6c3b610b226108db2bc270a759f19144204c9a3df",
     "Cargo.toml": "949dedcdac4f97570336bfe7ca72500d676ff1d15f39d6f0b4ee1823d555d233",
     "crates/screenshot-connector/Cargo.toml": "7f2ac7e39147c86211706e0888bcdf9b9fc7883f6dd172118f2cb83751f9bc66",
     "crates/screenshot-connector/src/codex_runtime.rs": "ae7a5abb8826e1c6fb9cd5ec41afa4b947b69a68fc6837735ae31eeb72e0d3e1",
@@ -15,15 +15,15 @@
     "crates/screenshot-connector/src/main.rs": "6b64ddf137a2aa4bc06da323b039fd3687b98fe7d93693d5f36792403f39e77d",
     "crates/screenshot-connector/src/skill.rs": "43d80099a23fd2dc7f5169df319df60153c1bab98f8fe4ed5a63071ccd81afff",
     "crates/screenshot-connector/src/worker.rs": "08e6e2192e4f12791232d25e6f971f678a77e56d476757015e7c88f9e2a20de8",
-    "crates/store-api/Cargo.toml": "e185d3a6764148cce85f32ff5e2b1b9cf7fcd56a837cacb64bd062ba7dbde6b6",
+    "crates/store-api/Cargo.toml": "4f1cf96662bbff46dcc344d9aac399628edf8c87b7fa23f0898cac799d382fee",
     "crates/store-api/src/accounts.rs": "d0abb1577979330e3e3e7605bbdb216bf81a48d3e1b21dcffcc74063a171376a",
-    "crates/store-api/src/api_docs.rs": "7a984c716a1d1095edcf009a4168620c33f7d7042619e0ad61a159177944e470",
+    "crates/store-api/src/api_docs.rs": "afe491afc1443b0625b7ae64a6549ca1d5ce50d100a666b374b114addf89bff8",
     "crates/store-api/src/firebase.rs": "96881080779df3cdb3cd4459ddfe26499aa8bbb51e9ad0d0c4bcef6eb12ed05a",
     "crates/store-api/src/forwarding.rs": "ab7e6affc0bdcb45279c23cad3b063d7ad1911606d8fc85d797bff0b0657e96b",
     "crates/store-api/src/installer_assets.rs": "d72bb77eae5348dea41c88b6fedb3980b512856218a7834f44dc83b481035bf4",
     "crates/store-api/src/integrations.rs": "d0e11961e2ebb95ee69b543390211640519239fe0345180269b22e1b705df834",
-    "crates/store-api/src/lib.rs": "323005fa52bbb49a50adfadd1ae920042776c254652e54bb1fe4932de4d60f24",
-    "crates/store-api/src/logs.rs": "03ee7fc7a2509e1efd24596347830b1992edbc90545be8b30ecd6875575a8367",
+    "crates/store-api/src/lib.rs": "7d042727b57e758ef39bf57ce03782d05cbff7ee423878fd03a142d8b1f702f8",
+    "crates/store-api/src/logs.rs": "8206f5c371d16762224a5e4bcfeae3614e6a8f0a346bfcb04a068759d8eabf27",
     "crates/store-api/src/main.rs": "4e43e0aa15d09f1de3a46816ca97e667b16a1925bb0652988e0df98873232e12",
     "crates/store-api/src/node_logs.rs": "0d1de46d19ddfd3c40b8d3b0f9fa7ddb08c15da4ca2c44ae0c95b54d93fb2f8f",
     "crates/store-api/src/registry/accounts.rs": "c184d97bc77345ae6a557530ca3eec46d0deacecc28066d11bbc9199b7260638",
@@ -43,10 +43,10 @@
     "crates/store-api/src/screenshots/oss.rs": "b0db09b4b04b9a3e634b6d6ba9cd912fa8a72611f6c24d3d988d07d312ddc60e",
     "crates/store-api/src/screenshots/review.rs": "1838146be616d2709d9d1e620c68ae98f6e65f245f8ec5fa06956427a5eb8391",
     "crates/store-api/src/screenshots.rs": "8d8dfaee5e12c3cb6b4f8503b8272a49aeb00a133cd7804bfff749fef2336b25",
-    "crates/store-api/src/setup/accounts.mjs": "2a9316501a88bddabf4b0498aa309ec2c73058246523a0c25e3a5b0e1c8ac03f",
+    "crates/store-api/src/setup/accounts.mjs": "cd64873b19e5136cabb6803b945d4ff651ba558b3cd2b79d3b3fefe5707c60f6",
     "crates/store-api/src/setup/app.mjs": "5c4e09879eef4c433843d5ef4a2011fbf7ef08c0f80799ea661e2d36e06417e3",
     "crates/store-api/src/setup/forwarding.mjs": "04a01dacf546f66786f9cc440fae66ee77fd031d752ac5d07ce7c4efa9a6cc7b",
-    "crates/store-api/src/setup/index.html": "a05e8864a1c936360379055cb3fe61b17026d9f3e1cdb8fbb3ded80b408c4995",
+    "crates/store-api/src/setup/index.html": "9dffd378693e8712ca875ee6c7f8a88fc1e4e84f9232a8577180d1d7133594e5",
     "crates/store-api/src/setup/integrations.mjs": "1e12510de9980e761afeb0b67e19d27d221d2ca19f416804f7b1fc1e66edd172",
     "crates/store-api/src/setup/logs.mjs": "f2e0f8ff2929fbd6fae9dddef2ad60d009324fb1aade4253285bf2dd8f6d5670",
     "crates/store-api/src/setup/packager.mjs": "71d28c5d380b145646974b340ff30f27593148d554cac0078c93832525e19484",
@@ -62,7 +62,7 @@
     "crates/store-api/src/uploads.rs": "3af96d953ff1b2f6b5903f57ce9af49366f81922dd51ec24d31ce18a1f61a428",
     "crates/store-api/tests/account_screenshot_bindings.rs": "cdf2b60ca8ebf93854757584e279c1974911926f40b353b21213cb20ecfab216",
     "crates/store-api/tests/accounts.rs": "08cc7506e4068dabba7a910891d42ce6df5629bb4eb81cef621ae2472c9dd9ac",
-    "crates/store-api/tests/api_docs.rs": "97e25188c6846ad0968d7bbf69a812e2b792c8b4a6a8aef018808ad0662a4243",
+    "crates/store-api/tests/api_docs.rs": "f2740c94ea9e6d9e83b84ed926f4cecbe888bfbe1e2c4925c48948e0787866a7",
     "crates/store-api/tests/catalog_identity.rs": "87e4b4cf74a8004d1f9b003f96ee6e8d037ead9103066de977d38762668fc0ab",
     "crates/store-api/tests/firebase.rs": "d9a86dbcfabbff78db087f138b49e7571a88b2f13569cff2da9fa311ba333aca",
     "crates/store-api/tests/forwarding.rs": "51c5594732a0327ab8ed822c72aecff2123dc8e26f3eb2dadf1c2a65d4d19e20",
@@ -70,18 +70,18 @@
     "crates/store-api/tests/screenshot_settings.rs": "0fd34edc8cc16dbe1e6622003df186ea14a07587b86eef3d91443fc2b6220065",
     "crates/store-api/tests/screenshot_skill.rs": "cd264232bc529c3268c5933d444061ddb573a7f1548ec37635a1834967b5f650",
     "crates/store-api/tests/screenshots.rs": "f8f6d15f54ba4618ebba24f23edf22aed6997f2b471cc63ef9fb5ad9c5c23ace",
-    "crates/store-api/tests/service.rs": "77cea85f2236441490990e89a6f829058cf6a705c43ea8a8379146241b4875eb",
+    "crates/store-api/tests/service.rs": "6b8f70b06c492f27b261da8e307a13d62f85459e0372a4e9d19bab19e9f67207",
     "crates/store-api/tests/setup-package.test.mjs": "c2d0b49fa385a18820e04c7ce20f3df18bb3596bc449ca4032f6ffd3706415bf",
     "crates/store-api/tests/setup.rs": "44d47b52c5fa64a742d91484b086ca6517ee2a43980dcb2c96579d078db7bc59",
-    "crates/store-api/tests/store_jobs.rs": "a11546b385cc1d1b4e4d1f53faaf55ab87bf9a29d55ab43dd877ce8e438e7722",
+    "crates/store-api/tests/store_jobs.rs": "1b39dca9f23913c76393c75b3be6278ab09ab76f2bfa3cea74d6f2e748be50cb",
     "crates/store-api/tests/support/mod.rs": "4ffee413b253548e079e10e327515bfb8b52ad5adff36fac19a0b81fb553da55",
     "crates/store-api/tests/uploads.rs": "f295d3cef48bbfdb94e84ed56e14b51174bc2157f2780370c45e9860bf55af8d",
-    "crates/store-connector/Cargo.toml": "28998899d1e1b2216acb8a15dbd46563992353a07e055dee059a9fb9763b2297",
+    "crates/store-connector/Cargo.toml": "1a65afb52683b31b71870d866bbc4541b61718f971dd5897655ad55cbaeeeea3",
     "crates/store-connector/src/catalog.rs": "d911517f8e8af48bf085aad85c121e39ede3eaaf2d6d39827581fe1292c34d4d",
     "crates/store-connector/src/firebase.rs": "a2301d0208396e64b8f83254a267b562d8c97999d7d3e680df17d785355f50e7",
-    "crates/store-connector/src/image_jobs.rs": "03af69859d7b378fc3f7e534917e85a21ca84fa615fc50b7493e1b85e16844ab",
+    "crates/store-connector/src/image_jobs.rs": "eb222a17fb5cfaf31ea71008a2e88b484af46d98368d3c83288ee9a93a3979eb",
     "crates/store-connector/src/install.rs": "3b24d4ee087b555a4c88455d8b2bfc968f3c5e9cfe71aea6cbfd72c76ef00228",
-    "crates/store-connector/src/lib.rs": "d19fd70e2e3484f8ec98f0d4d3ffffbe19d8e7219e61c70f51ffe26ea95cc400",
+    "crates/store-connector/src/lib.rs": "897634aaba3965d9bac0022819365e35d8b66bfb72ee99f0e41a9c49f08f8fb3",
     "crates/store-connector/src/main.rs": "8394c364339e34a3db8c5f03071b13fa961610a240090bf189e3e020484b5903",
     "crates/store-connector/tests/platform_mode_test.rs": "967b39964b3693878d55208a8b3e9e97302bfff6cc96c9baf28a41564a19a6cc",
     "crates/store-protocol/Cargo.toml": "b07d769e261cd4d511254c8660cee897b20f6d0fe816f4376832de649cd5d8bc",
@@ -97,25 +97,26 @@
     "crates/store-protocol/src/upload.rs": "da23d9a5a4060c0bb6afc8e9f1d86a54e9858bce3c2f8ecd072185a4e9b43d9d",
     "crates/store-protocol/tests/security.rs": "90d7052c2cc474b0e0fabc7bd92adb0b154b1a0e29782956db46f1a8faead00a",
     "crates/store-provider/Cargo.toml": "f8a19445e7fe7b53e880ac061c14087b83c2fea962e9e2b4afbd043cae4b71f7",
-    "crates/store-provider/src/apple.rs": "810e01035e31c6de361993a1e889c13951bab8f8cdb940895f8a6d7f0cb255fd",
+    "crates/store-provider/src/apple.rs": "c6fd6107b53dd79893df622572146dd0c66f6b957962aec72bf3df9090a3ef62",
     "crates/store-provider/src/apple_image_upload.rs": "9bc0691c2ac8c63cf325c61b9565280374e733822af8106111365ca60f12f66c",
     "crates/store-provider/src/apple_images.rs": "f2ea3811e07a3ed95efa9ef84d6ee494677fb1908ed856c7bf98ea6e4f67e5ca",
-    "crates/store-provider/src/assets.rs": "c5c8c1e4e41f9cee88413a989a6c1d9275e4b71dbcb11713a2733ec669ae414b",
+    "crates/store-provider/src/assets.rs": "ab9fa818d0402c43346d8a520f3e0f95e868e4212b343e6126d4b92c302fc066",
     "crates/store-provider/src/catalog.rs": "2b32f0d8ba32650fc8e85a8eb45bc85b3144b9838bbebabe46c8c554912a1387",
-    "crates/store-provider/src/diagnostics.rs": "d47ba3ac80db345367e709ee136cc2b823a355b1676f5b20b59e58c77b369aa7",
+    "crates/store-provider/src/diagnostics.rs": "391a35b3f0cb88cabfca478df904e4ee896b6a54743b96ee319d2a74a4873c19",
     "crates/store-provider/src/firebase.rs": "65ccd22a0d621269e847a33bd007372c13eda39f2774c673b3db5f9b28267a09",
     "crates/store-provider/src/firebase_tests.rs": "711f05fea6bae148fca0c110942d1e28e58b92cd8638031bf17fe41902e6230f",
-    "crates/store-provider/src/google.rs": "b76006884e7cb374c7724f43a02bbb66bc08b8f24f7e3b2c28eaac4f1d2296c1",
+    "crates/store-provider/src/google.rs": "eb673696c14136c1c762bc0b3b05250ca48102dba7bf7908b6d37be35a7ee23f",
     "crates/store-provider/src/image_query.rs": "3a3b854d55929a2394bc6d22b1b5f7d19c6d74887b0f691bd63163a2f26db1d8",
     "crates/store-provider/src/images.rs": "c109857ca946c7944279c74fed301e9216da217ff74f56ffa22f903f9a03d666",
-    "crates/store-provider/src/lib.rs": "821ff25c4d92b09b4c341e26e0151889be4dd9396c07597827b05028999df75e",
+    "crates/store-provider/src/lib.rs": "833761e5f5c1ac65db0b715bd0af5756dfec8f428b01064d64c815655f0a8d10",
+    "crates/store-provider/src/multilocale.rs": "39ee6961e673e7616f137a471eabc184041dff23a5322ef28f525b375c0de8ba",
     "crates/store-provider/src/reviews.rs": "f4dd91ff8620eea070cc8a97bfc5d0cab08bf56583d706009793ed5327393f3b",
     "crates/store-provider/src/upstream_error.rs": "f8a9046c7fb35e0854775fe8d8189f0ef0103467c96323849b17e721564f682c",
-    "crates/store-provider/src/validation.rs": "1dc036d75232ef1f95cc6491d8cd9407ce302bf759676013b95d04dc959cf293",
-    "crates/store-provider/tests/live.rs": "483ef27ae7fc6aa53d4cd987c2aa22b5773f1b0bbf493195bff5ec334ce62b7b",
+    "crates/store-provider/src/validation.rs": "b74af55e8143581412206ba71e4dd360a307322c015d0fd9e1cd1970b1c2402d",
+    "crates/store-provider/tests/live.rs": "3bd64bfbe86abc2ede62d233f2605efac66d4bbbd04caa068447fa0424afd85a",
     "deploy/testflying-prod-ca.crt": "d6a6874992dd6197da68c43037ab176cd3d7f7ce7be2966706293dc499443296",
-    "docs/openapi.yaml": "28168063cfaa2804e5be57d6e9ef65753901c98e3c7aba1b16eefc1d48ddbcec",
-    "docs/store-api.md": "09f1fd25e87fd0a17e61207361db5a068ce7257935a3d818b2950fa201df5bb5",
+    "docs/openapi.yaml": "f84325d578fa485ce401cf388c226d04269daac1db97211c403148547e033927",
+    "docs/store-api.md": "00499c9e2c86c993f07c73801aeceb30476f61d651318f6810b0b53c8816e6cf",
     "examples/connector-google.json": "0844ade027845ef768343bcb65415c5114b082133a382448905b2a74f8c8e709",
     "examples/connector.json": "1e294f020302b6585f830ab79f07325acbe10b77ef42a6c14b9f81fe99edc89c",
     "packaging/connector/README.md": "711bef5e0a758d0d7a857326e9ab1c1973ae8ff930d2590eea593e5a09aeefad",
@@ -124,7 +125,7 @@
     "packaging/connector/install.sh": "d2e1dc66abe6394e622c7510098571e57fd36e577306db59012ebc97e53b4cb6",
     "packaging/connector/start.cmd": "8d004a7f62d2a5028b308d4c6f22d3dcece518ec4eb2f4543614718c5e8ad5e5",
     "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
-    "packaging/connector-versions.json": "cf847086d8215715ccd5bffed0869c7283a7b2554f024f01a2d9e502dee5114d",
+    "packaging/connector-versions.json": "6dfff629ae2d9bda93319338a25039294e913d29cf3a65133b8d1178c6d677f2",
     "packaging/screenshot-connector/README.md": "a4eaea6b1297a386765b5cae0345186232fdeca1a7e5e90d945953ae9a3e8f01",
     "packaging/screenshot-connector/install.sh": "68f3864acff942b8a063c9fcd704cccbc74a8b66580fd78afdd5ad8e716421a7",
     "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7",
@@ -135,7 +136,7 @@
     "scripts/component_release.py": "56130daf6e88f871cf42acd96e14e6d2c181ea8aee1e8c90524b9e67631397a6",
     "scripts/connector_release.py": "16b712b4dbd6f4d4fee0487096ba175d86fbf81118998120515818b815b05040",
     "scripts/deploy_prod.py": "f80ed1fcd3a726495cf0902031135ed19ba7358726755116e66af74081af777a",
-    "scripts/deploy_setup.py": "e3f5d5e8c71860c4e1f186ce6f8933c9c53c7fdd3b3b5dd46434d6cee3eed05e",
+    "scripts/deploy_setup.py": "74f882d946572ef275ad35e511b3845c5fb4a767256f5924dbb22652a0bd51b7",
     "scripts/enable_http.py": "76d3c0c72270be678ae3992da3332e8d9a3390489c775309cc0eec57c4d8b85d",
     "scripts/managed_workspace.py": "840a77c1c75de77372bacfcbd5049179340a5e910923f30b4a7ed0828a37e203",
     "scripts/publish_github_release.py": "a391d985639c35ce6a4e5b2ab8299aee94e2d3ac06db8e82bccfec2e5107d0a4",
@@ -146,123 +147,194 @@
     "scripts/test_connector_release.py": "eb806f67678691591053dbb3a7e9eea90d302caccc02e442d8ea885f9ad5aa01",
     "scripts/verify_connector_install.py": "b63a304e643edcd8983988d0efd64e76fae4dc845c8accd6fc92b9aab2af3c6c",
     "scripts/verify_screenshot_install.py": "515ece58dc92bb8165a1ac1613e6a0bc270c400c4edc803ab0c32641936c47c9",
-    "scripts/verify_setup_ui.mjs": "6da4c9641dc124244dec101cf0cf12cc3e92c03440b486979dcb031111a386ed",
+    "scripts/verify_setup_ui.mjs": "a94000011a822974c9d97806211df2a0898088a69acc471dff0006fd5b8390d0",
     "scripts/verify_setup_ui.py": "fe7a011495656968f6f3a97bbef72473c8d3c1a3f3e48601534ae5fac359e118",
     "scripts/verify_store_refactor.py": "ebaa25ef57d06b216907521f2e6d501145ac2fce12cbfac5a9aaa344bf4cc588"
   },
   "checks": [
     {
       "command": [
-        "/opt/homebrew/opt/python@3.14/bin/python3.14",
-        "-B",
-        "scripts/publish_screenshot_skill.py",
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
         "--check"
       ],
-      "exitCode": 0
+      "exitCode": 0,
+      "testSummaries": []
     },
     {
-      "check": "Exact active bundle hash and maintained base files match committed 3acf1ad",
-      "passed": true
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "store-provider",
+        "--test",
+        "live",
+        "apple_multilocale"
+      ],
+      "exitCode": 0,
+      "testSummaries": [
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 48 filtered out; finished in 11.16s"
+      ]
     },
     {
-      "check": "Component production inputs and all published program hashes unchanged",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "store-provider",
+        "--test",
+        "live",
+        "google_multilocale"
+      ],
+      "exitCode": 0,
+      "testSummaries": [
+        "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 47 filtered out; finished in 14.57s"
+      ]
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "store-api",
+        "-p",
+        "store-provider",
+        "-p",
+        "store-connector"
+      ],
+      "exitCode": 0,
+      "testSummaries": [
+        "test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s",
+        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.32s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.31s",
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.91s",
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.69s",
+        "test result: ok. 52 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 215.37s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+      ]
+    },
+    {
+      "command": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "-p",
+        "store-api",
+        "-p",
+        "store-provider",
+        "-p",
+        "store-connector",
+        "--all-targets",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exitCode": 0,
+      "testSummaries": []
+    },
+    {
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "-B",
+        "scripts/test_connector_release.py"
+      ],
+      "exitCode": 0,
+      "testSummaries": [
+        "Ran 26 tests in 31.704s"
+      ]
+    },
+    {
+      "check": "Current OpenAPI YAML and all local references",
       "passed": true
     }
   ],
-  "skillValidation": {
-    "baseVersion": "82c6ce5a619f158c7580bdc1be333fe8f0aaff0a69bd2fe3c0c1ab59f4945b51",
-    "expectedVersion": "67c0c57a96fc3c1762bf41d74807477a01e320a22ce41eb0634e1917f3fe9693",
-    "unchangedFiles": 17,
-    "validated": true
+  "testsPassed": 243,
+  "focusedTestsPassed": 9,
+  "releaseTestsPassed": 26,
+  "browserVerification": {
+    "runId": "689bb04c27c049c3ae1377abaa876cc9",
+    "production": false,
+    "checks": 33,
+    "reportSha256": "dc1cbad6820ce86d503e450a9054779702f93490f29f94e1a856167b0c38e60c"
   },
   "componentVersions": {
-    "center": "0.1.1",
-    "store": "0.2.8",
+    "center": "0.1.2",
+    "store": "0.2.9",
     "screenshot": "0.2.11"
   },
-  "componentsToBuild": [],
-  "manualScenarioReview": [
-    {
-      "scenario": "Male open shirt and bare chest on lower card in supplied tablet image",
-      "expected": "Reject visible candidate; select permitted real content and retake full image",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Female cleavage or exposed thighs, underwear or sexualized pose on a thumbnail",
-      "expected": "Reject even when main card is clean",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Characters kissing or excessive intimacy in background",
-      "expected": "Reject regardless of image size or art style",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Normal clothing and side-by-side standing or hand holding",
-      "expected": "Do not classify as sexual solely because of a romantic relationship",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Normal image but a title romanticizes bullying; or explicit sexual, violent, criminal text",
-      "expected": "Reject based on text; read semantics rather than image-only or isolated keyword matching",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Private data or misleading store ranking claim",
-      "expected": "Do not deliver; use permitted real alternatives without editing pixels or sensitive data",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Book ranking inside actual app UI",
-      "expected": "Do not automatically confuse content ranking with store performance claims",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Safe content unavailable within requested target",
-      "expected": "Keep target incomplete, follow two first-pass attempts and deferred backfill; do not delete collections or alter online data",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Release build but observed API host is a test endpoint",
-      "expected": "Not production; configure the real production environment and verify running app, or keep a concrete gap",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Production config with no observed runtime evidence",
-      "expected": "Do not claim production from build label/config alone; inspect necessary evidence without unrelated functional testing",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Production config and target-page runtime host match; H5 remote hosts also match where applicable",
-      "expected": "Environment condition satisfied; still review content and target requirements",
-      "kind": "manual instruction review; not a model run"
-    },
-    {
-      "scenario": "Upload or discard outcome unknown while candidate is rejected",
-      "expected": "Confirm same operation before replacing or skipping; keep external format unchanged",
-      "kind": "manual instruction review; not a model run"
-    }
+  "componentsToBuild": [
+    "center",
+    "store"
   ],
-  "testsPassed": 0,
-  "previousBinaryVerification": {
+  "retainedScreenshotOutput": {
+    "component": "screenshot",
+    "version": "0.2.11",
+    "sourceFingerprint": "2904f49c9648336b1d1488ca9747a46627d2741f61bbb47e48a253c832ddce8f",
+    "sourceHashes": {
+      "Cargo.lock": "fe8a2327f1825cc5d3d474d129a9ff9fd270649e8112a2ba1f993fd1b217141b",
+      "Cargo.toml": "69c870def484fa1146ce65f447461f61a1a1ace065678199920ea9c92985d298",
+      "crates/screenshot-connector/Cargo.toml": "fc12a2510a6fc93dbd2b68e09c1c2dbc302e1b2ba03357945d11c69be4310faf",
+      "crates/screenshot-connector/src/codex_runtime.rs": "195e72e42c1b9cfca4c6d709d9582290d253abd726d997706407b59e695b058c",
+      "crates/screenshot-connector/src/connector.rs": "7a1a13c6b65caf5a4dbbec3a19ab65747e8f1ef33fdfdc69a043e90e5950b15a",
+      "crates/screenshot-connector/src/diagnostic.rs": "b3f7d687b7c842b5bf3a920ac01067449db78acd685ea82dd07b1a361332cd48",
+      "crates/screenshot-connector/src/goal.rs": "2dbd9ed27b822266b2ecee3936e20f65148d9006e5f9e9b3751018c0eb7c64a1",
+      "crates/screenshot-connector/src/main.rs": "041d70f19860442c22b89fa404ebe6757a19cf359cf2c5f771c320a9e165cc06",
+      "crates/screenshot-connector/src/skill.rs": "499818db87cb35e3372558fb383f288e0b0ff58f94f73cf43ec9e0a5f31e65e6",
+      "crates/screenshot-connector/src/worker.rs": "8269845b7a35927deff1296c5afcfa8e3742dac17c39d19f4ab512d99f09fc81",
+      "crates/store-api/src/lib.rs": "c3e091452a563d79a5f93d9740914d5549761b6dff7f3f8706eee02fbf75d663",
+      "crates/store-api/src/screenshots.rs": "645deb2dae5ab32a5d2bfe56eb2fc97a9c66bb03a888363f742e3d0f61face9c",
+      "crates/store-api/src/setup/app.mjs": "02a18c44e219daa1ea18202256ffe8290efeeec94814af8f43c9db1f927e5963",
+      "crates/store-api/src/setup/packager.mjs": "b848fe7f7a7a9ed34bef267d4a88a020da7bdd2d74d6b206c647c442e2098e00",
+      "crates/store-protocol/Cargo.toml": "58390bfb9c53bc230a11917b6479fbc05f3ca026b89ee8411291213031e6efe3",
+      "crates/store-protocol/src/catalog.rs": "9409c03744536909a0b932b63fc2545d9e7fba06d2a6452b16bf6d207ecda5c9",
+      "crates/store-protocol/src/crypto.rs": "70ddef2dea2cb8e132b57a8d167b2c06173d5390407bbc78c0607301b91c5131",
+      "crates/store-protocol/src/firebase.rs": "1a6cb9ae76d05d4da726297b014c9ad9adc89b0e11332e7c8f68b86241916809",
+      "crates/store-protocol/src/lib.rs": "af6285c540fc0041d5db7443e763662fb2037a1c8d8d45d474b0dfdaaa7e3846",
+      "crates/store-protocol/src/logs.rs": "a9557df55008d4f00a18f36b0c89d2fc5fbb6f30b6e0a4932523937aa9017414",
+      "crates/store-protocol/src/release.rs": "7b79cd68c327e89d897ccf75299077bbd8b045bab53505c251e5f0c0ddf9141f",
+      "crates/store-protocol/src/screenshot.rs": "857e64ab2b55837109cffba64d3a49fbf915c18e10adecb8be9d15d5c3cecb14",
+      "crates/store-protocol/src/screenshot_failure.rs": "6386b45e800b4acde847b9a9294dfc887532a8355672601f2215ed9c77dcd72c",
+      "crates/store-protocol/src/skill.rs": "535230531012bfe933bb8cc4e15b6b09cb948a128c4043926c7b272a2914bff7",
+      "crates/store-protocol/src/upload.rs": "e81672e7c35ad64dd160272bc92f7bfe45f394e35d50b6dd031d58f5056cd024",
+      "deploy/testflying-prod-ca.crt": "d6a6874992dd6197da68c43037ab176cd3d7f7ce7be2966706293dc499443296",
+      "packaging/screenshot-connector/README.md": "a4eaea6b1297a386765b5cae0345186232fdeca1a7e5e90d945953ae9a3e8f01",
+      "packaging/screenshot-connector/install.sh": "68f3864acff942b8a063c9fcd704cccbc74a8b66580fd78afdd5ad8e716421a7",
+      "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7"
+    },
     "sourceCommit": "ff0acb5129805c9f90f6992c50206af5c7689f59",
-    "runId": "42cff594722f4910a380462029f79f47",
-    "rustTestsPassed": 35,
-    "releaseTestsPassed": 26,
-    "reportSha256": "6dc2e45d7a00f5603c79426991ddac2ea71d29dc5eab3b966c840f0fe0a2dfca",
-    "notRerun": true,
-    "reason": "No component production code, dependencies or installer changed."
+    "builtAt": "2026-11-26T04:12:48.047381+00:00",
+    "sha256": "adb384b288bba36fd52f49435ed21150bc3796933823eb79a50b6edb3eb861e8",
+    "bytes": 5859520,
+    "format": "Mach-O 64-bit executable arm64"
   },
-  "previousSkillVerification": {
-    "sourceCommit": "112f52ae1661d73a86fe3dca946ef17866504feb",
-    "runId": "312a59610de74761bef0c1a301d8b37a",
-    "reportSha256": "0fc92f8febe2707aebad5586bfb1a5a29dea28ed84e7ac2d2ab44fa37867dd15"
-  },
+  "realGoogleApiTestsPerformed": false,
+  "realAppleApiTestsPerformed": false,
   "notVerified": [
-    "Actual Codex visual or text moderation behavior",
-    "Production environment of any real screenshot App",
-    "Real app builds or screenshots",
-    "Live store/OSS/Studio actions"
+    "Actual developer accounts or review state; explicitly excluded",
+    "Remote node installation",
+    "Deployment"
   ],
   "cleanup": "See supervisor cleanup report"
 }
