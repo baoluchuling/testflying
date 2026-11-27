@@ -7,8 +7,8 @@ pub mod catalog;
 pub mod diagnostics;
 mod firebase;
 mod google;
-mod google_batch;
-pub use google_batch::is_google_batch_sync;
+mod multilocale;
+pub use multilocale::is_multilocale_sync;
 mod image_query;
 mod images;
 mod reviews;
@@ -248,7 +248,7 @@ impl Gateway {
     async fn execute_inner(&self, request: &StoreRequest) -> Result<Value> {
         validate_request(request)?;
         let uses_assets = request.operation == Operation::Sync
-            && (scopes(&request.payload, "store_images", false) || is_google_batch_sync(request));
+            && (scopes(&request.payload, "store_images", false) || is_multilocale_sync(request));
         let _assets = if uses_assets {
             if let Some(store) = &self.inner.assets {
                 Some(store.claim(request)?)
@@ -628,9 +628,9 @@ fn copy_field(
 pub fn validate_request(request: &StoreRequest) -> Result<()> {
     request.validate()?;
     if request.operation == Operation::StartStoreImageSync {
-        if !request.is_image_only_sync() && !is_google_batch_sync(request) {
+        if !request.is_image_only_sync() && !is_multilocale_sync(request) {
             return Err(invalid(
-                "Async sync requires only store_images scopes and image content",
+                "Async sync requires image-only content or an explicit localization batch",
             ));
         }
         if request.platform == Platform::Android

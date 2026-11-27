@@ -1,5 +1,26 @@
 import { nodeLabel } from "./versions.mjs";
 
+export function platformSummary(sections) {
+  const configured = [], pending = [], details = [];
+  const labels = { ios: "iOS", android: "Android" };
+  for (const platform of ["ios", "android"]) {
+    const state = sections.find((item) => item.platform === platform)?.catalogStatus;
+    let status;
+    if (["ready", "failed", "identity_changed"].includes(state)) {
+      configured.push(labels[platform]);
+      status = state === "ready" ? "已配置" : state === "failed" ? "已配置，目录读取失败" : "已配置，账号身份待确认";
+    } else if (state === "not_configured") status = "未配置";
+    else if (state === "unsupported") status = "节点未支持此平台";
+    else { pending.push(labels[platform]); status = state === "awaiting_catalog" ? "等待上报" : "尚未确认"; }
+    details.push(`${labels[platform]}：${status}`);
+  }
+  const label = configured.length === 2 ? "iOS + Android（双平台）"
+    : configured.length === 1 && !pending.length ? `仅 ${configured[0]}（单平台）`
+    : configured.length ? `${configured[0]} 已配置 · ${pending.join("、")} 待确认`
+    : pending.length ? "支持平台待确认" : "尚未配置商店平台";
+  return { label, detail: details.join(" · ") };
+}
+
 export function bindAccounts(request, getSession) {
   const $ = (id) => document.getElementById(id);
   let accounts = [], nodes = [], directories = new Map(), bindings = new Map(), selected = "", epoch = 0, busy = false;
@@ -26,7 +47,7 @@ export function bindAccounts(request, getSession) {
     }
   }
   function paragraph(parent, text) {
-    const element = document.createElement("p"); element.className = "account-metadata"; element.textContent = text; parent.append(element);
+    const element = document.createElement("p"); element.className = "account-metadata"; element.textContent = text; parent.append(element); return element;
   }
   function render() {
     $("accountGroups").replaceChildren();
@@ -34,7 +55,7 @@ export function bindAccounts(request, getSession) {
     const selector = $("accountSelector"); selector.replaceChildren();
     for (const [id, sections] of inventory) {
       const option = document.createElement("option"); option.value = id;
-      option.textContent = nodes.find((node) => node.connectorId === id)?.name || sections[0]?.name || id;
+      option.textContent = `${nodes.find((node) => node.connectorId === id)?.name || sections[0]?.name || id} · ${platformSummary(sections).label}`;
       selector.append(option);
     }
     selector.value = selected;
@@ -42,6 +63,8 @@ export function bindAccounts(request, getSession) {
       const nodeId = selected, sections = inventory.get(selected);
       const group = document.createElement("section"); group.className = "account"; group.dataset.storeConnectorId = nodeId;
       const title = document.createElement("h3"); title.textContent = nodes.find((node) => node.connectorId === nodeId)?.name || sections[0]?.name || nodeId; group.append(title);
+      const platform = platformSummary(sections);
+      paragraph(group, `支持平台：${platform.label}\n${platform.detail}`).classList.add("account-platform-summary");
       paragraph(group, `商店节点：${label(nodeId)}`);
       for (const platform of ["ios", "android"]) {
         const platformLabel = platform === "ios" ? "iOS" : "Android", key = `${nodeId}/${platform}`;

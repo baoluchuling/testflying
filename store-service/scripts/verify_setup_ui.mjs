@@ -807,6 +807,30 @@ try {
     assert.equal(await firstGroup.locator(":scope > section").count(), 2);
     assert.match(await firstGroup.textContent(), /iOS 目录/);
     assert.match(await firstGroup.textContent(), /Android 目录/);
+    assert.match(await page.locator(`#accountSelector option[value="${firstStore.connectorId}"]`).textContent(), /iOS \+ Android（双平台）/);
+    assert.match(await firstGroup.locator(".account-platform-summary").textContent(), /iOS：已配置.*Android：已配置/s);
+    const platformRefresh = async () => {
+      await page.locator("#accountsReload:enabled").click();
+      await page.getByText("账号目录已读取。", {exact:true}).waitFor();
+    };
+    androidAccount.catalogStatus = "not_configured";
+    await platformRefresh();
+    assert.match(await firstGroup.locator(".account-platform-summary").textContent(), /仅 iOS（单平台）/);
+    assert.match(await firstGroup.locator(".account-platform-summary").textContent(), /Android：未配置/);
+    firstAccount.catalogStatus = "unsupported"; androidAccount.catalogStatus = "ready";
+    await platformRefresh();
+    assert.match(await firstGroup.locator(".account-platform-summary").textContent(), /仅 Android（单平台）/);
+    firstAccount.catalogStatus = "failed"; firstAccount.catalogError = "catalog_discovery_failed";
+    await platformRefresh();
+    assert.match(await firstGroup.locator(".account-platform-summary").textContent(), /iOS \+ Android（双平台）/);
+    assert.match(await firstGroup.locator(".account-platform-summary").textContent(), /iOS：已配置，目录读取失败/);
+    firstAccount.catalogStatus = "awaiting_catalog"; firstAccount.catalogError = null;
+    await platformRefresh();
+    assert.match(await firstGroup.locator(".account-platform-summary").textContent(), /Android 已配置 · iOS 待确认/);
+    assert(!(await firstGroup.locator(".account-platform-summary").textContent()).includes("单平台"));
+    firstAccount.catalogStatus = "ready";
+    await platformRefresh();
+    checks.push("account selector and details distinguish iOS-only, Android-only, both, unconfigured, unsupported and pending; failed discovery does not erase configured platform support");
     assert.match(await firstGroup.textContent(), /商店节点：.*当前版本 0\.1\.0 · 最新版本 0\.2\.0 · 需要升级/);
     assert.match(await firstGroup.textContent(), /截图节点：.*当前版本 未知 · 最新版本 0\.2\.0 · 需升级确认/);
     assert.match(await page.locator(`#accountScreenshotNode-ios option[value="${screenshotNode.connectorId}"]`).textContent(), /需升级确认/);
@@ -901,6 +925,7 @@ try {
     await page.locator("#accountSelector").selectOption(secondStore.connectorId);
     await page.getByText("账号目录已读取。", { exact: true }).waitFor();
     assert.match(await page.locator("#accountGroups").textContent(), /catalog_discovery_failed/);
+    assert.match(await page.locator("#accountGroups .account-platform-summary").textContent(), /Android：尚未确认/);
     assert.equal(await page.locator('#accountGroups li[data-identifier="com.example.second"]').count(), 1);
     assert.equal(await page.locator('#accountGroups li[data-identifier="com.example.account-ui"]').count(), 0);
     const readsBefore = directoryReads.length;

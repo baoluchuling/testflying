@@ -75,9 +75,20 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     let catalog: Value = serde_json::from_str(&raw).unwrap();
     assert_eq!(catalog["schemaVersion"], 1);
     assert_eq!(catalog["contractVersion"], "2026-11-27");
-    assert_eq!(catalog["sync"]["googleBatch"]["commitCount"], 1);
     assert_eq!(
-        catalog["sync"]["googleBatch"]["minimumStoreConnectorVersion"],
+        catalog["sync"]["multiLocaleSync"]["android"]["commitCount"],
+        1
+    );
+    assert_eq!(
+        catalog["sync"]["multiLocaleSync"]["platforms"],
+        json!(["ios", "android"])
+    );
+    assert_eq!(
+        catalog["sync"]["multiLocaleSync"]["ios"]["autoSubmitForReview"],
+        false
+    );
+    assert_eq!(
+        catalog["sync"]["multiLocaleSync"]["minimumStoreConnectorVersion"],
         "0.2.9"
     );
     let endpoints = catalog["endpoints"].as_array().unwrap();
@@ -184,7 +195,7 @@ async fn api_document_contract_is_complete_without_nodes_and_formats_match() {
     );
     assert_eq!(
         catalog["storeImageJobs"]["textAndMixedRequests"],
-        "single-language requests remain synchronous; Android localizations batches are asynchronous"
+        "single-language requests remain synchronous; iOS and Android localizations batches are asynchronous"
     );
     assert_eq!(catalog["screenshots"]["uploadProtocol"], "direct-oss-v2");
     assert_eq!(catalog["screenshots"]["notificationProtocol"], "capture-v1");

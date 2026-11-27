@@ -146,6 +146,16 @@ impl Gateway {
                     }
                     Operation::StoreImages => self.apple_images(version.as_ref(), &r.payload).await,
                     Operation::Sync => {
+                        if is_multilocale_sync(r) {
+                            return self
+                                .apple_sync_batch(
+                                    app,
+                                    s(&apps[0]["attributes"], "primaryLocale"),
+                                    &r.payload,
+                                    version,
+                                )
+                                .await;
+                        }
                         self.apple_sync(
                             app,
                             s(&apps[0]["attributes"], "primaryLocale"),
@@ -323,6 +333,66 @@ impl Gateway {
             .await?;
         }
         Ok(())
+    }
+    async fn apple_sync_batch(
+        &self,
+        app: &str,
+        primary_locale: &str,
+        p: &Value,
+        version: Option<Value>,
+    ) -> Result<Value> {
+        let items = p["localizations"]
+            .as_array()
+            .expect("validated localization batch");
+        let refusal = match version.as_ref() {
+            None => Some((
+                "store_version_missing",
+                "Target store version does not exist",
+            )),
+            Some(v) if !editable(apple_version_state(v)) => Some((
+                "store_version_not_editable",
+                "Target store version is not editable",
+            )),
+            _ => None,
+        };
+        if let Some((code, message)) = refusal {
+            let mut result = failed(code, message);
+            result["storeState"] = json!({"localeResults":[],"completedLocales":[],"remainingLocales":items.iter().map(|v|s(v,"locale")).collect::<Vec<_>>(),"atomic":false,"partialUpdatesPossible":false,"submittedForReview":false});
+            return Ok(result);
+        }
+        let version = version.expect("checked latest version");
+        let version_id = id(&version)?;
+        let mut results = Vec::new();
+        for (index, item) in items.iter().enumerate() {
+            let mut single = item.clone();
+            single["operation"] = json!("update_app_metadata");
+            let outcome = self
+                .apple_sync(app, primary_locale, &single, Some(version.clone()))
+                .await;
+            match outcome {
+                Ok(value) if value["status"] == "succeeded" => {
+                    results.push(json!({"locale":item["locale"],"status":"succeeded","storeState":value["storeState"]}));
+                }
+                outcome => {
+                    let mut failure = match outcome {
+                        Ok(value) => value,
+                        Err(error) => {
+                            let mut value = failed(&error.code, &error.message);
+                            value["outcomeUnknown"] = json!(error.outcome_unknown);
+                            value
+                        }
+                    };
+                    results.push(json!({"locale":item["locale"],"status":if failure["outcomeUnknown"]==true {"unknown"}else{"failed"},"errorCode":failure["errorCode"],"outcomeUnknown":failure["outcomeUnknown"]}));
+                    failure["storeState"] = json!({"versionId":version_id,"locales":items.iter().map(|v|s(v,"locale")).collect::<Vec<_>>(),
+                        "completedLocales":items[..index].iter().map(|v|s(v,"locale")).collect::<Vec<_>>(),"remainingLocales":items[index+1..].iter().map(|v|s(v,"locale")).collect::<Vec<_>>(),
+                        "failedLocale":item["locale"],"localeResults":results,"atomic":false,"partialUpdatesPossible":true,"submittedForReview":false});
+                    return Ok(failure);
+                }
+            }
+        }
+        Ok(succeeded(
+            json!({"versionId":version_id,"locales":items.iter().map(|v|s(v,"locale")).collect::<Vec<_>>(),"localeResults":results,"atomic":false,"partialUpdatesPossible":false,"submittedForReview":false}),
+        ))
     }
     async fn apple_sync(
         &self,

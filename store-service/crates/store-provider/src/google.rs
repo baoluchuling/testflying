@@ -33,7 +33,7 @@ impl Gateway {
             if !matches!(operation, "update_release_notes" | "update_app_metadata") {
                 return Err(invalid("Unsupported sync operation"));
             }
-            if !is_google_batch_sync(r) {
+            if !is_multilocale_sync(r) {
                 required(&r.payload, "locale")?;
             }
         }
@@ -175,7 +175,7 @@ impl Gateway {
             }
             Operation::Sync => {
                 let p = &r.payload;
-                let state = if is_google_batch_sync(r) {
+                let state = if is_multilocale_sync(r) {
                     let items = p["localizations"].as_array().expect("validated batch");
                     for item in items {
                         self.google_write_listing(path, item).await?;

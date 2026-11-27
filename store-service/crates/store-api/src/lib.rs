@@ -623,13 +623,13 @@ async fn write_store(
         operation,
         payload: payload.clone(),
     };
-    let google_batch = store_provider::is_google_batch_sync(&request);
-    if request.is_image_only_sync() || google_batch {
+    let batch = store_provider::is_multilocale_sync(&request);
+    if request.is_image_only_sync() || batch {
         state.registry.require_forwarding(platform)?;
         request.validate()?;
         store_provider::validate_request(&request)?;
         let node = state.registry.resolve(platform, &identifier)?;
-        if google_batch
+        if batch
             && node
                 .connector_version
                 .as_deref()
@@ -640,7 +640,7 @@ async fn write_store(
         {
             return Err(StoreError::new(
                 409,
-                "google_batch_upgrade_required",
+                "store_batch_upgrade_required",
                 "Upgrade this Store Connector to 0.2.9 or later for multi-language sync",
             )
             .into());
@@ -652,10 +652,10 @@ async fn write_store(
         {
             return store_jobs::start(&state, &node, owner.map(|v| v.0.id), request).await;
         }
-        if google_batch {
+        if batch {
             return Err(StoreError::new(
                 409,
-                "google_batch_upgrade_required",
+                "store_batch_upgrade_required",
                 "This Store Connector does not support background multi-language sync",
             )
             .into());

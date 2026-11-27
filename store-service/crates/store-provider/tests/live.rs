@@ -1443,14 +1443,8 @@ async fn google_multilocale_validates_entire_batch_before_any_network() {
             422
         );
     }
-    assert_eq!(
-        gateway
-            .execute(&request(Platform::Ios, Operation::Sync, valid.clone()))
-            .await
-            .unwrap_err()
-            .status,
-        422
-    );
+    store_provider::validate_request(&request(Platform::Ios, Operation::Sync, valid.clone()))
+        .unwrap();
     let summary = store_provider::diagnostics::summary(&valid).to_string();
     assert!(!summary.contains("private-copy"));
     assert!(fake.records().is_empty());
@@ -2027,6 +2021,173 @@ fn png() -> Vec<u8> {
         .write_to(&mut bytes, image::ImageFormat::Png)
         .unwrap();
     bytes.into_inner()
+}
+
+fn apple_batch_base(r: &Record) -> Option<Reply> {
+    if r.uri.contains("/appStoreVersionLocalizations?") {
+        return Some(ok(
+            json!({"data":[{"id":"locen","attributes":{"locale":"en-US"}},{"id":"locja","attributes":{"locale":"ja"}}]}),
+        ));
+    }
+    apple_base(r)
+}
+
+#[tokio::test]
+async fn apple_multilocale_text_and_images_pin_one_version_and_never_submit_for_review() {
+    let image = png();
+    let port = Arc::new(Mutex::new(String::new()));
+    let base = port.clone();
+    let fake = Fake::new(move |r| {
+        apple_upload_base(r, &image, &base.lock().unwrap())
+            .or_else(|| apple_batch_base(r))
+            .unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    *port.lock().unwrap() = fake.url.clone();
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let images = json!({"phone_screenshots":{"urls":[format!("{}/image.png",fake.url)]}});
+    let payload = json!({"operation":"update_app_metadata","localizations":[
+        {"locale":"en-US","syncScopes":["description","store_images"],"metadata":{"description":"English","storeImages":images.clone()}},
+        {"locale":"ja","syncScopes":["description","store_images"],"metadata":{"description":"Japanese","storeImages":images}}
+    ]});
+    let result = gateway
+        .execute(&request(Platform::Ios, Operation::Sync, payload))
+        .await
+        .unwrap();
+    assert_eq!(result["status"], "succeeded");
+    assert_eq!(result["storeState"]["versionId"], "version");
+    assert_eq!(result["storeState"]["locales"], json!(["en-US", "ja"]));
+    assert_eq!(
+        result["storeState"]["localeResults"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(result["storeState"]["submittedForReview"], false);
+    assert_eq!(result["storeState"]["atomic"], false);
+    let records = fake.records();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.uri.contains("/appStoreVersions?"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.uri.starts_with("/v1/apps?"))
+            .count(),
+        1
+    );
+    for (id, description) in [("locen", "English"), ("locja", "Japanese")] {
+        assert!(records.iter().any(|r| r.method == "PATCH"
+            && r.uri == format!("/v1/appStoreVersionLocalizations/{id}")
+            && r.body()["data"]["attributes"]["description"] == description));
+        assert!(records
+            .iter()
+            .any(|r| r.uri == "/v1/appAssetLibraryPlacements"
+                && r.body()["data"]["relationships"]["appStoreVersionLocalization"]["data"]["id"]
+                    == id));
+    }
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.method == "POST" && r.uri == "/v1/appAssetLibraryImages")
+            .count(),
+        2
+    );
+    assert!(!records.iter().any(|r| r.uri.contains("reviewSubmissions")
+        || r.uri.contains("appStoreVersionSubmissions")
+        || r.method == "POST" && r.uri == "/v1/appStoreVersions"));
+}
+
+#[tokio::test]
+async fn apple_multilocale_stops_on_late_failure_and_reports_partial_progress() {
+    let fake = Fake::new(|r| {
+        if r.method == "PATCH" && r.uri == "/v1/appStoreVersionLocalizations/locja" {
+            return (
+                StatusCode::BAD_REQUEST,
+                vec![],
+                br#"{"errors":[{"code":"INVALID_ATTRIBUTE","status":"400"}]}"#.to_vec(),
+            );
+        }
+        apple_batch_base(r).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let payload = json!({"operation":"update_app_metadata","localizations":[{"locale":"en-US","metadata":{"description":"English"}},{"locale":"ja","metadata":{"description":"Japanese"}},{"locale":"fr-FR","metadata":{"description":"French"}}]});
+    let value = gateway
+        .execute(&request(Platform::Ios, Operation::Sync, payload))
+        .await
+        .unwrap();
+    assert_eq!(value["status"], "failed");
+    assert_eq!(value["storeState"]["completedLocales"], json!(["en-US"]));
+    assert_eq!(value["storeState"]["failedLocale"], "ja");
+    assert_eq!(value["storeState"]["remainingLocales"], json!(["fr-FR"]));
+    assert_eq!(value["storeState"]["partialUpdatesPossible"], true);
+    assert_eq!(
+        fake.records()
+            .iter()
+            .filter(|r| r.method == "PATCH")
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn apple_multilocale_locked_version_rejects_every_locale_before_writes() {
+    let fake = Fake::new(|r| {
+        if r.uri.contains("/appStoreVersions?") {
+            return ok(
+                json!({"data":[{"id":"locked","attributes":{"appStoreState":"IN_REVIEW"}}]}),
+            );
+        }
+        apple_batch_base(r).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let gateway = Gateway::new(keys.config(&fake.url)).unwrap();
+    let payload = json!({"operation":"update_app_metadata","localizations":[{"locale":"en-US","metadata":{"description":"English"}},{"locale":"ja","metadata":{"keywords":"books"}}]});
+    let value = gateway
+        .execute(&request(Platform::Ios, Operation::Sync, payload))
+        .await
+        .unwrap();
+    assert_eq!(value["errorCode"], "store_version_not_editable");
+    assert!(fake.records().iter().all(|r| r.method == "GET"));
+}
+
+#[tokio::test]
+async fn apple_multilocale_unknown_write_is_not_replayed_and_skips_remaining_locales() {
+    let fake = Fake::new(|r| {
+        if r.method == "PATCH" && r.uri == "/v1/appStoreVersionLocalizations/locen" {
+            return (StatusCode::OK, vec![], b"lost reply".to_vec());
+        }
+        apple_batch_base(r).unwrap_or_else(|| ok(json!({})))
+    })
+    .await;
+    let keys = Keys::new();
+    let assets = store_provider::assets::AssetStore::new("batch".into(), "11".repeat(32));
+    let gateway = Gateway::with_assets(keys.config(&fake.url), Some(assets.clone())).unwrap();
+    let request = request(
+        Platform::Ios,
+        Operation::Sync,
+        json!({"operation":"update_app_metadata","localizations":[{"locale":"en-US","metadata":{"description":"English"}},{"locale":"ja","metadata":{"description":"Japanese"}}]}),
+    );
+    let lease = assets.claim(&request).unwrap();
+    let value = gateway.execute_with_assets(&request, lease).await.unwrap();
+    assert_eq!(value["outcomeUnknown"], true);
+    assert_eq!(value["storeState"]["remainingLocales"], json!(["ja"]));
+    assert_eq!(
+        fake.records()
+            .iter()
+            .filter(|r| r.method == "PATCH")
+            .count(),
+        1
+    );
 }
 #[tokio::test]
 async fn image_uploads_stage_library_assets_before_placements_and_google_multipart() {

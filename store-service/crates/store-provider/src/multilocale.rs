@@ -1,21 +1,17 @@
-//! One application, one edit and one commit for an explicit localization batch.
+//! One application's explicit metadata/image batch; execution remains platform-specific.
 use super::*;
 
-pub fn is_google_batch_sync(request: &StoreRequest) -> bool {
-    request.platform == Platform::Android
-        && matches!(
-            request.operation,
-            Operation::Sync | Operation::StartStoreImageSync
-        )
-        && request.payload.get("localizations").is_some()
+pub fn is_multilocale_sync(request: &StoreRequest) -> bool {
+    matches!(
+        request.operation,
+        Operation::Sync | Operation::StartStoreImageSync
+    ) && request.payload.get("localizations").is_some()
 }
 
 pub(super) fn validate_batch(request: &StoreRequest) -> Result<()> {
     let p = &request.payload;
-    if !is_google_batch_sync(request) || s(p, "operation") != "update_app_metadata" {
-        return Err(invalid(
-            "localizations requires Android update_app_metadata sync",
-        ));
+    if !is_multilocale_sync(request) || s(p, "operation") != "update_app_metadata" {
+        return Err(invalid("localizations requires update_app_metadata sync"));
     }
     if p.as_object().is_none_or(|fields| {
         fields
@@ -56,21 +52,30 @@ pub(super) fn validate_batch(request: &StoreRequest) -> Result<()> {
         }
         if let Some(scopes) = item["syncScopes"].as_array() {
             if scopes.iter().any(|v| {
-                !matches!(
-                    v.as_str(),
-                    Some(
-                        "metadata"
-                            | "title"
-                            | "description"
-                            | "short_description"
-                            | "promotional_text"
-                            | "video"
-                            | "store_images"
-                    )
-                )
+                let allowed: &[&str] = match request.platform {
+                    Platform::Android => &[
+                        "metadata",
+                        "title",
+                        "description",
+                        "short_description",
+                        "promotional_text",
+                        "video",
+                        "store_images",
+                    ],
+                    Platform::Ios => &[
+                        "metadata",
+                        "title",
+                        "subtitle",
+                        "description",
+                        "keywords",
+                        "promotional_text",
+                        "store_images",
+                    ],
+                };
+                !v.as_str().is_some_and(|scope| allowed.contains(&scope))
             }) {
                 return Err(invalid(
-                    "Batch syncScopes must select Android metadata or store_images",
+                    "Batch syncScopes must select metadata supported by this platform or store_images",
                 ));
             }
         }
@@ -79,7 +84,21 @@ pub(super) fn validate_batch(request: &StoreRequest) -> Result<()> {
         single.payload = item.clone();
         single.payload["operation"] = json!("update_app_metadata");
         validation::validate(&single)?;
-        let selected_text = !super::google::metadata_body(item)?.is_empty();
+        let selected_text = match request.platform {
+            Platform::Android => !super::google::metadata_body(item)?.is_empty(),
+            Platform::Ios => [
+                ("title", &["title"][..]),
+                ("subtitle", &["subtitle"][..]),
+                ("description", &["description", "fullDescription"][..]),
+                ("keywords", &["keywords"][..]),
+                ("promotional_text", &["promotionalText"][..]),
+            ]
+            .iter()
+            .any(|(scope, keys)| {
+                scopes(item, scope, true)
+                    && keys.iter().any(|key| item["metadata"].get(key).is_some())
+            }),
+        };
         let selected_images =
             scopes(item, "store_images", false) && item["metadata"].get("storeImages").is_some();
         if !selected_text && !selected_images {

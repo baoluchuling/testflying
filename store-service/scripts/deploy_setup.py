@@ -461,10 +461,12 @@ if """ + repr(restart_center) + """ :
                 catalog = json.loads(body)
                 check(status == 200 and catalog["contractVersion"] == "2026-11-27",
                       scheme + " business-token documentation available")
-                check(catalog["sync"]["googleBatch"]["commitCount"] == 1
-                      and catalog["sync"]["googleBatch"]["minimumStoreConnectorVersion"] == "0.2.9"
-                      and catalog["sync"]["googleBatch"]["async"] is True,
-                      scheme + " multi-language Google sync contract available")
+                check(catalog["sync"]["multiLocaleSync"]["android"]["commitCount"] == 1
+                      and catalog["sync"]["multiLocaleSync"]["minimumStoreConnectorVersion"] == "0.2.9"
+                      and catalog["sync"]["multiLocaleSync"]["platforms"] == ["ios","android"]
+                      and catalog["sync"]["multiLocaleSync"]["ios"]["autoSubmitForReview"] is False
+                      and catalog["sync"]["multiLocaleSync"]["async"] is True,
+                      scheme + " multi-language iOS and Google sync contract available")
                 endpoints = catalog["endpoints"]
                 check(len(endpoints) == 23
                       and sum(row["group"] == "store" for row in endpoints) == 11

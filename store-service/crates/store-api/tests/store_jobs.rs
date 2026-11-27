@@ -27,78 +27,78 @@ const SIGNING: &str = "jobs-node-signing-key-01234567890123456789";
 const APP: &str = "com.example.jobs";
 
 #[tokio::test]
-async fn android_batch_requires_new_node_then_preserves_payload_and_uses_existing_job_query() {
-    let received = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
-    let sink = received.clone();
-    let fake=Router::new().route("/health",get(||async{axum::Json(json!({"asyncStoreImagesSupported":true}))}))
+async fn platform_batch_requires_new_node_then_preserves_payload_and_uses_existing_job_query() {
+    for platform in [Platform::Ios, Platform::Android] {
+        let received = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+        let sink = received.clone();
+        let fake=Router::new().route("/health",get(||async{axum::Json(json!({"asyncStoreImagesSupported":true}))}))
         .route("/v1/execute",post(move|axum::Json(v):axum::Json<Value>|{let sink=sink.clone();async move{
             sink.lock().unwrap().push(v.clone());
             axum::Json(json!({"requestId":v["requestId"],"status":200,"body":{"status":"succeeded","jobId":v["requestId"],"executionStatus":"queued"}}))
         }}));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = format!("http://{}", listener.local_addr().unwrap());
-    let server = tokio::spawn(async move { axum::serve(listener, fake).await.unwrap() });
-    let registry = Registry::open(":memory:", SIGNING).unwrap();
-    let node = registry
-        .create(ConnectorInput {
-            name: "batch".into(),
-        })
-        .unwrap();
-    support::catalog(&registry, &node.connector_id, Platform::Android, &[APP]);
-    registry
-        .bind(Platform::Android, APP, &node.connector_id)
-        .unwrap();
-    registry
-        .register_connection(
-            &node.connector_id,
-            &registry.token(&node),
-            Some(&url),
-            Some("0.2.8"),
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { axum::serve(listener, fake).await.unwrap() });
+        let registry = Registry::open(":memory:", SIGNING).unwrap();
+        let node = registry
+            .create(ConnectorInput {
+                name: "batch".into(),
+            })
+            .unwrap();
+        support::catalog(&registry, &node.connector_id, platform, &[APP]);
+        registry.bind(platform, APP, &node.connector_id).unwrap();
+        registry
+            .register_connection(
+                &node.connector_id,
+                &registry.token(&node),
+                Some(&url),
+                Some("0.2.8"),
+            )
+            .unwrap();
+        let state = ApiState::new(
+            registry,
+            "jobs-admin-token-0123456789".into(),
+            TOKEN.into(),
+            "http://127.0.0.1:8200".into(),
+            PathBuf::from("unused"),
+            Duration::from_secs(2),
         )
         .unwrap();
-    let state = ApiState::new(
-        registry,
-        "jobs-admin-token-0123456789".into(),
-        TOKEN.into(),
-        "http://127.0.0.1:8200".into(),
-        PathBuf::from("unused"),
-        Duration::from_secs(2),
-    )
-    .unwrap();
-    let app = store_api::router(state.clone());
-    let path = format!("/v1/store-management/apps/android/{APP}/sync");
-    let payload = json!({"operation":"update_app_metadata","localizations":[{"locale":"en-US","metadata":{"title":"English"}},{"locale":"ja","metadata":{"title":"Japanese"}}]});
-    let (status, body) = call(app.clone(), "POST", &path, payload.clone()).await;
-    assert_eq!(status, 409);
-    assert_eq!(body["error"]["code"], "google_batch_upgrade_required");
-    assert!(received.lock().unwrap().is_empty());
-    state
-        .registry
-        .register_connection(
-            &node.connector_id,
-            &state.registry.token(&node),
-            Some(&url),
-            Some("0.2.9"),
-        )
-        .unwrap();
-    let mut invalid = payload.clone();
-    invalid["localizations"][1]["locale"] = json!("EN-us");
-    assert_eq!(call(app.clone(), "POST", &path, invalid).await.0, 422);
-    assert!(received.lock().unwrap().is_empty());
-    let (status, body) = call(app.clone(), "POST", &path, payload.clone()).await;
-    assert_eq!(status, 200);
-    assert_eq!(body["executionStatus"], "queued");
-    let requests = received.lock().unwrap().clone();
-    assert_eq!(requests.len(), 1);
-    assert_eq!(requests[0]["operation"], "start_store_image_sync");
-    assert_eq!(requests[0]["payload"], payload);
-    let job = body["jobId"].as_str().unwrap();
-    let query = format!("/v1/store-management/apps/android/{APP}/sync-jobs/{job}");
-    let (status, snapshot) = call(app, "GET", &query, Value::Null).await;
-    assert_eq!(status, 200);
-    assert_eq!(snapshot["jobId"], job);
-    assert_eq!(snapshot["status"], "queued");
-    server.abort();
+        let app = store_api::router(state.clone());
+        let path = format!("/v1/store-management/apps/{platform}/{APP}/sync");
+        let payload = json!({"operation":"update_app_metadata","localizations":[{"locale":"en-US","metadata":{"title":"English"}},{"locale":"ja","metadata":{"title":"Japanese"}}]});
+        let (status, body) = call(app.clone(), "POST", &path, payload.clone()).await;
+        assert_eq!(status, 409);
+        assert_eq!(body["error"]["code"], "store_batch_upgrade_required");
+        assert!(received.lock().unwrap().is_empty());
+        state
+            .registry
+            .register_connection(
+                &node.connector_id,
+                &state.registry.token(&node),
+                Some(&url),
+                Some("0.2.9"),
+            )
+            .unwrap();
+        let mut invalid = payload.clone();
+        invalid["localizations"][1]["locale"] = json!("EN-us");
+        assert_eq!(call(app.clone(), "POST", &path, invalid).await.0, 422);
+        assert!(received.lock().unwrap().is_empty());
+        let (status, body) = call(app.clone(), "POST", &path, payload.clone()).await;
+        assert_eq!(status, 200);
+        assert_eq!(body["executionStatus"], "queued");
+        let requests = received.lock().unwrap().clone();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0]["operation"], "start_store_image_sync");
+        assert_eq!(requests[0]["payload"], payload);
+        let job = body["jobId"].as_str().unwrap();
+        let query = format!("/v1/store-management/apps/{platform}/{APP}/sync-jobs/{job}");
+        let (status, snapshot) = call(app, "GET", &query, Value::Null).await;
+        assert_eq!(status, 200);
+        assert_eq!(snapshot["jobId"], job);
+        assert_eq!(snapshot["status"], "queued");
+        server.abort();
+    }
 }
 
 async fn call(app: Router, method: &str, path: &str, body: Value) -> (u16, Value) {

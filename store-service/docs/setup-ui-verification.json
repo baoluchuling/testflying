@@ -1,5 +1,5 @@
 {
-  "runId": "b863100cf57744eeb015aeb7a96719fc",
+  "runId": "689bb04c27c049c3ae1377abaa876cc9",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -37,6 +37,7 @@
     "admin can issue an all-node integration token using only the system name, then copy, retrieve, and revoke it",
     "store and screenshot selectors show current/latest versions and outdated/current/newer/unknown states; offline reports stay explicitly unverified",
     "administrator publishes complete Skill ZIPs, safely handles invalid packages, reads immutable versions and rolls back without reinstalling; long hashes fit mobile layout",
+    "account selector and details distinguish iOS-only, Android-only, both, unconfigured, unsupported and pending; failed discovery does not erase configured platform support",
     "Android directory adds and removes applications, retains failed-input drafts and confirms removal; iOS exposes neither action",
     "account selector renders and fetches only the chosen account's iOS/Android apps; selection survives directory refresh; no account creation or manual app binding",
     "platform screenshot selections initially retain the shared choice, save and clear independently, retain the other unsaved draft, accept offline Macs and preserve forwarding switches, other accounts and per-platform conflict handling",
@@ -52,8 +53,8 @@
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "7627f55e-2497-4999-96c8-a912056fbc0e",
-    "dcc742e3-6e45-4147-85c2-78f9f961f930"
+    "b0d50997-0da7-4728-bf5b-fb8a63a73959",
+    "943562bb-1bf1-48cf-9c8a-c7254bc49f26"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0,
