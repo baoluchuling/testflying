@@ -630,12 +630,12 @@ async fn write_store(
         store_provider::validate_request(&request)?;
         let node = state.registry.resolve(platform, &identifier)?;
         if google_batch
-            && !node
+            && node
                 .connector_version
                 .as_deref()
                 .and_then(store_protocol::release::ConnectorVersion::parse)
-                .is_some_and(|v| {
-                    v >= store_protocol::release::ConnectorVersion::parse("0.2.9").unwrap()
+                .is_none_or(|v| {
+                    v < store_protocol::release::ConnectorVersion::parse("0.2.9").unwrap()
                 })
         {
             return Err(StoreError::new(

@@ -1355,7 +1355,7 @@ async fn real_connector_active_loop_and_api_round_trip() {
     .await;
     assert_eq!(
         health["connectorVersion"],
-        store_protocol::release::CONNECTOR_VERSION
+        store_connector::CONNECTOR_VERSION
     );
     let (stop, stopped) = tokio::sync::watch::channel(false);
     let connector = tokio::spawn(store_connector::run_active(executor.clone(), stopped));
@@ -1367,7 +1367,7 @@ async fn real_connector_active_loop_and_api_round_trip() {
             .unwrap()
             .connector_version
             .as_deref(),
-        Some(store_protocol::release::CONNECTOR_VERSION)
+        Some(store_connector::CONNECTOR_VERSION)
     );
     let response = reqwest::Client::builder()
         .no_proxy()

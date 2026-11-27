@@ -1495,6 +1495,84 @@ async fn google_multilocale_unknown_commit_is_not_replayed_or_hidden_by_cleanup(
 }
 
 #[tokio::test]
+async fn google_multilocale_uploaded_asset_is_reusable_until_whole_execution_finishes() {
+    use sha2::{Digest, Sha256};
+    use store_protocol::upload::{self, UploadClaims, UploadInput};
+    let fake = Fake::new(|r| google_base(r).unwrap_or_else(|| ok(json!({})))).await;
+    let keys = Keys::new();
+    let key = "11".repeat(32);
+    let assets = store_provider::assets::AssetStore::new("batch-node".into(), key.clone());
+    let image = png();
+    let now = upload::now().unwrap();
+    let claims = UploadClaims {
+        iss: "testflying-store-api".into(),
+        aud: "connector:batch-node".into(),
+        iat: now,
+        exp: now + upload::TOKEN_SECONDS,
+        connector_id: "batch-node".into(),
+        asset_id: "00000000-0000-4000-8000-000000000001".into(),
+        platform: Platform::Android,
+        bundle_identifier: "com.example.App".into(),
+        file: UploadInput {
+            file_name: "fixture.png".into(),
+            content_type: "image/png".into(),
+            size_bytes: image.len() as u64,
+            sha256: hex::encode(Sha256::digest(&image)),
+        },
+    };
+    let session = "00000000-0000-4000-8000-000000000002";
+    assets
+        .start(&upload::sign(&claims, &key).unwrap(), session)
+        .unwrap();
+    assets
+        .chunk(
+            Platform::Android,
+            "com.example.App",
+            &claims.asset_id,
+            session,
+            0,
+            &image,
+        )
+        .unwrap();
+    assets
+        .finish(
+            Platform::Android,
+            "com.example.App",
+            &claims.asset_id,
+            session,
+        )
+        .unwrap();
+    let gateway = Gateway::with_assets(keys.config(&fake.url), Some(assets.clone())).unwrap();
+    let images = json!({"phone_screenshots":{"assets":[{"assetId":claims.asset_id}]}});
+    let payload = json!({"operation":"update_app_metadata","localizations":[
+        {"locale":"en-US","syncScopes":["store_images"],"metadata":{"storeImages":images.clone()}},
+        {"locale":"ja","syncScopes":["store_images"],"metadata":{"storeImages":images}}
+    ]});
+    assert_eq!(
+        gateway
+            .execute(&request(Platform::Android, Operation::Sync, payload))
+            .await
+            .unwrap()["status"],
+        "succeeded"
+    );
+    assert_eq!(assets.usage(), (0, 0));
+    assert_eq!(
+        fake.records()
+            .iter()
+            .filter(|r| r.uri.starts_with("/upload/"))
+            .count(),
+        2
+    );
+    assert_eq!(
+        fake.records()
+            .iter()
+            .filter(|r| r.uri.contains(":commit?"))
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn async_image_mutation_response_loss_preserves_original_error_and_explicit_rejections() {
     for platform in [Platform::Ios, Platform::Android] {
         for rejected in [false, true] {
