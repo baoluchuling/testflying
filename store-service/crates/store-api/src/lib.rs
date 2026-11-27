@@ -623,6 +623,15 @@ async fn write_store(
         operation,
         payload: payload.clone(),
     };
+    // Enforce the removed contract at the center too, including for older nodes.
+    if payload["operation"] == "update_release_notes" || payload.get("releaseNotes").is_some() {
+        return Err(StoreError::new(
+            422,
+            "invalid_store_payload",
+            "Use update_app_metadata with optional metadata.releaseNotes",
+        )
+        .into());
+    }
     let batch = store_provider::is_multilocale_sync(&request);
     if store_provider::includes_release_notes(&request) {
         state.registry.require_forwarding(platform)?;

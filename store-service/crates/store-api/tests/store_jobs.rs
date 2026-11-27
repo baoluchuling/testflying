@@ -71,6 +71,23 @@ async fn platform_batch_requires_new_node_then_preserves_payload_and_uses_existi
         assert_eq!(status, 409);
         assert_eq!(body["error"]["code"], "store_batch_upgrade_required");
         assert!(received.lock().unwrap().is_empty());
+        for resource in ["sync", "preflight"] {
+            for removed in [
+                json!({"operation":"update_release_notes","locale":"en-US","releaseNotes":"Removed"}),
+                json!({"operation":"update_app_metadata","locale":"en-US","releaseNotes":"Wrong level","metadata":{"description":"Copy"}}),
+            ] {
+                let (status, error) = call(
+                    app.clone(),
+                    "POST",
+                    &path.replace("/sync", &format!("/{resource}")),
+                    removed,
+                )
+                .await;
+                assert_eq!(status, 422);
+                assert_eq!(error["error"]["code"], "invalid_store_payload");
+            }
+        }
+        assert!(received.lock().unwrap().is_empty());
         state
             .registry
             .register_connection(
