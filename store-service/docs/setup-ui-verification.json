@@ -1,5 +1,5 @@
 {
-  "runId": "689bb04c27c049c3ae1377abaa876cc9",
+  "runId": "d1ed00dec3bb48e0a7fd0551b3f6018b",
   "stage": "browser-verified",
   "browserVerified": true,
   "vendor": {
@@ -29,6 +29,9 @@
     "both credential paths are automatic and no application list is included",
     "repeat download reuses node identity and omits disabled-platform secrets",
     "program-only upgrade preserves node identity without including local configuration",
+    "mock store upgrades filter screenshots and offline nodes, skip current and legacy nodes, disable duplicate submits, poll progress, display rollback/failure/expiry/cleanup, and disable when no newer release exists",
+    "store upgrade requests begin only after unlock; lock aborts pending refresh and prevents stale responses restoring the card; production upgrade writes are blocked",
+    "after a verified active-batch automatic poll, locking stops requests across the next polling deadline; an automatic poll returning HTTP 401 clears the card and stops all further upgrade requests; a node expired state leaves management unlocked",
     "node log download uses the authenticated session and hides unsupported old nodes",
     "seven-day logs support application filters and request traces without rendering HTML",
     "locking cancels a pending credential reveal and clears local files and secrets",
@@ -48,13 +51,13 @@
     "mobile layout has no horizontal overflow",
     "no provider credential fields or files are uploaded and CSP passes"
   ],
-  "windowsExecutableSha256": "35ef8426ab89ad014c700e2d8b7e463cea4a01131e1dc4a5379e37ff00d85835",
+  "windowsExecutableSha256": "95dff5f4da3588530b89901dd615bdf3a8f338bfc1a3f7243ad1530b6225a041",
   "credentialFilesUploaded": false,
   "remainingTemporaryProcesses": [],
   "cleanup": "See the supervisor cleanup report for this runId",
   "verificationNodeIds": [
-    "b0d50997-0da7-4728-bf5b-fb8a63a73959",
-    "943562bb-1bf1-48cf-9c8a-c7254bc49f26"
+    "9e8cc5e7-cc14-4991-9c50-efcd0b7d12d7",
+    "1ff96b6f-ad4a-40f0-9e05-6ba3b5eaace4"
   ],
   "verificationNodesDisabled": false,
   "secureNavigationProbes": 0,

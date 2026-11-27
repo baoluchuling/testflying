@@ -1,12 +1,12 @@
 {
-  "runId": "975cc51409a74e2fb87e75c835efdd2f",
-  "finishedAt": "2026-11-27T09:31:13.376529+00:00",
-  "sourceCommit": "85b7059c36853a935aaa481f0c93431b1cddc640",
-  "scope": "Center rejects removed operation and misplaced top-level notes before dispatch to all node versions",
+  "runId": "d1ed00dec3bb48e0a7fd0551b3f6018b",
+  "finishedAt": "2026-11-27T11:52:55.227684+00:00",
+  "sourceCommit": "1bbc3071c50f0b4d9be88fb62e21b5ec19c1e90f",
+  "scope": "Button-triggered store connector upgrades; signed immutable packages, quiescence, restart, rollback and owned old-program cleanup; screenshot unchanged",
   "sourceHashes": {
     "AGENTS.md": "14fef86e522a3621beaee3c9b1d33bf31a9b8329d681c6a891ea5cfe9e0adfae",
-    "Cargo.lock": "ad6d678d1df59fb514d242c5adea3e6b2812a5aa7aa4302e1ead8e5da2cfb557",
-    "Cargo.toml": "949dedcdac4f97570336bfe7ca72500d676ff1d15f39d6f0b4ee1823d555d233",
+    "Cargo.lock": "0e01db9807f4fafd1f2d094e694fb6e528167b96fcfd31c4c0276703196d9336",
+    "Cargo.toml": "097fd8d3be0d21cf4f287a0d4aa426a0c734abddf2f4e23e8bc83b3616ad81d7",
     "crates/screenshot-connector/Cargo.toml": "7f2ac7e39147c86211706e0888bcdf9b9fc7883f6dd172118f2cb83751f9bc66",
     "crates/screenshot-connector/src/codex_runtime.rs": "ae7a5abb8826e1c6fb9cd5ec41afa4b947b69a68fc6837735ae31eeb72e0d3e1",
     "crates/screenshot-connector/src/connector.rs": "9a57b76e69e3e897a54967cbb2c25dc1e0018bb37a0d2bbda9cb2a0cde78be80",
@@ -15,14 +15,14 @@
     "crates/screenshot-connector/src/main.rs": "6b64ddf137a2aa4bc06da323b039fd3687b98fe7d93693d5f36792403f39e77d",
     "crates/screenshot-connector/src/skill.rs": "43d80099a23fd2dc7f5169df319df60153c1bab98f8fe4ed5a63071ccd81afff",
     "crates/screenshot-connector/src/worker.rs": "08e6e2192e4f12791232d25e6f971f678a77e56d476757015e7c88f9e2a20de8",
-    "crates/store-api/Cargo.toml": "67be957dc1aa5cdb1acaa959fe6597674a97c3df50da75d13d77d7fbe2e39bca",
+    "crates/store-api/Cargo.toml": "76053783df43d79c67a95603366ac0dcd6e70c43a92cce123f9e0902ea795988",
     "crates/store-api/src/accounts.rs": "d0abb1577979330e3e3e7605bbdb216bf81a48d3e1b21dcffcc74063a171376a",
     "crates/store-api/src/api_docs.rs": "f09834600d9aa87721a8479b1d2f316ee6db4e928f3cea356c2a2a066eb38f51",
     "crates/store-api/src/firebase.rs": "96881080779df3cdb3cd4459ddfe26499aa8bbb51e9ad0d0c4bcef6eb12ed05a",
     "crates/store-api/src/forwarding.rs": "ab7e6affc0bdcb45279c23cad3b063d7ad1911606d8fc85d797bff0b0657e96b",
     "crates/store-api/src/installer_assets.rs": "d72bb77eae5348dea41c88b6fedb3980b512856218a7834f44dc83b481035bf4",
     "crates/store-api/src/integrations.rs": "d0e11961e2ebb95ee69b543390211640519239fe0345180269b22e1b705df834",
-    "crates/store-api/src/lib.rs": "673e0f991ea6dd0c53aab6be022fb29f676237b4b7682236b294bbc002ffa0f4",
+    "crates/store-api/src/lib.rs": "0b1feae6309b4872cb32d9522cdbae4338ccd4a7c415a719697de03461b9d38b",
     "crates/store-api/src/logs.rs": "efeb68a99cbe852ab60adf09ef8eba6590c73ee6ec405a1b80bbd6053130f914",
     "crates/store-api/src/main.rs": "4e43e0aa15d09f1de3a46816ca97e667b16a1925bb0652988e0df98873232e12",
     "crates/store-api/src/node_logs.rs": "0d1de46d19ddfd3c40b8d3b0f9fa7ddb08c15da4ca2c44ae0c95b54d93fb2f8f",
@@ -34,7 +34,8 @@
     "crates/store-api/src/registry/screenshot_skill.rs": "bc832a3cfed000ee3dfc0f6040b8290439c887ef222a868ab6cbb52efedf55fd",
     "crates/store-api/src/registry/screenshots.rs": "e4580384a1a1a33d1cec937d14fc601d5112ca0d059362d7930caa27a379a0da",
     "crates/store-api/src/registry/store_jobs.rs": "c29399725a32817769cbd2640807974840b77f4edae0f550d6960c72e491a8d5",
-    "crates/store-api/src/registry.rs": "ad02f94a0a41233dc9d1a44dd8b13a8801399768d2fe7b3d44727d4393a99c33",
+    "crates/store-api/src/registry/store_upgrades.rs": "13398ac5628cecb7b5a4779433f21726794e5ed52c6d6587f2937eb13e2992db",
+    "crates/store-api/src/registry.rs": "2dde27819edf1c6c72512ce8094d66547765d742bd2e8e9c6d3c2e155516298d",
     "crates/store-api/src/releases.rs": "7829bab7e2938d9278f3dda702c19ccf0189a4ade8097f9800282b741539f3b3",
     "crates/store-api/src/screenshot_settings.rs": "1a0e973c5928d468f0f4e2123e831ee0265febc4344bb871442fac71e8683d74",
     "crates/store-api/src/screenshot_skill.rs": "f6bf5439ee2c577cd92d7b2926ddf1f0cf6c22a50306c815ad2199ca453ac6a0",
@@ -44,21 +45,23 @@
     "crates/store-api/src/screenshots/review.rs": "1838146be616d2709d9d1e620c68ae98f6e65f245f8ec5fa06956427a5eb8391",
     "crates/store-api/src/screenshots.rs": "8d8dfaee5e12c3cb6b4f8503b8272a49aeb00a133cd7804bfff749fef2336b25",
     "crates/store-api/src/setup/accounts.mjs": "cd64873b19e5136cabb6803b945d4ff651ba558b3cd2b79d3b3fefe5707c60f6",
-    "crates/store-api/src/setup/app.mjs": "5c4e09879eef4c433843d5ef4a2011fbf7ef08c0f80799ea661e2d36e06417e3",
+    "crates/store-api/src/setup/app.mjs": "e79878804b9747d6548774688a2fa817c846c328071c1430eda8b9ed843e92e5",
     "crates/store-api/src/setup/forwarding.mjs": "04a01dacf546f66786f9cc440fae66ee77fd031d752ac5d07ce7c4efa9a6cc7b",
-    "crates/store-api/src/setup/index.html": "9dffd378693e8712ca875ee6c7f8a88fc1e4e84f9232a8577180d1d7133594e5",
+    "crates/store-api/src/setup/index.html": "1381263ed0e5d35acf14a87ae090963c7a3cb5882002540b91c038c5289467d7",
     "crates/store-api/src/setup/integrations.mjs": "1e12510de9980e761afeb0b67e19d27d221d2ca19f416804f7b1fc1e66edd172",
     "crates/store-api/src/setup/logs.mjs": "f2e0f8ff2929fbd6fae9dddef2ad60d009324fb1aade4253285bf2dd8f6d5670",
-    "crates/store-api/src/setup/packager.mjs": "71d28c5d380b145646974b340ff30f27593148d554cac0078c93832525e19484",
+    "crates/store-api/src/setup/packager.mjs": "161d277407532d2c31b661c0b7a9ccb7cbbc3a25b3ae075c71d552aa6388bac3",
     "crates/store-api/src/setup/screenshot-settings.mjs": "47c7f6a6e68d25022c667af935cfabe239f17ddca2ea239cfb93abadf59e7fc7",
     "crates/store-api/src/setup/skills.mjs": "dfc23dbc4a492e0ffccc75c204ef7238b144f1ab5dfb183f58d6501669dd64b4",
-    "crates/store-api/src/setup/style.css": "6a518268433af65f47a3a530d14ff4b84407e2ffa6701ea26ab5c473ae066c86",
+    "crates/store-api/src/setup/store-upgrades.mjs": "c57fb75f881850501a515dfd1ed8bba30f69cb6ca5d485f13fd603319a29857a",
+    "crates/store-api/src/setup/style.css": "4ab2540fadb191642e27146df06e5115c057d76ba0fb6d86d7d266e230351314",
     "crates/store-api/src/setup/vendor/JSZIP-LICENSE.markdown": "566c953c6090b1218ca6217dd7359d45dde46581968586dc607d59a78af6a9c4",
     "crates/store-api/src/setup/vendor/jszip.min.js": "acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e",
     "crates/store-api/src/setup/versions.mjs": "d94b6c44955debe3aa0cbf37acf1719083b3198c0e638e481ac747b40e0c0585",
-    "crates/store-api/src/setup.rs": "ca4cf6ee6726ebe5e06f6044935f2102dfb80e85f0166a389602a63b193f9638",
+    "crates/store-api/src/setup.rs": "81108d2d76866d64d872e4f84e1cbcf599582669f177aba99d75641d8a6f9c77",
     "crates/store-api/src/store_jobs.rs": "b8abc7f373a3b3a94cbfd12e2450b49f07c39a22797b8ec7250a9ef80c00d7dc",
-    "crates/store-api/src/transport.rs": "a3014d4e5747a200cd1e169dec65a3ab939bcc06ac4f3db8e3bce1a7879590fe",
+    "crates/store-api/src/store_upgrades.rs": "7e2836d9193e7bc23a878ce9ebd7c5247e26bb821299f32fb6254711d7b7dbbb",
+    "crates/store-api/src/transport.rs": "17b90246dbb3b90e33f751fd10f5e1fa58fe80a3041765edbabeafbf08925b0b",
     "crates/store-api/src/uploads.rs": "3af96d953ff1b2f6b5903f57ce9af49366f81922dd51ec24d31ce18a1f61a428",
     "crates/store-api/tests/account_screenshot_bindings.rs": "cdf2b60ca8ebf93854757584e279c1974911926f40b353b21213cb20ecfab216",
     "crates/store-api/tests/accounts.rs": "08cc7506e4068dabba7a910891d42ce6df5629bb4eb81cef621ae2472c9dd9ac",
@@ -70,19 +73,23 @@
     "crates/store-api/tests/screenshot_settings.rs": "0fd34edc8cc16dbe1e6622003df186ea14a07587b86eef3d91443fc2b6220065",
     "crates/store-api/tests/screenshot_skill.rs": "cd264232bc529c3268c5933d444061ddb573a7f1548ec37635a1834967b5f650",
     "crates/store-api/tests/screenshots.rs": "f8f6d15f54ba4618ebba24f23edf22aed6997f2b471cc63ef9fb5ad9c5c23ace",
-    "crates/store-api/tests/service.rs": "6b8f70b06c492f27b261da8e307a13d62f85459e0372a4e9d19bab19e9f67207",
-    "crates/store-api/tests/setup-package.test.mjs": "c2d0b49fa385a18820e04c7ce20f3df18bb3596bc449ca4032f6ffd3706415bf",
-    "crates/store-api/tests/setup.rs": "44d47b52c5fa64a742d91484b086ca6517ee2a43980dcb2c96579d078db7bc59",
+    "crates/store-api/tests/service.rs": "dfe1c279b39a6867365fac3312cad0c8e93a3e76ef026056b7237131014da329",
+    "crates/store-api/tests/setup-package.test.mjs": "555e0312acf7663f6caca8a9517a9389680c5efe62845d4625270d4ef264b8be",
+    "crates/store-api/tests/setup.rs": "a298eafd828984acca0f0e4b93b4dfcad278f2c458a66e2c863553b78e1a292e",
     "crates/store-api/tests/store_jobs.rs": "e4100bba7a9474ba48a237f8e3e3248a1d6b7e9500be073fd9b3d3ff9aff279b",
+    "crates/store-api/tests/store_upgrades.rs": "ec010da39e073770c4434d8ac95f32a4619e3a0f87e6a27468852e6a2ab38d63",
     "crates/store-api/tests/support/mod.rs": "4ffee413b253548e079e10e327515bfb8b52ad5adff36fac19a0b81fb553da55",
     "crates/store-api/tests/uploads.rs": "f295d3cef48bbfdb94e84ed56e14b51174bc2157f2780370c45e9860bf55af8d",
-    "crates/store-connector/Cargo.toml": "127e39f0564466be3146a74f41a7a810f11dea1ae41edca464f39fc20913133c",
+    "crates/store-connector/Cargo.toml": "f1579a084df926092340ae1e6200adb163f79f1d81040cc77435f0a00025e552",
     "crates/store-connector/src/catalog.rs": "d911517f8e8af48bf085aad85c121e39ede3eaaf2d6d39827581fe1292c34d4d",
     "crates/store-connector/src/firebase.rs": "a2301d0208396e64b8f83254a267b562d8c97999d7d3e680df17d785355f50e7",
-    "crates/store-connector/src/image_jobs.rs": "eb222a17fb5cfaf31ea71008a2e88b484af46d98368d3c83288ee9a93a3979eb",
+    "crates/store-connector/src/image_jobs.rs": "9d10f798695980e08f3fee31f625c22e3cf1ae88060e11c33913918621914549",
     "crates/store-connector/src/install.rs": "3b24d4ee087b555a4c88455d8b2bfc968f3c5e9cfe71aea6cbfd72c76ef00228",
-    "crates/store-connector/src/lib.rs": "897634aaba3965d9bac0022819365e35d8b66bfb72ee99f0e41a9c49f08f8fb3",
-    "crates/store-connector/src/main.rs": "8394c364339e34a3db8c5f03071b13fa961610a240090bf189e3e020484b5903",
+    "crates/store-connector/src/lib.rs": "598a9b37d1c8641b2e3ab2e4d167a7dcd08bd009598c3a8c06af436f2e11c2d7",
+    "crates/store-connector/src/main.rs": "53aafd15745280701d98dd77d5c0900b4801ed596094720598a934fcd774de98",
+    "crates/store-connector/src/upgrade/manager.rs": "6669a5064786a1221717c191f4fdaca3c8317fca78df2f0d02b26f7d2a31ee79",
+    "crates/store-connector/src/upgrade.rs": "c754e8c3674856d3028dd0dfa27e46343c023b11c7959f2d3afee7bf0851789c",
+    "crates/store-connector/src/upgrade_os.rs": "a062b5b0ef19832475851a9e52ba4165b4bf0baa4e58ce2d1303e092347a9198",
     "crates/store-connector/tests/platform_mode_test.rs": "967b39964b3693878d55208a8b3e9e97302bfff6cc96c9baf28a41564a19a6cc",
     "crates/store-protocol/Cargo.toml": "b07d769e261cd4d511254c8660cee897b20f6d0fe816f4376832de649cd5d8bc",
     "crates/store-protocol/src/catalog.rs": "6fc0d7f52602c1d5eab37505b22a30f5edad21238cf7482d7d1f90379ca95cc3",
@@ -100,7 +107,7 @@
     "crates/store-provider/src/apple.rs": "9e210dfcf0e4e239c7ef4a325ecac5e367fe98cf16b053c27346bc9573305c92",
     "crates/store-provider/src/apple_image_upload.rs": "9bc0691c2ac8c63cf325c61b9565280374e733822af8106111365ca60f12f66c",
     "crates/store-provider/src/apple_images.rs": "f2ea3811e07a3ed95efa9ef84d6ee494677fb1908ed856c7bf98ea6e4f67e5ca",
-    "crates/store-provider/src/assets.rs": "ab9fa818d0402c43346d8a520f3e0f95e868e4212b343e6126d4b92c302fc066",
+    "crates/store-provider/src/assets.rs": "f2930aec9d261955fd5921346b80fa7350ef11f7b9a2c0d869960eec0c35ac54",
     "crates/store-provider/src/catalog.rs": "2b32f0d8ba32650fc8e85a8eb45bc85b3144b9838bbebabe46c8c554912a1387",
     "crates/store-provider/src/diagnostics.rs": "373452945d1454e903b7e6ebbb65858647f5eef74c13ae187e1ede5293684c6e",
     "crates/store-provider/src/firebase.rs": "65ccd22a0d621269e847a33bd007372c13eda39f2774c673b3db5f9b28267a09",
@@ -114,18 +121,20 @@
     "crates/store-provider/src/upstream_error.rs": "f8a9046c7fb35e0854775fe8d8189f0ef0103467c96323849b17e721564f682c",
     "crates/store-provider/src/validation.rs": "928aa2c1eec84219dc058c0be52df7f63f893fd5165894bf04079503a6f0cc55",
     "crates/store-provider/tests/live.rs": "5309bbafde4145c87dbd7561234bf529713fa7b064d4ed656f3b269d9ffa9e6f",
+    "crates/store-update/Cargo.toml": "950765e89956e000655cd96bed44dcb9133547c64944e1e12afeed7c655088cc",
+    "crates/store-update/src/lib.rs": "eee534e62d00864340652d09e2c9101e2ef0367242ff9b3bb49c65ce0ef4699c",
     "deploy/testflying-prod-ca.crt": "d6a6874992dd6197da68c43037ab176cd3d7f7ce7be2966706293dc499443296",
-    "docs/openapi.yaml": "508ff1ee9b9a85919667abc2069f984a80a1d813760feaf20231f616743e40eb",
-    "docs/store-api.md": "58d6661c1ad9f451ea4ab6b59ffd3f0827e1ae0d56d803b2d8ed5e24c215b726",
+    "docs/openapi.yaml": "07d4558517efcb1cbbf2f0cff9e51007e9ad75c2f3802a9a137e84608759256b",
+    "docs/store-api.md": "0532d0e64394bc9d88e20b78901339e36f64c06cc91ef6df96f42cc4917f327f",
     "examples/connector-google.json": "0844ade027845ef768343bcb65415c5114b082133a382448905b2a74f8c8e709",
     "examples/connector.json": "1e294f020302b6585f830ab79f07325acbe10b77ef42a6c14b9f81fe99edc89c",
-    "packaging/connector/README.md": "711bef5e0a758d0d7a857326e9ab1c1973ae8ff930d2590eea593e5a09aeefad",
+    "packaging/connector/README.md": "4779ecf5cd041f6d5f6d8afc2798756ef954fbe2fdaecd7f0d7fa8de2b00f882",
     "packaging/connector/install.cmd": "1f617df7fd0d62f05d395ddff7b05d89d0db6d01d0a3f658f1d0a41d167a0b78",
-    "packaging/connector/install.ps1": "6b94c46031a2331f286af9c65c849abf280d3b29b0b210ea112563007c8014cb",
-    "packaging/connector/install.sh": "d2e1dc66abe6394e622c7510098571e57fd36e577306db59012ebc97e53b4cb6",
+    "packaging/connector/install.ps1": "865ed39b5d86e0c5bfe9bfda400792781b9358a3559eb21a009f47cbbef3f732",
+    "packaging/connector/install.sh": "79758cbc8ed35f3776bfca57681c4f3eceb0a3a38490e703452f41049a677472",
     "packaging/connector/start.cmd": "8d004a7f62d2a5028b308d4c6f22d3dcece518ec4eb2f4543614718c5e8ad5e5",
     "packaging/connector/start.sh": "bddd788b816ef5345c2700a178f4db9b3b9dfdf8c81283d7e791fc6865d5bb3c",
-    "packaging/connector-versions.json": "36951630b412cb679f6aad61f8af975e6cc84f941a58f3a071d3a54f1f299cf6",
+    "packaging/connector-versions.json": "39b337e1c3d8da645da6b5a8e907aa6ca31af175db694d9f20ac65f70e63a982",
     "packaging/screenshot-connector/README.md": "a4eaea6b1297a386765b5cae0345186232fdeca1a7e5e90d945953ae9a3e8f01",
     "packaging/screenshot-connector/install.sh": "68f3864acff942b8a063c9fcd704cccbc74a8b66580fd78afdd5ad8e716421a7",
     "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7",
@@ -136,7 +145,7 @@
     "scripts/component_release.py": "56130daf6e88f871cf42acd96e14e6d2c181ea8aee1e8c90524b9e67631397a6",
     "scripts/connector_release.py": "16b712b4dbd6f4d4fee0487096ba175d86fbf81118998120515818b815b05040",
     "scripts/deploy_prod.py": "f80ed1fcd3a726495cf0902031135ed19ba7358726755116e66af74081af777a",
-    "scripts/deploy_setup.py": "b972493543a391465bd72167dfbf5ac2b7b1aa671aec3a533b3ca1d65be96118",
+    "scripts/deploy_setup.py": "f10adc85e68870fbf5763446b5664fee81d2207b80f703fb1d1db49a3e48971e",
     "scripts/enable_http.py": "76d3c0c72270be678ae3992da3332e8d9a3390489c775309cc0eec57c4d8b85d",
     "scripts/managed_workspace.py": "840a77c1c75de77372bacfcbd5049179340a5e910923f30b4a7ed0828a37e203",
     "scripts/publish_github_release.py": "a391d985639c35ce6a4e5b2ab8299aee94e2d3ac06db8e82bccfec2e5107d0a4",
@@ -145,9 +154,9 @@
     "scripts/release_catalog.py": "74f1a65ff19aebf666bfd7763da2f6e2355404dd669f2b84e1097d83a3d04b51",
     "scripts/rollout_uploads.py": "b6d6fe43686235a3673a39843a26dfdf1d91694f9b6b76e99c13223c920cf4b1",
     "scripts/test_connector_release.py": "eb806f67678691591053dbb3a7e9eea90d302caccc02e442d8ea885f9ad5aa01",
-    "scripts/verify_connector_install.py": "b63a304e643edcd8983988d0efd64e76fae4dc845c8accd6fc92b9aab2af3c6c",
+    "scripts/verify_connector_install.py": "0470cde5ce064c43c1841d7a64410b663fe47366087f1d0869078d8114bfdada",
     "scripts/verify_screenshot_install.py": "515ece58dc92bb8165a1ac1613e6a0bc270c400c4edc803ab0c32641936c47c9",
-    "scripts/verify_setup_ui.mjs": "a94000011a822974c9d97806211df2a0898088a69acc471dff0006fd5b8390d0",
+    "scripts/verify_setup_ui.mjs": "7b7f2327d2cdff79628d4809a72b917c0413a21a69710348cbba305b04a61e93",
     "scripts/verify_setup_ui.py": "fe7a011495656968f6f3a97bbef72473c8d3c1a3f3e48601534ae5fac359e118",
     "scripts/verify_store_refactor.py": "ebaa25ef57d06b216907521f2e6d501145ac2fce12cbfac5a9aaa344bf4cc588"
   },
@@ -169,26 +178,42 @@
         "test",
         "--locked",
         "-p",
-        "store-api"
+        "store-update",
+        "-p",
+        "store-api",
+        "-p",
+        "store-provider",
+        "-p",
+        "store-connector"
       ],
       "exitCode": 0,
       "testSummaries": [
-        "test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.53s",
+        "test result: ok. 72 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s",
-        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.00s",
-        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s",
+        "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s",
+        "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.12s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
         "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
-        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
-        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.30s",
-        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.43s",
+        "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.32s",
+        "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.44s",
         "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s",
-        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s",
-        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.91s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
+        "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.94s",
+        "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.45s",
+        "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+        "test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.79s",
+        "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 242.68s",
+        "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
         "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
       ]
     },
@@ -198,7 +223,13 @@
         "clippy",
         "--locked",
         "-p",
+        "store-update",
+        "-p",
         "store-api",
+        "-p",
+        "store-provider",
+        "-p",
+        "store-connector",
         "--all-targets",
         "--",
         "-D",
@@ -206,158 +237,511 @@
       ],
       "exitCode": 0,
       "testSummaries": []
+    },
+    {
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "-B",
+        "scripts/test_connector_release.py"
+      ],
+      "exitCode": 0,
+      "testSummaries": []
+    },
+    {
+      "command": [
+        "node",
+        "--test",
+        "crates/store-api/tests/setup-package.test.mjs"
+      ],
+      "exitCode": 0,
+      "testSummaries": []
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--locked",
+        "-p",
+        "store-connector"
+      ],
+      "exitCode": 0,
+      "testSummaries": []
+    },
+    {
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "-B",
+        "scripts/verify_connector_install.py"
+      ],
+      "exitCode": 0,
+      "testSummaries": []
+    },
+    {
+      "command": [
+        "/bin/sh",
+        "-n",
+        "packaging/connector/install.sh"
+      ],
+      "exitCode": 0,
+      "testSummaries": []
+    },
+    {
+      "command": [
+        "/bin/sh",
+        "-n",
+        "packaging/connector/start.sh"
+      ],
+      "exitCode": 0,
+      "testSummaries": []
+    },
+    {
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "-B",
+        "scripts/verify_setup_ui.py"
+      ],
+      "exitCode": 0,
+      "testSummaries": []
     }
   ],
-  "testsPassed": 135,
-  "reusedVerification": {
-    "runId": "7f281bf31e564e4f9d3e423f8ee6731c",
-    "sourceCommit": "fc422ae16c1857fb03b814a80baefca21b88f71c",
-    "originalTestsPassed": 246,
-    "focusedTestsPassed": 7,
-    "releaseTestsPassed": 26,
-    "changedFiles": [
-      "Cargo.lock",
-      "crates/store-api/Cargo.toml",
-      "crates/store-api/src/lib.rs",
-      "crates/store-api/tests/store_jobs.rs"
-    ],
-    "scope": "Unchanged provider/store tests, provider/store Clippy, release guards, OpenAPI and UI",
-    "checks": [
-      {
-        "command": [
-          "cargo",
-          "fmt",
-          "--all",
-          "--",
-          "--check"
-        ],
-        "exitCode": 0,
-        "testSummaries": []
-      },
-      {
-        "command": [
-          "cargo",
-          "test",
-          "--locked",
-          "-p",
-          "store-provider",
-          "--test",
-          "live",
-          "apple_multilocale"
-        ],
-        "exitCode": 0,
-        "testSummaries": [
-          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 51 filtered out; finished in 7.91s"
-        ]
-      },
-      {
-        "command": [
-          "cargo",
-          "test",
-          "--locked",
-          "-p",
-          "store-provider",
-          "--test",
-          "live",
-          "metadata_notes"
-        ],
-        "exitCode": 0,
-        "testSummaries": [
-          "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 52 filtered out; finished in 4.19s"
-        ]
-      },
-      {
-        "command": [
-          "cargo",
-          "test",
-          "--locked",
-          "-p",
-          "store-api",
-          "-p",
-          "store-provider",
-          "-p",
-          "store-connector"
-        ],
-        "exitCode": 0,
-        "testSummaries": [
-          "test result: ok. 61 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.55s",
-          "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-          "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s",
-          "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s",
-          "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
-          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.30s",
-          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
-          "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
-          "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
-          "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
-          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
-          "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.31s",
-          "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.47s",
-          "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s",
-          "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s",
-          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.89s",
-          "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
-          "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
-          "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
-          "test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.97s",
-          "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 209.10s",
-          "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-          "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
-          "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
-        ]
-      },
-      {
-        "command": [
-          "cargo",
-          "clippy",
-          "--locked",
-          "-p",
-          "store-api",
-          "-p",
-          "store-provider",
-          "-p",
-          "store-connector",
-          "--all-targets",
-          "--",
-          "-D",
-          "warnings"
-        ],
-        "exitCode": 0,
-        "testSummaries": []
-      },
-      {
-        "command": [
-          "/opt/homebrew/opt/python@3.14/bin/python3.14",
-          "-B",
-          "scripts/test_connector_release.py"
-        ],
-        "exitCode": 0,
-        "testSummaries": [
-          "Ran 26 tests in 30.862s"
-        ]
-      },
-      {
-        "check": "Current OpenAPI YAML and all local references",
-        "passed": true
-      }
-    ]
+  "validationRounds": [
+    {
+      "attempt": 1,
+      "checks": [
+        {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "store-update",
+            "-p",
+            "store-api",
+            "-p",
+            "store-provider",
+            "-p",
+            "store-connector"
+          ],
+          "exitCode": 101,
+          "testSummaries": []
+        }
+      ],
+      "sourceChanged": true
+    },
+    {
+      "attempt": 2,
+      "checks": [
+        {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "store-update",
+            "-p",
+            "store-api",
+            "-p",
+            "store-provider",
+            "-p",
+            "store-connector"
+          ],
+          "exitCode": 101,
+          "testSummaries": []
+        }
+      ],
+      "sourceChanged": false
+    },
+    {
+      "attempt": 3,
+      "checks": [
+        {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "store-update",
+            "-p",
+            "store-api",
+            "-p",
+            "store-provider",
+            "-p",
+            "store-connector"
+          ],
+          "exitCode": 101,
+          "testSummaries": []
+        }
+      ],
+      "sourceChanged": false
+    },
+    {
+      "attempt": 4,
+      "checks": [
+        {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "store-update",
+            "-p",
+            "store-api",
+            "-p",
+            "store-provider",
+            "-p",
+            "store-connector"
+          ],
+          "exitCode": 101,
+          "testSummaries": [
+            "test result: ok. 72 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.79s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s",
+            "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.42s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+            "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.34s"
+          ]
+        }
+      ],
+      "sourceChanged": false
+    },
+    {
+      "attempt": 5,
+      "checks": [
+        {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "store-update",
+            "-p",
+            "store-api",
+            "-p",
+            "store-provider",
+            "-p",
+            "store-connector"
+          ],
+          "exitCode": 0,
+          "testSummaries": [
+            "test result: ok. 72 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.80s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s",
+            "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.43s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s",
+            "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+            "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+            "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.33s",
+            "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.50s",
+            "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s",
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
+            "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.93s",
+            "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.56s",
+            "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.54s",
+            "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 194.95s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "-p",
+            "store-update",
+            "-p",
+            "store-api",
+            "-p",
+            "store-provider",
+            "-p",
+            "store-connector",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exitCode": 101,
+          "testSummaries": []
+        }
+      ],
+      "sourceChanged": false
+    },
+    {
+      "attempt": 6,
+      "checks": [
+        {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--",
+            "--check"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            "store-update",
+            "-p",
+            "store-api",
+            "-p",
+            "store-provider",
+            "-p",
+            "store-connector"
+          ],
+          "exitCode": 0,
+          "testSummaries": [
+            "test result: ok. 72 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s",
+            "test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s",
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.12s",
+            "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+            "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s",
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+            "test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.32s",
+            "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.44s",
+            "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+            "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s",
+            "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.94s",
+            "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.45s",
+            "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s",
+            "test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.79s",
+            "test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 242.68s",
+            "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+            "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+          ]
+        },
+        {
+          "command": [
+            "cargo",
+            "clippy",
+            "--locked",
+            "-p",
+            "store-update",
+            "-p",
+            "store-api",
+            "-p",
+            "store-provider",
+            "-p",
+            "store-connector",
+            "--all-targets",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "/opt/homebrew/opt/python@3.14/bin/python3.14",
+            "-B",
+            "scripts/test_connector_release.py"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "node",
+            "--test",
+            "crates/store-api/tests/setup-package.test.mjs"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "cargo",
+            "build",
+            "--locked",
+            "-p",
+            "store-connector"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "/opt/homebrew/opt/python@3.14/bin/python3.14",
+            "-B",
+            "scripts/verify_connector_install.py"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "/bin/sh",
+            "-n",
+            "packaging/connector/install.sh"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "/bin/sh",
+            "-n",
+            "packaging/connector/start.sh"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        },
+        {
+          "command": [
+            "/opt/homebrew/opt/python@3.14/bin/python3.14",
+            "-B",
+            "scripts/verify_setup_ui.py"
+          ],
+          "exitCode": 0,
+          "testSummaries": []
+        }
+      ],
+      "sourceChanged": false
+    }
+  ],
+  "testsPassed": 272,
+  "browserVerification": {
+    "runId": "d1ed00dec3bb48e0a7fd0551b3f6018b",
+    "production": false,
+    "checks": 36,
+    "reportSha256": "48775a99401b2cbad2d596ad98526f4846ab9cfc7c4f588c5058eb154f98fa7a"
   },
   "componentVersions": {
-    "center": "0.1.4",
-    "store": "0.2.10",
+    "center": "0.1.5",
+    "store": "0.2.11",
     "screenshot": "0.2.11"
   },
-  "browserVerification": {
-    "runId": "689bb04c27c049c3ae1377abaa876cc9",
-    "production": false,
-    "checks": 33,
-    "reportSha256": "dc1cbad6820ce86d503e450a9054779702f93490f29f94e1a856167b0c38e60c"
+  "componentsToBuild": [
+    "center",
+    "store"
+  ],
+  "retainedScreenshotOutput": {
+    "component": "screenshot",
+    "version": "0.2.11",
+    "sourceFingerprint": "2904f49c9648336b1d1488ca9747a46627d2741f61bbb47e48a253c832ddce8f",
+    "sourceHashes": {
+      "Cargo.lock": "fe8a2327f1825cc5d3d474d129a9ff9fd270649e8112a2ba1f993fd1b217141b",
+      "Cargo.toml": "69c870def484fa1146ce65f447461f61a1a1ace065678199920ea9c92985d298",
+      "crates/screenshot-connector/Cargo.toml": "fc12a2510a6fc93dbd2b68e09c1c2dbc302e1b2ba03357945d11c69be4310faf",
+      "crates/screenshot-connector/src/codex_runtime.rs": "195e72e42c1b9cfca4c6d709d9582290d253abd726d997706407b59e695b058c",
+      "crates/screenshot-connector/src/connector.rs": "7a1a13c6b65caf5a4dbbec3a19ab65747e8f1ef33fdfdc69a043e90e5950b15a",
+      "crates/screenshot-connector/src/diagnostic.rs": "b3f7d687b7c842b5bf3a920ac01067449db78acd685ea82dd07b1a361332cd48",
+      "crates/screenshot-connector/src/goal.rs": "2dbd9ed27b822266b2ecee3936e20f65148d9006e5f9e9b3751018c0eb7c64a1",
+      "crates/screenshot-connector/src/main.rs": "041d70f19860442c22b89fa404ebe6757a19cf359cf2c5f771c320a9e165cc06",
+      "crates/screenshot-connector/src/skill.rs": "499818db87cb35e3372558fb383f288e0b0ff58f94f73cf43ec9e0a5f31e65e6",
+      "crates/screenshot-connector/src/worker.rs": "8269845b7a35927deff1296c5afcfa8e3742dac17c39d19f4ab512d99f09fc81",
+      "crates/store-api/src/lib.rs": "c3e091452a563d79a5f93d9740914d5549761b6dff7f3f8706eee02fbf75d663",
+      "crates/store-api/src/screenshots.rs": "645deb2dae5ab32a5d2bfe56eb2fc97a9c66bb03a888363f742e3d0f61face9c",
+      "crates/store-api/src/setup/app.mjs": "02a18c44e219daa1ea18202256ffe8290efeeec94814af8f43c9db1f927e5963",
+      "crates/store-api/src/setup/packager.mjs": "b848fe7f7a7a9ed34bef267d4a88a020da7bdd2d74d6b206c647c442e2098e00",
+      "crates/store-protocol/Cargo.toml": "58390bfb9c53bc230a11917b6479fbc05f3ca026b89ee8411291213031e6efe3",
+      "crates/store-protocol/src/catalog.rs": "9409c03744536909a0b932b63fc2545d9e7fba06d2a6452b16bf6d207ecda5c9",
+      "crates/store-protocol/src/crypto.rs": "70ddef2dea2cb8e132b57a8d167b2c06173d5390407bbc78c0607301b91c5131",
+      "crates/store-protocol/src/firebase.rs": "1a6cb9ae76d05d4da726297b014c9ad9adc89b0e11332e7c8f68b86241916809",
+      "crates/store-protocol/src/lib.rs": "af6285c540fc0041d5db7443e763662fb2037a1c8d8d45d474b0dfdaaa7e3846",
+      "crates/store-protocol/src/logs.rs": "a9557df55008d4f00a18f36b0c89d2fc5fbb6f30b6e0a4932523937aa9017414",
+      "crates/store-protocol/src/release.rs": "7b79cd68c327e89d897ccf75299077bbd8b045bab53505c251e5f0c0ddf9141f",
+      "crates/store-protocol/src/screenshot.rs": "857e64ab2b55837109cffba64d3a49fbf915c18e10adecb8be9d15d5c3cecb14",
+      "crates/store-protocol/src/screenshot_failure.rs": "6386b45e800b4acde847b9a9294dfc887532a8355672601f2215ed9c77dcd72c",
+      "crates/store-protocol/src/skill.rs": "535230531012bfe933bb8cc4e15b6b09cb948a128c4043926c7b272a2914bff7",
+      "crates/store-protocol/src/upload.rs": "e81672e7c35ad64dd160272bc92f7bfe45f394e35d50b6dd031d58f5056cd024",
+      "deploy/testflying-prod-ca.crt": "d6a6874992dd6197da68c43037ab176cd3d7f7ce7be2966706293dc499443296",
+      "packaging/screenshot-connector/README.md": "a4eaea6b1297a386765b5cae0345186232fdeca1a7e5e90d945953ae9a3e8f01",
+      "packaging/screenshot-connector/install.sh": "68f3864acff942b8a063c9fcd704cccbc74a8b66580fd78afdd5ad8e716421a7",
+      "packaging/screenshot-connector/run.sh": "9d0471287569e54e7593b37380e99f5b8ea1bd17c11ffd800b5c61e3f8f544c7"
+    },
+    "sourceCommit": "ff0acb5129805c9f90f6992c50206af5c7689f59",
+    "builtAt": "2026-11-26T04:12:48.047381+00:00",
+    "sha256": "adb384b288bba36fd52f49435ed21150bc3796933823eb79a50b6edb3eb861e8",
+    "bytes": 5859520,
+    "format": "Mach-O 64-bit executable arm64"
   },
   "realGoogleApiTestsPerformed": false,
   "realAppleApiTestsPerformed": false,
   "notVerified": [
-    "Actual developer accounts or review state; explicitly excluded",
-    "Remote node installation",
+    "Actual Windows scheduled-task/Mac launchd install or restart on user devices",
+    "Actual remote node upgrade; first bootstrap installation required",
     "Deployment"
   ],
   "cleanup": "See supervisor cleanup report"
